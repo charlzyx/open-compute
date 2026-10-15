@@ -35,6 +35,88 @@ function warmSnapshotKey(
   return `${envelope.loaderKey}\0${envelope.expected}\0${envelope.routeGeneration}`;
 }
 
+/**
+ * One named namespace, not one per shard. workerd keeps every named isolate
+ * until that namespace exceeds 64, so sixteen namespaces retained every
+ * Worker touched by a burst. `getPrivate` is the host grant already held by
+ * `env.LOADER`; the public `get` loader rejects host policy and bindings.
+ */
+const TENANT_NAMESPACE = "tenant/0";
+/** Leave spare slots under the 64-entry cap so an idle isolate can be evicted. */
+const TENANT_ISOLATE_ADMISSION = 48;
+let tenantAdmitted = 0;
+const tenantWaiting: Array<() => void> = [];
+
+/**
+ * Return the single shared loader namespace.
+ * `getPrivate` binds the channel to this request, so the handle is not reused.
+ * The factory's namespace table still returns the same `tenant/0` isolates.
+ */
+export function tenantLoader(env: LoaderEnv, _loaderKey: string): WorkerLoader {
+  return env.WORKER_LOADER_FACTORY.getPrivate(TENANT_NAMESPACE);
+}
+
+function acquireTenantAdmission(): Promise<void> {
+  if (tenantAdmitted < TENANT_ISOLATE_ADMISSION) {
+    tenantAdmitted += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    tenantWaiting.push(() => {
+      tenantAdmitted += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseTenantAdmission(): void {
+  tenantAdmitted -= 1;
+  const next = tenantWaiting.shift();
+  if (next) next();
+}
+
+function cacheCapacityExceeded(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /WorkerLoader cache capacity exceeded/i.test(error.message)
+  );
+}
+
+/** Load one named tenant isolate, queueing once 48 are already in flight. */
+export async function loadTenantStub(
+  env: LoaderEnv,
+  loaderKey: string,
+  name: string,
+  code: () => Promise<WorkerLoaderWorkerCode>,
+): Promise<{ stub: WorkerStub; release: () => void }> {
+  await acquireTenantAdmission();
+  try {
+    let stub: WorkerStub | undefined;
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      try {
+        stub = tenantLoader(env, loaderKey).get(name, code);
+        break;
+      } catch (error) {
+        if (!cacheCapacityExceeded(error) || attempt === 31) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    if (stub === undefined) throw bindingError("RUNTIME_UNAVAILABLE");
+    let released = false;
+    return {
+      stub,
+      release() {
+        if (released) return;
+        released = true;
+        releaseTenantAdmission();
+      },
+    };
+  } catch (error) {
+    releaseTenantAdmission();
+    throw error;
+  }
+}
+
 /** Generation-authenticated private binding header. */
 export const BINDING_TOKEN_HEADER = "x-open-compute-binding-token";
 
@@ -214,6 +296,42 @@ export function currentStartupGeneration(seed?: string | null): string {
   return startupGeneration;
 }
 
+function snapshotBytes(snapshot: RuntimeSnapshot): number {
+  let bytes = 256;
+  for (const module of snapshot.modules ?? []) {
+    bytes += module.name.length + module.bytesBase64.length;
+  }
+  for (const binding of snapshot.moduleBindings ?? []) {
+    bytes += binding.name.length + binding.bytesBase64.length;
+  }
+  return bytes;
+}
+
+function dropWarmSnapshot(key: string): void {
+  const size = warmRuntimeSnapshotSizes.get(key);
+  if (size === undefined) return;
+  warmRuntimeSnapshotTotal -= size;
+  warmRuntimeSnapshots.delete(key);
+  warmRuntimeSnapshotSizes.delete(key);
+}
+
+function rememberWarmSnapshot(key: string, snapshot: RuntimeSnapshot): void {
+  dropWarmSnapshot(key);
+  const size = snapshotBytes(snapshot);
+  warmRuntimeSnapshots.set(key, snapshot);
+  warmRuntimeSnapshotSizes.set(key, size);
+  warmRuntimeSnapshotTotal += size;
+  while (
+    warmRuntimeSnapshots.size > 1 &&
+    (warmRuntimeSnapshots.size > WARM_RUNTIME_SNAPSHOTS ||
+      warmRuntimeSnapshotTotal > WARM_RUNTIME_SNAPSHOT_BYTES)
+  ) {
+    const oldest = warmRuntimeSnapshots.keys().next().value;
+    if (oldest === undefined || oldest === key) break;
+    dropWarmSnapshot(oldest);
+  }
+}
+
 /** Resolve and strictly validate an immutable version snapshot. */
 export async function resolveSnapshot(
   env: LoaderEnv,
@@ -272,42 +390,6 @@ export async function resolveSnapshot(
   }
   if (cacheKey) rememberWarmSnapshot(cacheKey, snapshot);
   return snapshot;
-}
-
-function snapshotBytes(snapshot: RuntimeSnapshot): number {
-  let bytes = 256;
-  for (const module of snapshot.modules ?? []) {
-    bytes += module.name.length + module.bytesBase64.length;
-  }
-  for (const binding of snapshot.moduleBindings ?? []) {
-    bytes += binding.name.length + binding.bytesBase64.length;
-  }
-  return bytes;
-}
-
-function dropWarmSnapshot(key: string): void {
-  const size = warmRuntimeSnapshotSizes.get(key);
-  if (size === undefined) return;
-  warmRuntimeSnapshotTotal -= size;
-  warmRuntimeSnapshots.delete(key);
-  warmRuntimeSnapshotSizes.delete(key);
-}
-
-function rememberWarmSnapshot(key: string, snapshot: RuntimeSnapshot): void {
-  dropWarmSnapshot(key);
-  const size = snapshotBytes(snapshot);
-  warmRuntimeSnapshots.set(key, snapshot);
-  warmRuntimeSnapshotSizes.set(key, size);
-  warmRuntimeSnapshotTotal += size;
-  while (
-    warmRuntimeSnapshots.size > 1 &&
-    (warmRuntimeSnapshots.size > WARM_RUNTIME_SNAPSHOTS ||
-      warmRuntimeSnapshotTotal > WARM_RUNTIME_SNAPSHOT_BYTES)
-  ) {
-    const oldest = warmRuntimeSnapshots.keys().next().value;
-    if (oldest === undefined || oldest === key) break;
-    dropWarmSnapshot(oldest);
-  }
 }
 
 /** Deduplicate one immutable WorkerLoader assembly while it is in flight. */
