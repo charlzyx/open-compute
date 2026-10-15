@@ -1,0 +1,90 @@
+name: fork ocd artifacts
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  workflow_dispatch:
+
+concurrency:
+  group: fork-ocd-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: darwin-arm64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - uses: ./.github/actions/setup-open-compute
+      - name: Package the native ocd executable
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          destination="$RUNNER_TEMP/ocd-$RELEASE_TARGET"
+          report="$RUNNER_TEMP/ocd-$RELEASE_TARGET.json"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/.temp/release-target"
+          ./scripts/package-release.sh \
+            --dest "$destination" \
+            --archive "$OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE" | tee "$report"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ocd-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/ocd-${{ matrix.target }}
+            ${{ runner.temp }}/ocd-${{ matrix.target }}.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  release:
+    name: attach tag release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ocd-*
+          merge-multiple: true
+          path: artifacts
+      - name: Attach the packaged executables to the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          shopt -s nullglob
+          files=(artifacts/*)
+          if [ "${#files[@]}" -ne 6 ]; then
+            echo "expected three executables and three reports, found ${#files[@]}" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "open-compute $tag" \
+              --notes "Fork ocd artifacts for $tag."
+          fi
