@@ -13,6 +13,22 @@ const SOURCE_PATH = "/internal/runtime/v1/versions/resolve";
 export const TOKEN_HEADER = "x-open-compute-internal-token";
 let startupGeneration: string | undefined;
 const assembling = new Map<string, Promise<WorkerLoaderWorkerCode>>();
+/**
+ * Bound on verified runtime snapshots kept in this loader isolate.
+ * A route-generation bump (deploy, rollback, observability settings) misses.
+ */
+const WARM_RUNTIME_SNAPSHOTS = 1024;
+const warmRuntimeSnapshots = new Map<string, RuntimeSnapshot>();
+
+/** Cache key for one immutable runtime snapshot, or null when the call must not be cached. */
+function warmSnapshotKey(
+  envelope: RuntimeEnvelope,
+  scope: RuntimeSourceScope,
+): string | null {
+  if (scope !== "runtime" || envelope.routeGeneration === undefined)
+    return null;
+  return `${envelope.loaderKey}\0${envelope.expected}\0${envelope.routeGeneration}`;
+}
 
 /** Generation-authenticated private binding header. */
 export const BINDING_TOKEN_HEADER = "x-open-compute-binding-token";
@@ -201,6 +217,18 @@ export async function resolveSnapshot(
   internalToken: string | null,
 ): Promise<RuntimeSnapshot> {
   if (internalToken === null) throw bindingError("BINDING_PROTOCOL_ERROR");
+  // Ingress already read route generation from SQLite. Runtime-visible
+  // mutations bump that generation, so a hit is the same bytes the source
+  // would re-hash. Validation and probe stay uncached.
+  const cacheKey = warmSnapshotKey(envelope, scope);
+  if (cacheKey) {
+    const cached = warmRuntimeSnapshots.get(cacheKey);
+    if (cached) {
+      warmRuntimeSnapshots.delete(cacheKey);
+      warmRuntimeSnapshots.set(cacheKey, cached);
+      return cached;
+    }
+  }
   const response = await env.RUNTIME_SOURCE.fetch(
     `http://runtime-source${SOURCE_PATH}`,
     {
@@ -233,6 +261,13 @@ export async function resolveSnapshot(
       snapshot.routeGeneration !== envelope.routeGeneration)
   ) {
     throw bindingError("VERSION_INVARIANT_VIOLATION");
+  }
+  if (cacheKey) {
+    if (warmRuntimeSnapshots.size >= WARM_RUNTIME_SNAPSHOTS) {
+      const oldest = warmRuntimeSnapshots.keys().next().value;
+      if (oldest !== undefined) warmRuntimeSnapshots.delete(oldest);
+    }
+    warmRuntimeSnapshots.set(cacheKey, snapshot);
   }
   return snapshot;
 }
