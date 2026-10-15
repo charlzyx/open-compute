@@ -36,7 +36,10 @@ const imports = {
   export function assembleOnce() { throw Error('unused'); }
   export function snapshotWorkerCode() { throw Error('unused'); }
   export function tenantGlobalOutbound() { throw Error('unused'); }
-  export function tenantLoader(env) { return env.LOADER; }`),
+  export function tenantLoader(env) { return env.LOADER; }
+  export async function loadTenantStub(env, _loaderKey, name, code) {
+    return { stub: env.LOADER.get(name, code), release() {} };
+  }`),
 };
 const { handleQueue } = await importRuntime("loader/dispatch.ts", imports);
 const instance = "019c0000000070008000000000000001";

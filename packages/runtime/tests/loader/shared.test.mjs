@@ -7,6 +7,7 @@ const {
   snapshotWorkerCode,
   pythonPreparationCode,
   tenantLoader,
+  loadTenantStub,
   WARM_RUNTIME_SNAPSHOT_BYTES,
 } = await importRuntime("loader/shared.ts", {
   "./snapshot.js": moduleUrl("export function assertSnapshot() {}"),
@@ -15,10 +16,12 @@ const {
   ),
 });
 
-test("one worker keeps a stable loader namespace across versions", () => {
+test("every worker shares one loader namespace", () => {
+  const names = [];
   const env = {
     WORKER_LOADER_FACTORY: {
       getPrivate(name) {
+        names.push(name);
         return { name };
       },
     },
@@ -26,14 +29,58 @@ test("one worker keeps a stable loader namespace across versions", () => {
   const worker = "019c0000000070008000000000000001/worker-a";
   const first = tenantLoader(env, `${worker}/version-1`);
   const redeployed = tenantLoader(env, `${worker}/version-2`);
-  assert.equal(first.name, redeployed.name);
-  assert.match(first.name, /^tenant\/(?:[0-9]|1[0-5])$/);
-  const shards = new Set();
+  assert.equal(first.name, "tenant/0");
+  assert.equal(redeployed.name, "tenant/0");
+  assert.notEqual(redeployed, first);
   for (let index = 0; index < 64; index += 1) {
-    shards.add(tenantLoader(env, `instance/worker-${index}/version`).name);
+    assert.equal(
+      tenantLoader(env, `instance/worker-${index}/version`).name,
+      "tenant/0",
+    );
   }
-  assert.ok(shards.size > 1);
-  assert.ok(shards.size <= 16);
+  assert.equal(names.length, 66);
+  assert.ok(names.every((name) => name === "tenant/0"));
+});
+
+test("tenant admission waits once 48 isolates are in flight", async () => {
+  let calls = 0;
+  const env = {
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        return {
+          get() {
+            calls += 1;
+            return { id: calls };
+          },
+        };
+      },
+    },
+  };
+  const open = [];
+  for (let index = 0; index < 48; index += 1) {
+    open.push(
+      await loadTenantStub(env, "worker", `name-${index}`, async () => ({})),
+    );
+  }
+  assert.equal(calls, 48);
+  let started = false;
+  const extra = loadTenantStub(
+    env,
+    "worker",
+    "overflow",
+    async () => ({}),
+  ).then((gate) => {
+    started = true;
+    return gate;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started, false);
+  open[0].release();
+  const gate = await extra;
+  assert.equal(started, true);
+  assert.equal(calls, 49);
+  gate.release();
+  for (const held of open.slice(1)) held.release();
 });
 
 test("runtime snapshot cache drops oldest entries past the byte budget", async () => {
