@@ -30,6 +30,33 @@ function warmSnapshotKey(
   return `${envelope.loaderKey}\0${envelope.expected}\0${envelope.routeGeneration}`;
 }
 
+/**
+ * Named isolates share one 64-slot cache per WorkerLoader namespace.
+ * Sixteen fixed namespaces cover concurrent tenants without growing the
+ * factory's 1024-namespace table. `getPrivate` is the host grant already held
+ * by `env.LOADER`; the public `get` loader rejects host policy and bindings.
+ */
+const TENANT_LOADER_SHARDS = 16;
+
+/** Return the loader namespace for one Worker. The factory reuses the namespace. */
+export function tenantLoader(env: LoaderEnv, loaderKey: string): WorkerLoader {
+  return env.WORKER_LOADER_FACTORY.getPrivate(
+    `tenant/${loaderShard(loaderKey)}`,
+  );
+}
+
+function loaderShard(loaderKey: string): number {
+  let hash = 2_166_136_261;
+  const start = loaderKey.indexOf("/") + 1;
+  const end = loaderKey.indexOf("/", start);
+  const workerId = end > start ? loaderKey.slice(start, end) : loaderKey;
+  for (let index = 0; index < workerId.length; index += 1) {
+    hash ^= workerId.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0) % TENANT_LOADER_SHARDS;
+}
+
 /** Generation-authenticated private binding header. */
 export const BINDING_TOKEN_HEADER = "x-open-compute-binding-token";
 

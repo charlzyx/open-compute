@@ -7,6 +7,7 @@ import {
   snapshotWorkerCode,
   stableCode,
   tenantGlobalOutbound,
+  tenantLoader,
 } from "../loader/shared.js";
 import { observedEntrypoint } from "../observability/collector.js";
 import {
@@ -95,7 +96,7 @@ export async function handleWorkflow(
     const versionId = loaderKey.split("/")[2]!;
     let cold = false;
     const key = `workflow/${validation}/${loaderKey}/${expected}/${className}/${body.versionDescriptorSha256}`;
-    const loaded = env.LOADER.get(key, async () => {
+    const loaded = tenantLoader(env, loaderKey).get(key, async () => {
       cold = true;
       const code = {
         ...(await snapshotWorkerCode(

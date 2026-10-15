@@ -2,13 +2,34 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { importRuntime, moduleUrl } from "../compiled-runtime.mjs";
 
-const { resolveSnapshot, snapshotWorkerCode, pythonPreparationCode } =
+const { resolveSnapshot, snapshotWorkerCode, pythonPreparationCode, tenantLoader } =
   await importRuntime("loader/shared.ts", {
     "./snapshot.js": moduleUrl("export function assertSnapshot() {}"),
     "./python-snapshot.js": moduleUrl(
       "export function resolvePythonSnapshot(env, snapshot, scope, token) { return env.snapshotRead(snapshot, scope, token); }",
     ),
   });
+
+test("one worker keeps a stable loader namespace across versions", () => {
+  const env = {
+    WORKER_LOADER_FACTORY: {
+      getPrivate(name) {
+        return { name };
+      },
+    },
+  };
+  const worker = "019c0000000070008000000000000001/worker-a";
+  const first = tenantLoader(env, `${worker}/version-1`);
+  const redeployed = tenantLoader(env, `${worker}/version-2`);
+  assert.equal(first.name, redeployed.name);
+  assert.match(first.name, /^tenant\/(?:[0-9]|1[0-5])$/);
+  const shards = new Set();
+  for (let index = 0; index < 64; index += 1) {
+    shards.add(tenantLoader(env, `instance/worker-${index}/version`).name);
+  }
+  assert.ok(shards.size > 1);
+  assert.ok(shards.size <= 16);
+});
 
 test("dynamic Worker validation delegates experimental flags to workerd", async () => {
   assert.deepEqual(

@@ -19,6 +19,7 @@ import {
   resolveSnapshot,
   snapshotWorkerCode,
   tenantGlobalOutbound,
+  tenantLoader,
 } from "../loader/shared.js";
 import { observedEntrypoint } from "../observability/collector.js";
 import {
@@ -479,26 +480,29 @@ async function loadedServiceTarget(
     };
     new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
     const entrypoint = extension.entrypoint;
-    const stub = env.LOADER.get(extension.loaderKey, async () => {
-      const built = modulesFor(snapshot, false, entrypoint);
-      return {
-        ...(await snapshotWorkerCode(
-          env,
-          snapshot,
-          "runtime",
-          env.INTERNAL_TOKEN,
-        )),
-        mainModule: built.mainModule,
-        modules: built.modules,
-        ...extensionEnvironment(
-          env.HOST_EXTENSION_FACTORY.get(extension.sessionIdentity),
-          entrypoint,
-          ctx.exports.ExtensionCacheTransport({ props: {} }),
-          built.policy,
-        ),
-        globalOutbound: null,
-      };
-    });
+    const stub = tenantLoader(env, extension.loaderKey).get(
+      extension.loaderKey,
+      async () => {
+        const built = modulesFor(snapshot, false, entrypoint);
+        return {
+          ...(await snapshotWorkerCode(
+            env,
+            snapshot,
+            "runtime",
+            env.INTERNAL_TOKEN,
+          )),
+          mainModule: built.mainModule,
+          modules: built.modules,
+          ...extensionEnvironment(
+            env.HOST_EXTENSION_FACTORY.get(extension.sessionIdentity),
+            entrypoint,
+            ctx.exports.ExtensionCacheTransport({ props: {} }),
+            built.policy,
+          ),
+          globalOutbound: null,
+        };
+      },
+    );
     return {
       snapshot,
       target: env.WORKER_LOADER_FACTORY.getEntrypoint(
@@ -542,7 +546,7 @@ async function loadedServiceTarget(
   const runtimeKey =
     `service/${worker.loaderKey}/${worker.workerCodeSha256}` +
     `/${entrypoint || "default"}`;
-  const stub = env.LOADER.get(runtimeKey, async () => {
+  const stub = tenantLoader(env, worker.loaderKey).get(runtimeKey, async () => {
     const code = await assembleOnce(runtimeKey, async () => {
       const built = modulesFor(snapshot, false, entrypoint);
       const versionId = worker.loaderKey.split("/")[2]!;

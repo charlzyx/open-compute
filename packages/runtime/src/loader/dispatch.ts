@@ -19,6 +19,7 @@ import {
   resolveSnapshot,
   snapshotWorkerCode,
   stableCode,
+  tenantLoader,
   tenantGlobalOutbound,
   TOKEN_HEADER,
 } from "./shared.js";
@@ -112,6 +113,9 @@ function classify(
   }
   for (const [code, status] of WORKFLOW_ERRORS) {
     if (message.includes(code)) return [code, status];
+  }
+  if (/WorkerLoader (?:cache|namespace) capacity exceeded/i.test(message)) {
+    return ["SERVICE_LIMIT_EXCEEDED", 429];
   }
   if (/entrypoint|no such entrypoint|was not found/i.test(message)) {
     return ["ENTRYPOINT_NOT_FOUND", 404];
@@ -235,7 +239,7 @@ export async function handleDispatch(
     if (snapshot.contentKind !== "worker")
       throw bindingError("VERSION_INVARIANT_VIOLATION");
     let cold = false;
-    const stub = env.LOADER.get(runtimeKey, async () => {
+    const stub = tenantLoader(env, envelope.loaderKey).get(runtimeKey, async () => {
       cold = true;
       const code = await assembleOnce(runtimeKey, async () => {
         const built = modulesFor(snapshot, validation, entrypoint);
@@ -430,7 +434,7 @@ async function customEventTarget(
   );
   const runtimeKey = envelope.runtimeKey;
   let cold = false;
-  const stub = env.LOADER.get(runtimeKey, async () => {
+  const stub = tenantLoader(env, envelope.loaderKey).get(runtimeKey, async () => {
     cold = true;
     return assembleOnce(runtimeKey, async () => {
       const built = modulesFor(snapshot, false, entrypoint);
@@ -626,7 +630,7 @@ export async function validateDurableObjectClass(
     internalToken,
   );
   try {
-    const loaded = env.LOADER.get(
+    const loaded = tenantLoader(env, envelope.loaderKey).get(
       `validate-do/${envelope.runtimeKey}`,
       async () => {
         const built = modulesFor(snapshot, true, className, true);
