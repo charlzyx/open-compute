@@ -71,8 +71,17 @@ const { handleDispatch, validateDurableObjectClass } = await importRuntime(
 
 test("runtime exceptions containing bundle vocabulary stay sanitized runtime failures", async () => {
   const key = `${instanceId}/${workerId}/${versionId}`;
-  const dispatch = (fetch, validation = false) =>
-    handleDispatch(
+  const dispatch = (fetch, validation = false) => {
+    const loader = {
+      get() {
+        return {
+          getEntrypoint() {
+            return { fetch };
+          },
+        };
+      },
+    };
+    return handleDispatch(
       request(key),
       {
         RUNTIME_SOURCE: {
@@ -85,19 +94,13 @@ test("runtime exceptions containing bundle vocabulary stay sanitized runtime fai
             }),
         },
         // This test exercises an already-loaded deployment; assembly has separate coverage.
-        LOADER: {
-          get() {
-            return {
-              getEntrypoint() {
-                return { fetch };
-              },
-            };
-          },
-        },
+        LOADER: loader,
+        WORKER_LOADER_FACTORY: { getPrivate: () => loader },
       },
       {},
       validation,
     );
+  };
   for (const message of [
     "Traceback: /session/metadata/python_modules/workers/asgi.py\nRuntimeError: private-secret",
     "unexpected syntax in application input: private-secret",
@@ -146,6 +149,11 @@ test("runtime exceptions containing bundle vocabulary stay sanitized runtime fai
     );
     assert.equal(error.cloudflareCode, validation ? 10021 : 1102);
   }
+  const capacity = await dispatch(async () => {
+    throw new Error("WorkerLoader cache capacity exceeded.");
+  });
+  assert.equal(capacity.status, 429);
+  assert.equal((await capacity.json()).error.code, "SERVICE_LIMIT_EXCEEDED");
   for (const [code, status] of [
     ["SERVICE_BINDING_DENIED", 403],
     ["SERVICE_TARGET_NOT_READY", 503],
@@ -204,6 +212,11 @@ test("warm runtime snapshots are reused until the route generation changes", asy
         };
       },
     },
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        return env.LOADER;
+      },
+    },
   };
   const call = (routeGeneration, validation = false) => {
     const input = request(key);
@@ -231,6 +244,18 @@ test("DO admission awaits loading and rejects failed or malformed host validatio
   const invoke = (fetch) => {
     const input = request(key);
     input.headers.set("x-open-compute-entrypoint", "Named");
+    const loader = {
+      get() {
+        return {
+          getDurableObjectClass() {
+            assert.fail("a lazy class handle is not admission proof");
+          },
+          getEntrypoint() {
+            return { fetch };
+          },
+        };
+      },
+    };
     return validateDurableObjectClass(input, {
       RUNTIME_SOURCE: {
         fetch: async () =>
@@ -241,18 +266,8 @@ test("DO admission awaits loading and rejects failed or malformed host validatio
             contentKind: "worker",
           }),
       },
-      LOADER: {
-        get() {
-          return {
-            getDurableObjectClass() {
-              assert.fail("a lazy class handle is not admission proof");
-            },
-            getEntrypoint() {
-              return { fetch };
-            },
-          };
-        },
-      },
+      LOADER: loader,
+      WORKER_LOADER_FACTORY: { getPrivate: () => loader },
     });
   };
   const load = Promise.withResolvers();
