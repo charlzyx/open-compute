@@ -16,9 +16,14 @@ const assembling = new Map<string, Promise<WorkerLoaderWorkerCode>>();
 /**
  * Bound on verified runtime snapshots kept in this loader isolate.
  * A route-generation bump (deploy, rollback, observability settings) misses.
+ * The byte budget is the memory cap; one live snapshot may exceed it so the
+ * hottest Worker still skips the runtime-source round trip.
  */
 const WARM_RUNTIME_SNAPSHOTS = 1024;
+export const WARM_RUNTIME_SNAPSHOT_BYTES = 32 * 1024 * 1024;
 const warmRuntimeSnapshots = new Map<string, RuntimeSnapshot>();
+const warmRuntimeSnapshotSizes = new Map<string, number>();
+let warmRuntimeSnapshotTotal = 0;
 
 /** Cache key for one immutable runtime snapshot, or null when the call must not be cached. */
 function warmSnapshotKey(
@@ -224,8 +229,11 @@ export async function resolveSnapshot(
   if (cacheKey) {
     const cached = warmRuntimeSnapshots.get(cacheKey);
     if (cached) {
+      const size = warmRuntimeSnapshotSizes.get(cacheKey) ?? 0;
       warmRuntimeSnapshots.delete(cacheKey);
+      warmRuntimeSnapshotSizes.delete(cacheKey);
       warmRuntimeSnapshots.set(cacheKey, cached);
+      warmRuntimeSnapshotSizes.set(cacheKey, size);
       return cached;
     }
   }
@@ -262,14 +270,44 @@ export async function resolveSnapshot(
   ) {
     throw bindingError("VERSION_INVARIANT_VIOLATION");
   }
-  if (cacheKey) {
-    if (warmRuntimeSnapshots.size >= WARM_RUNTIME_SNAPSHOTS) {
-      const oldest = warmRuntimeSnapshots.keys().next().value;
-      if (oldest !== undefined) warmRuntimeSnapshots.delete(oldest);
-    }
-    warmRuntimeSnapshots.set(cacheKey, snapshot);
-  }
+  if (cacheKey) rememberWarmSnapshot(cacheKey, snapshot);
   return snapshot;
+}
+
+function snapshotBytes(snapshot: RuntimeSnapshot): number {
+  let bytes = 256;
+  for (const module of snapshot.modules ?? []) {
+    bytes += module.name.length + module.bytesBase64.length;
+  }
+  for (const binding of snapshot.moduleBindings ?? []) {
+    bytes += binding.name.length + binding.bytesBase64.length;
+  }
+  return bytes;
+}
+
+function dropWarmSnapshot(key: string): void {
+  const size = warmRuntimeSnapshotSizes.get(key);
+  if (size === undefined) return;
+  warmRuntimeSnapshotTotal -= size;
+  warmRuntimeSnapshots.delete(key);
+  warmRuntimeSnapshotSizes.delete(key);
+}
+
+function rememberWarmSnapshot(key: string, snapshot: RuntimeSnapshot): void {
+  dropWarmSnapshot(key);
+  const size = snapshotBytes(snapshot);
+  warmRuntimeSnapshots.set(key, snapshot);
+  warmRuntimeSnapshotSizes.set(key, size);
+  warmRuntimeSnapshotTotal += size;
+  while (
+    warmRuntimeSnapshots.size > 1 &&
+    (warmRuntimeSnapshots.size > WARM_RUNTIME_SNAPSHOTS ||
+      warmRuntimeSnapshotTotal > WARM_RUNTIME_SNAPSHOT_BYTES)
+  ) {
+    const oldest = warmRuntimeSnapshots.keys().next().value;
+    if (oldest === undefined || oldest === key) break;
+    dropWarmSnapshot(oldest);
+  }
 }
 
 /** Deduplicate one immutable WorkerLoader assembly while it is in flight. */
