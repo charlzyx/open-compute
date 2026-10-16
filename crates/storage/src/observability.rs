@@ -158,6 +158,10 @@ impl ObservabilityStore {
             .and_then(|()| connection.pragma_update(None, "journal_mode", "WAL"))
             .and_then(|()| connection.pragma_update(None, "synchronous", "FULL"))
             .map_err(|_| unavailable())?;
+        // Migrate before applying the byte cap. A database already at the cap
+        // has no free pages, and a migration that adds an index (V3) would
+        // otherwise fail with SQLITE_FULL and leave the instance unable to start.
+        migrate(&mut connection)?;
         let page_size: u64 = connection
             .pragma_query_value(None, "page_size", |row| row.get(0))
             .map_err(|_| unavailable())?;
@@ -170,7 +174,6 @@ impl ObservabilityStore {
         connection
             .pragma_update(None, "max_page_count", max_pages)
             .map_err(|_| unavailable())?;
-        migrate(&mut connection)?;
         quick_check(&connection)?;
         bind_instance(&connection, instance_id)?;
         Ok(Self {

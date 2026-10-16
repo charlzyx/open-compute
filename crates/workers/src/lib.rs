@@ -46,6 +46,7 @@ pub use descriptor::{
     BuiltinBindingDescriptorV1, CacheEntrypointPolicyV1, CachePolicyDescriptorV1,
     QueueProducerBindingDescriptorV1, SYSTEM_MODULE_PREFIX, SecretDescriptor, ServiceDescriptor,
     WorkerCodeDescriptorV1, ciphertext_sha256, loader_key, parse_loader_key,
+    system_worker_sources_sha256,
 };
 pub use durable_objects::DurableObjectResourceDriver;
 pub use environment::{MAX_VARIABLE_BYTES, MAX_VARIABLES, canonicalize_vars, validate_env_name};

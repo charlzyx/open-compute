@@ -18,6 +18,15 @@ pub const SYSTEM_MODULE_PREFIX: &str = "cloudflare-internal:";
 const SYSTEM_WORKER_MANIFEST: &[u8] =
     include_bytes!("../../../packages/runtime/dist/manifest.json");
 
+/// SHA-256 of the embedded system Worker source manifest bound into every descriptor.
+///
+/// A change here changes every newly computed `worker_code_sha256`, so a
+/// system-owned version created by another runtime build can never be reused.
+#[must_use]
+pub fn system_worker_sources_sha256() -> [u8; 32] {
+    Sha256::digest(SYSTEM_WORKER_MANIFEST).into()
+}
+
 /// Immutable asset identity and routing included in the version descriptor.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -724,7 +733,7 @@ impl WorkerCodeDescriptorV1 {
             secret_revisions,
             binding_descriptors,
             queue_binding_descriptors,
-            system_worker_sources_sha256: hex::encode(Sha256::digest(SYSTEM_WORKER_MANIFEST)),
+            system_worker_sources_sha256: hex::encode(system_worker_sources_sha256()),
             workflow_binding_descriptors,
             service_descriptors,
             cache_policy,
