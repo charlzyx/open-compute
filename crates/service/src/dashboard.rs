@@ -62,7 +62,11 @@ pub async fn bootstrap_dashboard(
         ));
     }
 
-    let assets_sha256 = decode_assets_sha256(embedded_dashboard_assets_sha256())?;
+    // The pin must also change when the system Worker manifest changes: that
+    // manifest is bound into the descriptor, so a version created by another
+    // runtime build fails RuntimeSource verification.
+    let assets_sha256 =
+        dashboard_identity(&decode_assets_sha256(embedded_dashboard_assets_sha256())?);
     let version = if let Some(pin) =
         repo.get_system_owned_version(SystemOwnedVersionKind::Dashboard)?
         && pin.assets_sha256 == assets_sha256
@@ -128,7 +132,12 @@ async fn create_dashboard_version(
 ) -> Result<open_compute_storage::worker_repository::VersionRecord, PlatformError> {
     let assets = upload_embedded_assets(artifacts).await?;
     let system_workers = open_compute_runtime::embedded_runtime_compatibility()?.1;
-    let idempotency_key = format!("system-dashboard:{}", embedded_dashboard_assets_sha256());
+    let idempotency_key = format!(
+        "system-dashboard:{}",
+        hex::encode(dashboard_identity(&decode_assets_sha256(
+            embedded_dashboard_assets_sha256()
+        )?))
+    );
     let validator: Arc<dyn RuntimeValidator> = Arc::new(transport.clone());
     let controller = VersionController::new(storage, artifacts.clone(), validator, bundle_limits);
     let outcome = controller
@@ -246,6 +255,15 @@ async fn upload_embedded_assets(artifacts: &ArtifactStore) -> Result<VersionAsse
             redirects: Vec::new(),
         },
     })
+}
+
+/// Dashboard reuse identity: embedded assets plus the system Worker manifest.
+pub(crate) fn dashboard_identity(assets_sha256: &[u8; 32]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"open-compute/system-dashboard/v2\0");
+    digest.update(assets_sha256);
+    digest.update(open_compute_workers::system_worker_sources_sha256());
+    digest.finalize().into()
 }
 
 pub(crate) fn decode_assets_sha256(value: &str) -> Result<[u8; 32], PlatformError> {

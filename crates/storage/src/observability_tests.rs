@@ -643,3 +643,90 @@ fn retention_subtracts_deleted_bytes_and_uses_the_arrival_index() {
     assert!(index_sql.contains("received_at_ms"));
     assert!(index_sql.contains("invocation_id"));
 }
+
+#[test]
+fn migrates_received_index_when_the_database_is_already_at_the_byte_cap() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("observability.sqlite");
+    let mut connection = rusqlite::Connection::open(&path).unwrap();
+    crate::schema_migrations::migrate_to_for_test(
+        &mut connection,
+        crate::schema_migrations::DatabaseKind::Observability,
+        2,
+    );
+    connection
+        .execute(
+            "INSERT INTO observability_identity(singleton, instance_id) VALUES (1, ?1)",
+            [instance().as_str()],
+        )
+        .unwrap();
+    let payload = vec![0x61_u8; 64 * 1024];
+    let mut inserted = 0_u32;
+    loop {
+        let result = connection.execute(
+            "INSERT INTO observability_invocations
+             (invocation_id, script_name, version_id, event_timestamp_ms, received_at_ms,
+              event_type, outcome, cpu_time_ms, wall_time_ms, truncated, event_json, byte_size)
+             VALUES (?1, 'hello', 'v', 1, 1, 'fetch', 'ok', 1, 1, 0, ?2, ?3)",
+            rusqlite::params![
+                format!("row-{inserted}"),
+                &payload,
+                i64::try_from(payload.len()).unwrap()
+            ],
+        );
+        match result {
+            Ok(1) => inserted += 1,
+            Err(rusqlite::Error::SqliteFailure(error, _))
+                if error.code == rusqlite::ErrorCode::DiskFull =>
+            {
+                break;
+            }
+            other => panic!("filling observability database failed: {other:?}"),
+        }
+        if inserted == 1 {
+            let page_count: i64 = connection
+                .pragma_query_value(None, "page_count", |row| row.get(0))
+                .unwrap();
+            connection
+                .pragma_update(None, "max_page_count", page_count)
+                .unwrap();
+        }
+        assert!(
+            inserted < 10_000,
+            "observability fill never reached SQLITE_FULL"
+        );
+    }
+    assert!(inserted > 0);
+    let page_size: i64 = connection
+        .pragma_query_value(None, "page_size", |row| row.get(0))
+        .unwrap();
+    let page_count: i64 = connection
+        .pragma_query_value(None, "page_count", |row| row.get(0))
+        .unwrap();
+    let max_page_count: i64 = connection
+        .pragma_query_value(None, "max_page_count", |row| row.get(0))
+        .unwrap();
+    assert_eq!(page_count, max_page_count);
+    drop(connection);
+
+    let max_database_bytes = u64::try_from(page_count).unwrap() * u64::try_from(page_size).unwrap();
+    ObservabilityStore::open(&path, instance(), 100, 10_000, max_database_bytes).unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let version: i64 = connection
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, 3);
+    let index_sql: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?1",
+            ["observability_invocations_received"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(index_sql.contains("received_at_ms"));
+    assert!(index_sql.contains("invocation_id"));
+}

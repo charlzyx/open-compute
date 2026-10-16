@@ -1,5 +1,7 @@
-use crate::dashboard::{content_type, decode_assets_sha256};
+use crate::dashboard::{content_type, dashboard_identity, decode_assets_sha256};
 use open_compute_core::ErrorCode;
+use open_compute_workers::system_worker_sources_sha256;
+use sha2::{Digest, Sha256};
 
 #[test]
 fn embedded_dashboard_digest_and_content_types_are_strict() {
@@ -36,4 +38,20 @@ fn embedded_dashboard_digest_and_content_types_are_strict() {
     ] {
         assert_eq!(content_type(path), expected, "path={path}");
     }
+}
+
+#[test]
+fn dashboard_identity_mixes_assets_with_the_system_worker_manifest() {
+    let assets = [0xab; 32];
+    let identity = dashboard_identity(&assets);
+    assert_ne!(identity, assets);
+    assert_eq!(identity, dashboard_identity(&assets));
+
+    let mut digest = Sha256::new();
+    digest.update(b"open-compute/system-dashboard/v2\0");
+    digest.update(assets);
+    digest.update(system_worker_sources_sha256());
+    let expected: [u8; 32] = digest.finalize().into();
+    assert_eq!(identity, expected);
+    assert_ne!(identity, dashboard_identity(&[0xcd; 32]));
 }
