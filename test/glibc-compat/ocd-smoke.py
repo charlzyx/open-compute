@@ -28,6 +28,30 @@ def main():
     name = 'ocd-centos82-' + uuid.uuid4().hex
     token = ''
     base = ''
+    passed = False
+
+    def state():
+        raw = json.loads(docker('inspect', name).stdout)[0]
+        return {'state': {key: raw['State'][key] for key in
+                          ('Status', 'Running', 'ExitCode', 'OOMKilled', 'Error')},
+                'ports': raw['NetworkSettings']['Ports'],
+                'configuredPorts': raw['HostConfig']['PortBindings']}
+
+    def endpoint():
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            current = state()
+            if not current['state']['Running']:
+                raise AssertionError('CentOS daemon exited before port publication: ' + json.dumps(current['state']))
+            ports = current['ports']
+            if '8787/tcp' in ports and ports['8787/tcp']:
+                binding = ports['8787/tcp'][0]
+                assert binding['HostIp'] == '127.0.0.1', 'Smoke port must remain loopback-only'
+                port = int(binding['HostPort'])
+                assert 1 <= port <= 65535
+                return 'http://127.0.0.1:' + str(port)
+            time.sleep(0.1)
+        raise AssertionError('Docker did not publish the configured smoke port')
 
     def request(path, method='GET', body=None, content_type='application/json', host=None):
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': content_type}
@@ -60,6 +84,8 @@ def main():
 
     bootstrap = '''set -eu
 umask 077
+# CentOS ships /root without owner write; no DAC override is retained.
+chmod 0700 /root
 if [ ! -e /root/.open-compute/ocd.toml ]; then
   mkdir -p /root/.open-compute/keys
   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n' > /root/.open-compute/keys/admin.token
@@ -71,8 +97,7 @@ exec /ocd --no-update-check run
         docker('run', '--detach', '--name', name, '--cap-drop=ALL',
                '--security-opt=no-new-privileges', '--publish', '127.0.0.1::8787',
                *mounts, IMAGE, 'sh', '-c', bootstrap)
-        ports = json.loads(docker('inspect', '--format', '{{json .NetworkSettings.Ports}}', name).stdout)
-        base = 'http://127.0.0.1:' + ports['8787/tcp'][0]['HostPort']
+        base = endpoint()
         ready()
         docker('exec', name, '/ocd', '--no-update-check', 'instance', 'setup', '--yes', '--name', 'compat')
         token = docker('exec', name, 'cat', '/root/.open-compute/keys/admin.token').stdout.strip()
@@ -95,8 +120,7 @@ exec /ocd --no-update-check run
         worker_host = f'centos82-worker.{account}.localhost'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         docker('restart', '--time', '20', name)
-        ports = json.loads(docker('inspect', '--format', '{{json .NetworkSettings.Ports}}', name).stdout)
-        base = 'http://127.0.0.1:' + ports['8787/tcp'][0]['HostPort']
+        base = endpoint()
         ready()
         assert request(value_path) == b'ocd-centos82-worker-ok'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
@@ -109,11 +133,19 @@ exec /ocd --no-update-check run
                   'dockerRequiredByDaemon': False, 'passed': True}
         (EVIDENCE / 'centos82-ocd-smoke.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))
+        passed = True
     finally:
+        current = state()
+        (EVIDENCE / 'centos82-ocd-state.json').write_text(json.dumps(current, indent=2) + '\n')
+        if not passed:
+            print('CentOS container state: ' + json.dumps(current), flush=True)
         logs = docker('logs', name, check=False)
         # Tokens remain in the disposable container and never enter retained evidence.
         for suffix, content in [('stdout', logs.stdout), ('stderr', logs.stderr)]:
-            (EVIDENCE / ('centos82-ocd.' + suffix)).write_text(content.replace(token, '[redacted]') if token else content)
+            sanitized = content.replace(token, '[redacted]') if token else content
+            (EVIDENCE / ('centos82-ocd.' + suffix)).write_text(sanitized)
+            if not passed and sanitized:
+                print('CentOS daemon ' + suffix + ':\n' + sanitized[-8000:], flush=True)
         docker('rm', '--force', name, check=False)
 
 

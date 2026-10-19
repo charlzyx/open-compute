@@ -63,6 +63,5 @@ npx --version
 ./scripts/package-release.sh --dest "$evidence/ocd-linux-x64-glibc228" \
   --archive "$OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE" | tee "$evidence/package.json"
 python test/glibc-compat/check-elf.py "$evidence/ocd-linux-x64-glibc228" > "$evidence/ocd-elf.json"
-mbx test --locked -p open-compute-runtime --lib lock_source_tests
-mbx test --locked -p open-compute-runtime --lib packaged_lock_matches_formal_release_pin
+bash test/glibc-compat/check-runtime-tests.sh
 sha256sum "$evidence/ocd-linux-x64-glibc228" > "$evidence/SHA256SUMS"

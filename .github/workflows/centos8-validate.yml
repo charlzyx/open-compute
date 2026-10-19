@@ -1,0 +1,88 @@
+name: CentOS 8 exact artifact validation
+on:
+  push:
+    branches: [centos8-compat]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: centos8-validate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - name: Initialize exact sources and the binary producer commit
+        run: |
+          git submodule update --init --depth 1 third_party/workerd
+          git fetch --depth 1 origin 2ea9a7680ea790b861988b69e2242ca91304ea65
+      - name: Download the exact compiled ocd evidence
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39304268154
+          artifact-ids: 12214277150
+          path: .temp/glibc-ocd/source-evidence
+      - name: Verify binary hash, producer identity and unchanged production inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B test/glibc-compat/verify-ocd.py
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39282764991
+          artifact-ids: 12205507774
+          path: .temp/glibc-ocd/workerd
+      - name: Verify the exact compatible workerd input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B test/glibc-compat/verify-workerd.py
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: test/glibc-compat
+          file: test/glibc-compat/Dockerfile.ocd
+          tags: ocd-glibc228
+          load: true
+          cache-from: type=gha,scope=centos8-ocd
+          cache-to: type=gha,mode=max,scope=centos8-ocd
+      - uses: actions/cache/restore@v4
+        id: cargo_cache
+        with:
+          path: .temp/glibc-ocd/target
+          key: centos8-ocd-rust198-${{ hashFiles('Cargo.lock', 'test/glibc-compat/Dockerfile.ocd') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            centos8-ocd-rust198-${{ hashFiles('Cargo.lock', 'test/glibc-compat/Dockerfile.ocd') }}-
+      - name: Execute nonempty runtime regressions and verify embedded identity
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=$GITHUB_WORKSPACE" \
+            --workdir "$GITHUB_WORKSPACE" \
+            ocd-glibc228 bash test/glibc-compat/validate-ocd.sh
+      - name: Run the real CentOS daemon, KV Worker and restart verification
+        run: python3 -B test/glibc-compat/ocd-smoke.py
+      - name: Prepare owned evidence and reusable test cache
+        if: always()
+        run: |
+          if [ -d .temp/glibc-ocd ]; then
+            sudo chown -R "$(id -u):$(id -g)" .temp/glibc-ocd
+          fi
+          df -h "$GITHUB_WORKSPACE"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .temp/glibc-ocd/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ocd-linux-x64-glibc228-validated
+          path: .temp/glibc-ocd/evidence/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
