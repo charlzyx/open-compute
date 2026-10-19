@@ -30,6 +30,26 @@ source "$evidence/caddy.env"
 set +a
 python test/glibc-compat/check-elf.py "$OPEN_COMPUTE_TEST_WORKERD" > "$evidence/workerd-elf.json"
 python test/glibc-compat/check-elf.py "$OPEN_COMPUTE_BUILD_CADDY" > "$evidence/caddy-elf.json"
+# Runtime type generation invokes a native workerd through Miniflare. Record
+# the npm dependency's actual startup result, then use only our verified pin.
+node --input-type=module <<'JS' | tee "$evidence/npm-workerd-preflight.json"
+import {spawnSync} from 'node:child_process';
+import {existsSync, realpathSync} from 'node:fs';
+import {createRequire} from 'node:module';
+import {join, resolve} from 'node:path';
+const cf = createRequire(join(realpathSync('node_modules/cf'), 'package.json'));
+const candidate = cf.resolve.paths('@cloudflare/runtime-types')
+  .map(directory => join(directory, '@cloudflare/runtime-types/package.json'))
+  .find(existsSync);
+if (!candidate) throw new Error('The locked cf runtime-types package is missing');
+const runtime = createRequire(realpathSync(candidate))('workerd');
+const result = spawnSync(runtime.default, ['--version'], {encoding:'utf8', timeout:20000});
+console.log(JSON.stringify({version:runtime.version, exitCode:result.status,
+  signal:result.signal, stdout:result.stdout, stderr:result.stderr,
+  error:result.error?.message}));
+JS
+export MINIFLARE_WORKERD_PATH="$OPEN_COMPUTE_TEST_WORKERD"
+"$MINIFLARE_WORKERD_PATH" --version
 node --test --test-name-pattern='compatibility build profile' test/release-tools.test.mjs
 # cf delegates this fixture to npx; run the same locked Vite directly so a
 # native/tooling failure retains its complete output instead of a wrapper exit.
