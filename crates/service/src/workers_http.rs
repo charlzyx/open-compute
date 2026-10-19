@@ -23,6 +23,7 @@ pub struct WorkerApiState {
     storage: Arc<PlatformStorage>,
     artifacts: ArtifactStore,
     browser: Option<Arc<crate::browser::BrowserService>>,
+    containers: Option<Arc<crate::containers::ContainerService>>,
     response_cache: Option<Arc<open_compute_storage::cache::CacheManager>>,
     transport: WorkerdTransport,
     pins: VersionPins,
@@ -72,6 +73,7 @@ impl WorkerApiState {
             artifacts,
             response_cache: None,
             browser: None,
+            containers: None,
             transport,
             pins,
             bundle_limits,
@@ -91,6 +93,27 @@ impl WorkerApiState {
     ) -> Self {
         self.browser = browser;
         self
+    }
+
+    pub(crate) fn with_containers(
+        mut self,
+        containers: Option<Arc<crate::containers::ContainerService>>,
+    ) -> Self {
+        self.containers = containers;
+        self
+    }
+
+    pub(crate) async fn require_containers(&self) -> Result<(), PlatformError> {
+        self.containers
+            .as_ref()
+            .ok_or_else(|| {
+                PlatformError::new(
+                    ErrorCode::RuntimeUnavailable,
+                    "Container provider is unavailable or unqualified",
+                )
+            })?
+            .ensure_active()
+            .await
     }
 
     pub(crate) fn require_browser(&self) -> Result<(), PlatformError> {

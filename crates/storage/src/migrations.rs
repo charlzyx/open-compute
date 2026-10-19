@@ -78,6 +78,20 @@ fn apply_inner(
 }
 
 fn run_invariants(tx: &Transaction<'_>) -> Result<(), PlatformError> {
+    let unsupported_loader: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM worker_versions
+             WHERE state IN ('staging','validating','ready') AND loader_schema_version!=?1)",
+            [crate::worker_repository::LOADER_SCHEMA_VERSION],
+            |row| row.get(0),
+        )
+        .map_err(|_| migration_failed())?;
+    if unsupported_loader {
+        return Err(PlatformError::new(
+            ErrorCode::MigrationFailed,
+            "stored Worker loader schema is not supported by this release",
+        ));
+    }
     for table in [
         "refinery_schema_history",
         "platform_meta",
@@ -86,6 +100,21 @@ fn run_invariants(tx: &Transaction<'_>) -> Result<(), PlatformError> {
         "worker_versions",
         "version_python_prepared",
         "browser_sessions",
+        "container_images",
+        "container_snapshots",
+        "container_applications",
+        "container_application_targets",
+        "version_containers",
+        "container_instance_leases",
+        "container_application_settings",
+        "container_rollouts",
+        "container_rollout_members",
+        "container_registry_tokens",
+        "container_registry_uploads",
+        "container_registry_blobs",
+        "container_registry_tags",
+        "container_registry_manifests",
+        "container_target_configuration",
         "version_vars",
         "version_secrets",
         "hostname_claims",
@@ -168,6 +197,18 @@ fn run_invariants(tx: &Transaction<'_>) -> Result<(), PlatformError> {
         if !sql.contains(fragment) {
             return Err(migration_failed());
         }
+    }
+    let invalid_snapshot_sizes: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM container_snapshots WHERE image_size<0
+             OR (image_size IS NULL)!=(captured_at_ms IS NULL)
+             OR (state='ready' AND image_size IS NULL))",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| migration_failed())?;
+    if invalid_snapshot_sizes {
+        return Err(migration_failed());
     }
     let invalid_origins: bool = tx
         .query_row(

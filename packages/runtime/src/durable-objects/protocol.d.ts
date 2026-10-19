@@ -1,3 +1,4 @@
+import type { PublicTransport } from "cloudflare-internal:wrapped-binding";
 import type { LoaderEnv } from "../loader/protocol.js";
 import type { SocketAuthorityWire } from "../sockets/tunnel.js";
 import type { DoHost } from "./host.js";
@@ -24,6 +25,9 @@ export interface DoHostEnv extends LoaderEnv {
 
 /** Native transport with explicit per-stub ordering coordinates. */
 export interface DoRawTransport {
+  holdWebSocketHandoff(
+    handles: readonly string[],
+  ): Promise<ReadableStream<Uint8Array>>;
   startRpc(
     objectId: string,
     channelId: string,
@@ -47,8 +51,6 @@ export interface DoRawTransport {
     identity: DoObjectIdentity,
   ): Promise<void>;
   cancelConnect(operationId: string): Promise<void>;
-  fetch(request: Request): Promise<Response>;
-  connect(address: SocketAddress | string, options?: SocketOptions): Socket;
 }
 export interface DoRpcResultStub extends Disposable {}
 export interface DoRpcResultProvider extends Promise<DoRpcResultStub> {
@@ -87,7 +89,7 @@ export interface DoNamespaceCapability {
   namespacePrefix: string;
   namespaceNameKey: string;
   maxObjectNameBytes: number;
-  transport: DoRawTransport;
+  transport: object;
 }
 export interface AlarmProjection {
   scheduledTimeMs: number;
@@ -105,6 +107,7 @@ export interface AlarmIndexCapability {
   clear(): Promise<void>;
 }
 export interface LoadedDurableObject extends Rpc.DurableObjectBranded {
+  __openComputeInitialize(): Promise<void>;
   fetch(request: Request): Promise<Response>;
   __openComputePrepareFetch(
     token: string,
@@ -226,4 +229,8 @@ export interface DoNativeFactories {
   createRpcStub(policy: object): object;
   isRpcStub(value: unknown): boolean;
   createPrivateTransport(transport: object): object;
+  createPublicTransport(transport: object): PublicTransport;
+  createRpcTransport(transport: object): object;
+  createUserRpcTransport(transport: object): object;
+  disposeRpcResult(value: object): void;
 }

@@ -81,7 +81,7 @@ const transportUrl = moduleUrl(
     "../loader/bindings.js": inert,
     "../loader/modules.js": inert,
     "../observability/collector.js": inert,
-    "./facade.js": inert,
+    "./websocket-handoff.js": inert,
     "./deadline.js": deadlineUrl,
     "./control.js": controlUrl,
     "../sockets/tunnel.js": inert,
@@ -1763,4 +1763,73 @@ test("Service transport dispatches arbitrary native method and getter property n
   } finally {
     await transport.completeRoot(frame.scopeId);
   }
+});
+
+test("private channel WebSocket ownership uses one authenticated streaming handoff, not a JSON receipt", async () => {
+  const calls = [];
+  let dropped = false;
+  const body = new ReadableStream({
+    cancel() {
+      dropped = true;
+    },
+  });
+  const env = {
+    BINDING_BACKEND_TOKEN: "fixture-token",
+    BINDING_BACKEND: {
+      async fetch(url, init) {
+        calls.push({ url, init });
+        return new Response(body, {
+          headers: { "content-type": "application/octet-stream" },
+        });
+      },
+    },
+  };
+  const transport = new ServiceTransport({}, env);
+  const held = await transport.holdWebSocketHandoff(["issued-handle"]);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].url,
+    "http://binding-backend/internal/services/v1/websocket/handoff",
+  );
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    handles: ["issued-handle"],
+  });
+  assert.equal(calls[0].init.headers["x-binding-token"], "fixture-token");
+  assert.equal(
+    calls[0].init.headers["x-open-compute-startup-generation"],
+    "generation",
+  );
+  assert.equal(dropped, false);
+  await held.cancel();
+  assert.equal(dropped, true);
+});
+
+test("private channel WebSocket ownership rejects a wrong receipt and closes its body without retry", async () => {
+  let attempts = 0;
+  let dropped = false;
+  const transport = new ServiceTransport(
+    {},
+    {
+      BINDING_BACKEND_TOKEN: "fixture-token",
+      BINDING_BACKEND: {
+        async fetch() {
+          attempts += 1;
+          return new Response(
+            new ReadableStream({
+              cancel() {
+                dropped = true;
+              },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    transport.holdWebSocketHandoff(["issued-handle"]),
+    /SERVICE_UNAVAILABLE/,
+  );
+  assert.equal(attempts, 1);
+  assert.equal(dropped, true);
 });

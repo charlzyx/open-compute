@@ -6,7 +6,7 @@ use axum::http::{HeaderMap, Request};
 use open_compute_artifacts::{
     ArtifactRef, ArtifactStore, MapEnv, MockS3, ObjectBackend, resolve_s3_credentials_with,
 };
-use open_compute_core::{AiConfig, DataConfig, PlatformConfig, Redactor, SystemClock};
+use open_compute_core::{AiConfig, DataConfig, PlatformConfig, Redactor, SystemClock, VersionId};
 use open_compute_runtime::verify_runtime_binary;
 use open_compute_storage::PlatformStorage;
 use open_compute_storage::worker_repository::PythonPreparedArtifactRecord;
@@ -215,7 +215,7 @@ impl Fixture {
         script: &str,
         content_type: &str,
         bytes: Vec<u8>,
-    ) -> (u16, HeaderMap, Vec<u8>) {
+    ) -> (u16, HeaderMap, Vec<u8>, Option<VersionId>) {
         // The public API creates a new script with PUT. Version POST requires
         // an existing script and leaves its active deployment unchanged.
         let exists: bool = self
@@ -231,7 +231,7 @@ impl Fixture {
         } else {
             ("", "PUT")
         };
-        self.request(
+        let (status, headers, body) = self.request(
             &format!(
                 "/client/v4/accounts/{}/workers/scripts/{script}{suffix}?bindings_inherit=strict",
                 self.public_account
@@ -241,7 +241,21 @@ impl Fixture {
             bytes,
             RequestTarget::Admin,
         )
-        .await
+        .await;
+        let version = if (200..300).contains(&status) {
+            let response: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(response["success"], true);
+            let field = if exists {
+                "id"
+            } else {
+                assert_eq!(response["result"]["id"], script);
+                "deployment_id"
+            };
+            Some(response["result"][field].as_str().unwrap().parse().unwrap())
+        } else {
+            None
+        };
+        (status, headers, body, version)
     }
 
     pub(crate) async fn invoke(&self, script: &str, path: &str) -> Value {
@@ -299,7 +313,7 @@ impl Fixture {
              --{boundary}\r\nContent-Disposition: form-data; name=\"index.js\"; filename=\"index.js\"\r\nContent-Type: application/javascript+module\r\n\r\n{source}\r\n\
              --{boundary}--\r\n"
         );
-        let (status, _, bytes) = self
+        let (status, _, bytes, version) = self
             .upload_version(
                 script,
                 &format!("multipart/form-data; boundary={boundary}"),
@@ -309,7 +323,7 @@ impl Fixture {
         assert_eq!(status, 200, "JavaScript Version admission failed");
         let response: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(response["success"], true);
-        let version = response["result"]["id"].as_str().unwrap().to_owned();
+        let version = version.unwrap().to_string();
         let id = uuid::Uuid::parse_str(&version).unwrap().to_string();
         let (state, prepared): (String, i64) = self.connection().query_row(
             "SELECT v.state, (SELECT count(*) FROM version_python_prepared p WHERE p.version_id=v.id)

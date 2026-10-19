@@ -6,6 +6,7 @@
 
 pub mod browser;
 pub mod compile;
+mod container_provider;
 mod embedded;
 mod launch_resources;
 mod lease;
@@ -21,6 +22,7 @@ mod fsutil;
 pub use compile::{
     CompileRequest, CompiledConfig, ConfigRole, PlatformReleaseMeta, compile_static_config,
 };
+pub use container_provider::ContainerProviderConfig;
 pub use digest::runtime_assets_sha256;
 pub use embedded::{
     RuntimeCacheCleanReport, RuntimePackage, clean_embedded_runtime_cache, embedded_browser_view,

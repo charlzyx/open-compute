@@ -7,6 +7,36 @@ use axum::body::Body;
 use axum::http::Request;
 use open_compute_core::{ComponentName, ComponentState, MetricsConfig, ReadinessReason};
 
+#[test]
+fn registry_selects_exact_public_account_and_authenticates_in_the_destination() {
+    let id = InstanceId::generate();
+    assert_eq!(
+        registry_path_instance(&format!("/v2/{id}/application/blobs/uploads/")),
+        Some(id)
+    );
+    assert_eq!(registry_path_instance("/v2/unowned/application"), None);
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(format!("{id}:private-registry-token"));
+    let request = Request::builder()
+        .uri("/v2/")
+        .header(header::AUTHORIZATION, format!("Basic {encoded}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(registry_basic_instance(&request), Some(id));
+    for (path, auth) in [
+        ("/v2/", "Basic invalid"),
+        ("/client/v4/accounts", "Basic ignored"),
+        ("/v2/", "Bearer private-registry-token"),
+    ] {
+        let request = Request::builder()
+            .uri(path)
+            .header(header::AUTHORIZATION, auth)
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(registry_basic_instance(&request), None);
+    }
+}
+
 fn state(deployer: &str) -> HttpState {
     let metrics =
         Arc::new(MetricsRegistry::new(&MetricsConfig::default(), "test", "test").unwrap());

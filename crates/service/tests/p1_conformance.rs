@@ -82,6 +82,11 @@ fn p1_capabilities_are_complete_and_identical_across_fresh_processes() {
         first["release"]["workerd_lock_sha256"]
     );
     let products = first["products"].as_object().expect("products");
+    let inventory: open_compute_core::CapabilityInventoryV1 = serde_json::from_slice(
+        include_bytes!("../../../share/cloudflare-capabilities.json"),
+    )
+    .expect("fixed capability inventory");
+    assert!(inventory.validate());
     for name in ["deployments", "service_bindings", "workers_cache"] {
         assert_eq!(
             products[name]["status"], "supported_with_deviation",
@@ -93,7 +98,6 @@ fn p1_capabilities_are_complete_and_identical_across_fresh_processes() {
         assert!(products[name].get("members").is_none(), "{name}");
     }
     for name in [
-        "workers",
         "kv",
         "r2",
         "d1",
@@ -101,7 +105,6 @@ fn p1_capabilities_are_complete_and_identical_across_fresh_processes() {
         "alarms",
         "queues",
         "cron",
-        "workflows",
         "cache_api",
         "ai",
         "vectorize",
@@ -124,6 +127,29 @@ fn p1_capabilities_are_complete_and_identical_across_fresh_processes() {
                 .expect(name)
                 .iter()
                 .all(|member| member["status"] != "blocked"),
+            "{name}"
+        );
+    }
+    for name in ["workers", "workflows", "artifacts"] {
+        assert_eq!(products[name]["kind"], "target", "{name}");
+        assert_eq!(products[name]["status"], "blocked", "{name}");
+        assert!(products[name].get("capability_version").is_none(), "{name}");
+        assert!(products[name].get("methods").is_none(), "{name}");
+        assert_eq!(
+            products[name],
+            serde_json::to_value(&inventory.products[name]).expect("fixed product projection"),
+            "{name}"
+        );
+        let members = products[name]["members"].as_array().expect(name);
+        assert!(
+            members.iter().any(|member| member["status"] == "blocked"),
+            "{name}"
+        );
+        assert!(
+            members.iter().any(|member| matches!(
+                member["status"].as_str(),
+                Some("supported" | "supported_with_deviation")
+            )),
             "{name}"
         );
     }

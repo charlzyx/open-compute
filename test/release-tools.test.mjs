@@ -237,12 +237,18 @@ test("release qualification and local Docker diagnostic keep their exact boundar
   );
   assert.doesNotMatch(workflow, /merge-base --is-ancestor "\$GITHUB_SHA"/);
   assert.match(workflow, /^cache-mode: read$/m);
-  assert.match(workflow, /  coverage:\n    needs: failfast\n/);
   assert.match(
     workflow,
-    /name: Enforce 90 percent Rust line coverage\n\s+env:\n\s+CARGO_BUILD_JOBS: "2"\n\s+OPEN_COMPUTE_COVERAGE_HTML: "0"\n\s+run: \.\/test\/coverage\.sh --jobs 2/,
+    /  coverage:\n    needs: \[failfast, fixture-images\]\n/,
   );
-  assert.match(workflow, /  integration:\n    needs: failfast\n/);
+  assert.match(
+    workflow,
+    /name: Enforce 90 percent Rust line coverage\n\s+env:\n\s+CARGO_BUILD_JOBS: "2"\n\s+OPEN_COMPUTE_COVERAGE_HTML: "0"\n\s+run: \|\n\s+python3 -I -B test\/containers-fixture\/with-ci-macos-engine\.py[\s\S]*?--command \.\/test\/coverage\.sh --jobs 2/,
+  );
+  assert.match(
+    workflow,
+    /  integration:\n    needs: \[failfast, fixture-images\]\n/,
+  );
   assert.match(
     workflow,
     /  sdk-package:\n    # Build the SDK tarball once[\s\S]*?needs: failfast\n/,

@@ -1,0 +1,12 @@
+{
+  "max_instances": 2,
+  "max_snapshots": 32,
+  "max_snapshot_bytes": 8589934592,
+  "resources": {
+    "cpuNanos": 62500000,
+    "memoryBytes": 268435456,
+    "diskBytes": 2000000000,
+    "pids": 64,
+    "openFiles": 1024
+  }
+}

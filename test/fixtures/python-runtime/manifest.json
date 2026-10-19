@@ -3,9 +3,9 @@
   "cliSha256": "48b44ab41bc56054f64db01fdbb6f46b91bed9cb065edee229d8732ed8ef0d9d",
   "buildOutputConfigSha256": "269076d49158e8268afd4fb8ec2da334700f72afab4618e5af38bfc1de974d80",
   "producer": "cf workers versions create --prebuilt",
-  "contentType": "multipart/form-data; boundary=----formdata-undici-075126881025",
-  "size": 2222241,
-  "sha256": "515bb1afe95d4672ddc69e8050813511f55db8356af516a8a68e3c4634d77a4d",
+  "contentType": "multipart/form-data; boundary=----formdata-undici-014531337554",
+  "size": 2222107,
+  "sha256": "0c640ab580508e57763ee871712b50066741caada9fc223bb651eba8785090b6",
   "metadata": {
     "main_module": "main.py",
     "bindings": [
@@ -121,8 +121,8 @@
       "name": "artifact_cases.py",
       "uploadName": "./artifact_cases.py",
       "mime": "text/x-python",
-      "size": 2941,
-      "sha256": "c654cb491559bffd0490af18dc8dbb13dff4aefd36d5a525cb8e31ec0cd8cca2"
+      "size": 2807,
+      "sha256": "b77c96c8f3bade7e44caa18e2f3e4f8e6a4ddc430932807a3e8006440df7e72d"
     },
     {
       "name": "cache_cases.py",
@@ -339,7 +339,7 @@
       "uploadName": "./python_modules/charset_normalizer-3.5.2.dist-info/RECORD",
       "mime": "application/octet-stream",
       "size": 2170,
-      "sha256": "db1e852d00ff53001d970fd8c08730a9ba0324a71edbcda6e981c9d26769355a"
+      "sha256": "fc3d1fec675294687f802ce72a1d9139e04b3ddb1db3c53c646f5cfe516c7d4f"
     },
     {
       "name": "python_modules/charset_normalizer-3.5.2.dist-info/REQUESTED",
@@ -500,7 +500,7 @@
       "uploadName": "./python_modules/httpx-0.28.1.dist-info/RECORD",
       "mime": "application/octet-stream",
       "size": 2556,
-      "sha256": "d378682a6fec9c7bed57437265ee65df5f64b580e4c465645f1b939b62167b9f"
+      "sha256": "ed0cea16bd6d9411c96c422a6a09d19f45f0e5fbae68a7f052af0f487e51b7cd"
     },
     {
       "name": "python_modules/httpx-0.28.1.dist-info/REQUESTED",
@@ -724,7 +724,7 @@
       "uploadName": "./python_modules/idna-3.20.dist-info/RECORD",
       "mime": "application/octet-stream",
       "size": 1408,
-      "sha256": "3cb0895f23304ff3f6e4c33438b6324dac4651c02f1c736690192ff1998c3dfa"
+      "sha256": "de53f7b1f6bdf4ac4e3dbd8fc3640ed54e911de3da0352dc1cbcb79606f18ee1"
     },
     {
       "name": "python_modules/idna-3.20.dist-info/REQUESTED",

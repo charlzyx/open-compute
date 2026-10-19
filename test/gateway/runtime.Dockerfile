@@ -9,7 +9,9 @@ ENV OPEN_COMPUTE_BUILD_CADDY=/src/.temp/runtime-inputs/caddy/caddy
 RUN cargo install mbx --version 1.22.0 --locked
 RUN mbx settings set build_script_execution false \
     && mbx settings set target.views false \
-    && mbx settings set restore_hardlink false
+    && mbx settings set restore_hardlink false \
+    && mbx settings set gc.auto false
+ENV MBX_GC_AUTO=false
 RUN mbx build --locked -p open-compute-service --bin ocd
 
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3

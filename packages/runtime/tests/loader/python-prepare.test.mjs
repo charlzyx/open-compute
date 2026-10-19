@@ -62,6 +62,7 @@ const snapshot = {
   moduleBindings: [],
   workerLoaders: [],
   browserBindings: [],
+  containerClasses: [],
   env: { SECRET: "private-value" },
   bindings: [],
   services: [],

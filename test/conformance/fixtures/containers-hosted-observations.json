@@ -1,0 +1,700 @@
+{
+  "schemaVersion": 1,
+  "scope": "Hosted observations of selected inputs; not local runtime qualification",
+  "workersTypesVersion": "5.20260930.2",
+  "gitHead": "d99bc6b777e35d72d71c2f1fe2fd1db53284528a",
+  "observedDate": "2026-10-12",
+  "primaryUrls": [
+    "https://developers.cloudflare.com/containers/api/durable-object-container/",
+    "https://developers.cloudflare.com/containers/guides/snapshots/"
+  ],
+  "evidencePath": ".temp/p23-full64/20261012-extended-summary/evidence.json",
+  "evidenceSha256": "8858bc1308d2ce36cb6daa72b81d1bba6d16255b36c15751f64f35254fa963fd",
+  "members": [
+    {
+      "id": "containers::Container::destroy:method#0",
+      "signatureSha256": "7c4c89a8618a2afef891896de4de5259df070e1d206ae4650374b29625d28091",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "stop and same-error forced monitor",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::exec:method#0",
+      "signatureSha256": "bbe8a1ac24bcf91ded53516bf0659b9558f813fd23a46d67af0296c68c075f88",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "separated streams, env, cwd/user, default HOME, PTY and combined stderr",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::getTcpPort:method#0",
+      "signatureSha256": "1b0a89d219a5891bbf2383c7d4c45f9278b6abb6c683ce6655d313f9e68bf109",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "HTTP preserves POST/path/query/header/body after positive readiness. WebSocket preserves status101/response header, masked text request and echo, clean close1000/finished, server exit0 and stdout EOF.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::images:get#0",
+      "signatureSha256": "b8ec6c30a82c6ce7fb5d38fe12b2314aee43b420f31cab5c659c68b2c978c0ad",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "empty object getter and property descriptor",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::inspect:method#0",
+      "signatureSha256": "4c1cd24209bafa93ced0f76bad9734a90ccf1cb3b57e04cb2cde588885e888c6",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "fresh/stopped null; running image/labels; CF19 distinct-content snapshots restore correctly into fresh DOs but both image references are equal and nonempty. Their relation to base/derived image remains unproved.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::interceptAllOutboundHttp:method#0",
+      "signatureSha256": "2f3adf2f3660c54df63b3706e25eb70ea597ccccb1ea9c5c0ac5c0f3a9ab6347",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::interceptOutboundHttp:method#0",
+      "signatureSha256": "54b0a39d809b3b5aa6e7b099c81a0d0ee537bb1da207a019ed75604548116cd7",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::interceptOutboundHttps:method#0",
+      "signatureSha256": "9bea6ba10103f6c21defe89f16e8c0eaab364ff80afe68e55ed56d092375235f",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "One hostname rule with enableInternet=false routes TLS through a WorkerEntrypoint; injected CA and hostname verification, POST/header/body, status201, response header/body and connection close verified. Other patterns/ports and local equivalence unverified.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::monitor:method#0",
+      "signatureSha256": "d15b873b6a1b623e5d932d93b4c91c9a458e44e5ef6ff598926951dca889440c",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "exit0 resolves, exit7 rejects with exitCode7, destroy reason preserves identity",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::running:get#0",
+      "signatureSha256": "df15bf941add2a80be4c7cd3350f43ac34e46af4e2024b9a9a842089111a529f",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "fresh/running/stopped values",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::setInactivityTimeout:method#0",
+      "signatureSha256": "395b7c45bfca744e4212b83650945bb88c72e84da38b8e8a98f3a96048de089c",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "<=0 and >6h rejects. Without ctx.abort or tenant monitor waitUntil, a 90.001s external quiet window leaves the 1s timeout subject stopped (inspect=null/running=false) and the 120s control running; exact expiry timing and local equivalence remain unverified.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::signal:method#0",
+      "signatureSha256": "0525d7d279361f2c38dadfac52dc531e9080f5ffa8de1141ebcca664bd65882a",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Main SIGUSR1(10) reaches trap and monitor rejects exitCode23. A fresh direct exec kill -34 1 control reaches the prepared PID1 trap and main monitor rejects exit23/running=false. One Container.signal(34) call in a distinct prepared object returns, but six bounded observations across actual12225ms retain running=true, pending monitor and ready marker; final delivery semantics remain unverified.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::snapshotContainer:method#0",
+      "signatureSha256": "1130ed6e4de76b338242133a3df759d58b06981b9b4e38cee49d85f07f120ce9",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "named and omitted options create snapshot; cross-object restore preserves file bytes/mode",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::Container::start:method#0",
+      "signatureSha256": "72eeb07ed76c866c266a40ed00fed1dbbfb11dfd181a7c2221d43c5bbde95a95",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "image and containerSnapshot source branches, startup env/labels/entrypoint",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::dir:property#0",
+      "signatureSha256": "fc45d34b75a84fda8ff01496713d4f48aae85464d00e63ba57e19ad6e6b67c48",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::id:property#0",
+      "signatureSha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::name:property#0",
+      "signatureSha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::size:property#0",
+      "signatureSha256": "e67f216782c35b2b5ed092bb85956ae8a28f9608a9899976c11d78305a637452",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#0",
+      "signatureSha256": "547569b229d9ef63599dc57e353ce55128af14bb5af651b793853629b2b1edea",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#1",
+      "signatureSha256": "7cd2c260c21746139dd22defa06360ed10100d686901a733da9e38559ff9285a",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-negative-subset",
+      "observation": "mountPoint without snapshot accepted by fixed types; hosted execution failed to start, with monitor rejection and null inspect",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#0",
+      "signatureSha256": "e521b70b5c265e36b24ff93e00d6d2c9c4d4786ab263e2f3d152fa5b5618dfe1",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#1",
+      "signatureSha256": "ed18cfe0c085cb02137310c6818ae4aef6dd706a267aeae49661ebdf8c61bc93",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-negative-subset",
+      "observation": "mountPoint without snapshot accepted by fixed types; hosted execution failed to start, with monitor rejection and null inspect",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::cwd:property#0",
+      "signatureSha256": "e322ddd7484fd1939491f30420f349d766722cf91c10b7f95e4442f7dc3ce6c6",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "/tmp accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::env:property#0",
+      "signatureSha256": "86aca1d87e92fdab1942a94d97e68c9c716b193a232291839da4577ccacb5777",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "exec env does not inherit startup env",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::pty:property#0",
+      "signatureSha256": "d342a6a20a7d243f139cf89bfbff3faeb42e8b63ec4d01d469e42bbc4c6504d9",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Real PTY reports isPty=true and stty80x24, resize100x30 with SIGWINCH.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::signal:property#0",
+      "signatureSha256": "1f78e1308c166981ca5caa2c22c7da18923f1fd468a11e2bbfefa6f19308a5fd",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::stderr:property#0",
+      "signatureSha256": "a9185a87c56a25c4852080af3001c013cbc4dbb2176738a61c71eab748b63644",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "pipe and combined observed",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::stdin:property#0",
+      "signatureSha256": "5ddf57ba480f19c954ba6a9203f70a5844316a30b99eb772db7b883b9efa9ea4",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "pipe accepts bytes and close",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::stdout:property#0",
+      "signatureSha256": "6cf003f9aa43a5d64926b158f6d6e3340ee6e68acb95e9555465260c343b364f",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "pipe observed",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecOptions::user:property#0",
+      "signatureSha256": "ac8df97d41eb17f83a28682fb2526f690760f16cb1aece362c0ac26a8a87992c",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "0 accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecPtyOptions::cols:property#0",
+      "signatureSha256": "33684d6ce973c013f462009eee6d512d224ffeb2b490669f8971d4597e8ce4e3",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Real PTY stty reports initial cols80 and resized cols100 after SIGWINCH handshake.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerExecPtyOptions::rows:property#0",
+      "signatureSha256": "ccd150ab3d27f43da209c89eedcab100ed178a7f12e4f10730c72c4214d27220",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Real PTY stty reports initial rows24 and resized rows30 after SIGWINCH handshake.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerInfo::image:property#0",
+      "signatureSha256": "f4faf349c97c570e8f456f769e67b8136ff7deba44124795619ccfce54b203c5",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Source inspect returns cloudflare/debian-trixie. CF19 restores two distinct-content snapshots into fresh DOs with the same nonempty registry reference; public application metadata has no immutable identity mapping. Base/derived/platform identity remains unproved.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerInfo::labels:property#0",
+      "signatureSha256": "30c7132dd931e10a6ec30325ddb586da589cd60e4267ddbf5ff491157b37a6bf",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "purpose label returned",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerSnapshot::id:property#0",
+      "signatureSha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "opaque ID returned and restored",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerSnapshot::name:property#0",
+      "signatureSha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "named snapshot returned",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerSnapshot::size:property#0",
+      "signatureSha256": "e67f216782c35b2b5ed092bb85956ae8a28f9608a9899976c11d78305a637452",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Hosted1502/prior2850 bytes and controlled file/directory changes observed; full formula remains unverified. The local candidate now obtains actual Docker ImageInspect.Size from the verified derived snapshot config ID and ordered diff IDs, independently of artifact length and quota. Matching upstream uses that Engine field. Real local product validation and hosted size accounting remain unverified; compatibility stays blocked.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerSnapshotOptions::name:property#0",
+      "signatureSha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "surface-checkpoint accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerSnapshotRestoreParams::id:property#0",
+      "signatureSha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "cross-object restore by returned ID",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartResources::diskMb:property#0",
+      "signatureSha256": "9c6f72cf30f5964070170ca444c9c7fd6129918a267fe6cf4f4b1d7958620b84",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartResources::memoryMib:property#0",
+      "signatureSha256": "0249201df54605705568d397ed7018355079eaba33c2dd2888c6afb8b279f33b",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartResources::vcpu:property#0",
+      "signatureSha256": "294047398eca52d4613fe59a40f73c47ffd5f70374395ce376f9c704982b919f",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::containerSnapshot:property#0",
+      "signatureSha256": "9c26fcd938d8338fd9f1ae1cd7882ff465f67841cda1db8394011a1e4cf218a3",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "returned whole-container snapshot ID restores file/mode",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::containerSnapshot:property#1",
+      "signatureSha256": "10a2bee6681f7f71fc13386c270d2547e6b3a384beda15670b500a68209da67e",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "returned whole-container snapshot ID restores file/mode",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::directorySnapshots:property#0",
+      "signatureSha256": "f2783260a3d4ef79060f82e40cdac7aa425dda7db9c32ab9be869f18c0b73238",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-negative-subset",
+      "observation": "nonexistent snapshot ID negative; typed mount-only start failed on hosted Cloudflare: exec/monitor rejected as not started, inspect null, running false",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::enableInternet:property#0",
+      "signatureSha256": "21d16b807ca3e308b3c39d60ee237a26eaf89ed181bd508d63f13fdc48422925",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "false accepted; network policy not probed here",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::entrypoint:property#0",
+      "signatureSha256": "aa88b8989a87d779637a874c556d9b94abaaeb979f8f8a795bea4829688109f6",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "/bin/sh startup accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::env:property#0",
+      "signatureSha256": "86aca1d87e92fdab1942a94d97e68c9c716b193a232291839da4577ccacb5777",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Selected startup names NORMAL_NAME, A-B, a.b and 257 ASCII A characters accepted and verified in /proc/1/environ; Unicode and empty names reject via monitor; exec does not inherit startup variables",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::image:property#0",
+      "signatureSha256": "f4faf349c97c570e8f456f769e67b8136ff7deba44124795619ccfce54b203c5",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "cloudflare/debian-trixie accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::image:property#1",
+      "signatureSha256": "673188aa18fc6adddbadc0d72308ff8bcd32c4be84478abf805dda5e867aaff9",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "cloudflare/debian-trixie accepted",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::instance:property#0",
+      "signatureSha256": "0a93b1be717ce31a82a47352af98c126e29e018b5b28a7f87ec9bbba996fe9d6",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ContainerStartupOptions::labels:property#0",
+      "signatureSha256": "4e25413c63a43826036d048eb5777b00c500b074c0b62c1c89d7bb644d170f56",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "purpose label visible in inspect",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::DurableObjectState::container:property#0",
+      "signatureSha256": "aaac9e863bac31d59af279eeba94a22579681d172546782d4c2114325e138d56",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "attachment reached through ctx.exports DO",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecOutput::exitCode:property#0",
+      "signatureSha256": "0ad2b8bb10c9e52fd81e971882be90aec077719a780266ee855c7187d7e84a4e",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "0 and7",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecOutput::stderr:property#0",
+      "signatureSha256": "0aa1864a9e11cf6c17951d4f071ddf6cf5eac804a15923001a7f52663b7df8ff",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "separate and combined values",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecOutput::stdout:property#0",
+      "signatureSha256": "121d15e1c8d0e0eecde18db400ec7cb83ddcdf6e212c41a3cf8457e88a0b1e18",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "pipe/PTY/combined values",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::exitCode:property#0",
+      "signatureSha256": "519631f878a0cd9dc85d5248c084f40fb0da048211356ceb8a8448e7997cfe00",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "promise resolves7",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::isPty:property#0",
+      "signatureSha256": "0c8a7105e4914e87c97bf070b48f019fd02217ffb16d5320e0fd49ae83c63b6f",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "false andtrue",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::kill:method#0",
+      "signatureSha256": "c7b8aef435367ff4dfa8dadebdf057e07142a8c7220be833f9f221f5b0f05191",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "unverified-runtime",
+      "observation": null,
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::output:method#0",
+      "signatureSha256": "9ee74fb9891d3c5ecb9a0ac558ee7a1b70d3813b1da9dcdbd1d277033e0e6109",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "stdout/stderr/exitCode returned",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::pid:property#0",
+      "signatureSha256": "de5b16932df7b0a8cf490015954c325b2e13849c09bacc89e8ef4dc9a7209dd4",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Selected PTY ExecProcess.pid4 equals the actual Bash shell $$4.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::resize:method#0",
+      "signatureSha256": "d26f5e0277b0b3a0442ca94dfa2b5fcc18ce38114db3e4dae979d819d398e980",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "resize({cols:100,rows:30}) from80x24 causes real SIGWINCH and stty reports30 100; stdin finish, exit7 and EOF follow.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::stderr:property#0",
+      "signatureSha256": "e902dcaef7de54cf36d37d7769175a4c350eace67e233bd21468f0313c91eebf",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Separated exec exposes a readable stream. Selected combined PTY exec exposes undefined; stdout contains both stdout/stderr markers. Official documentation explicitly explains the fixed ReadableStream|null declaration versus undefined runtime discrepancy. Matching native Optional absence agrees with the documented runtime value; formal local qualification remains incomplete.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::stdin:property#0",
+      "signatureSha256": "72b281917163b3044c4bb9a0a57424ff3cd1fd95c27a395040cbb5a1b5cff559",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "PTY writable stream accepts finish line and close; shell acknowledges stdin finish before exit7 and EOF.",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    },
+    {
+      "id": "containers::ExecProcess::stdout:property#0",
+      "signatureSha256": "6dcdcebb5c2560b69ec94594ce8b1369d66a0bc503de22d7c82c77ade908b4a0",
+      "maintainedStatus": "blocked",
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "readable stream",
+      "typeAndMatchingSourceEvidence": true,
+      "fullMemberQualificationPassed": false
+    }
+  ],
+  "additionalEvidence": [
+    {
+      "evidencePath": ".temp/p23-full64/official-stream-discrepancy-reconciliation/review.json",
+      "evidenceSha256": "531ccb3e172c264cd05671809d2fa05b9c20c1d1d0fb34c417cbdf52e2611f54",
+      "scope": "Read-only reconciliation of the explicit official exec-stream note, fixed types, matching upstream Optional getter and retained PTY observation. The runtime undefined value is documented; the null declaration remains an acknowledged upstream discrepancy. No formal R15 member or full65 qualification."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/directory-stable-input-investigation/report.json",
+      "evidenceSha256": "69dacd4e25f165990f07bce24dd2aa1f8f6f170b65ca6d9545c16fd7877a39a4",
+      "scope": "Bounded read-only investigation of fixed cf command groups, embedded SDK routes, installed official SDKs and current public Containers management documentation. No legitimate stable directory snapshot producer/list/reference was found in inspected surfaces; no account query, write, new mount probe or qualification. Does not prove absence of private or account-gated functionality; nine directory members remain blocked."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/snapshot-size-integration/candidate-v3.json",
+      "evidenceSha256": "32a79217fd45dba2cef148d40131321fa6a9f70aa12144debbea746a628b09e0",
+      "scope": "Integrated source candidate replaces OCI artifact length with actual Docker ImageInspect.Size of the verified derived snapshot image, persists independent immutable metadata and requires Provider protocol v2. It adds the successful-load/missing-final-proof failure matrix. Format, source policy and Darwin service typecheck passed with verified R9 build inputs; Rust tests, new Broker qualification, R15 products and hosted size parity remain unverified. Historical candidates and reviews retain their original sources and terminology; the later official-stream reconciliation clarifies the documented type/runtime discrepancy."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-gap-closure/source-conflicts-readonly-review.json",
+      "evidenceSha256": "bde1776adfa05383637c6e5c845b1b4b77a9439cf5833fcccf877bc50a01d8c3",
+      "scope": "Cross-object filesystem restoration, size observations, and unresolved official-source conflicts; no local qualification claim"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-tcp-ready/hosted-observations-review.json",
+      "evidenceSha256": "b6db9417c83567e4980410a84b39b2e341b6b79717a450b2226a3f40b852f4e2",
+      "scope": "Selected hosted inputs only; no complete member or local qualification claim"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-directory-start-result/hosted-observations-review.json",
+      "evidenceSha256": "09f9deff63c2d1fae43ce325b640163cfcb3c3bcced9c4ec5c91d26548a4edae",
+      "scope": "Typed mount-only negative startup observation and exact cleanup; successful directory mount semantics remain unverified"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-controlled-env-rt-attempt-8/hosted-observations-review.json",
+      "evidenceSha256": "1b0fcd214ebb17f5be4dfb5cca295c8742f7895b430687ced14cd3a1700761d9",
+      "scope": "Selected startup environment name acceptance, rejection and main-process values; exec name boundary unverified"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-controlled-signal-phases-9/hosted-observations-review.json",
+      "evidenceSha256": "3ac35518eb44d7a197a7310d56e5bba8842acc994e34a222ba1f82a7772c58a6",
+      "scope": "Selected staged signal observations; main34 preparation failed, original attempt failed, cleanup inventory independently restored"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-isolated-signal34-12/hosted-observations-review.json",
+      "evidenceSha256": "05aeaea8f93f87dbc23c79e26a5959591ebcf7f455d7e86292e68aa44ba114a8",
+      "scope": "One prepared main signal34 call returns without observed trap exit in bounded windows; selected observations only, exact resource inventories restored, no complete member qualification"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261012-inactivity-natural-idle-13/hosted-observations-review.json",
+      "evidenceSha256": "91675973c83f33c0386d9e743af8135859b7e1599ee6a4005894468420c08c5d",
+      "scope": "One unforced 90s inactivity window: 1s subject stopped, 120s control running; exact expiry timing and local equivalence unverified; exact resource inventories restored"
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261013-https-websocket-15/hosted-observations-review.json",
+      "evidenceSha256": "9a2fd26c9779699e01fec75a31693cf3a6225ec50b062339eb515179ffdb5500",
+      "scope": "One hostname HTTPS interception verifies injected CA and hostname, POST/header/body/status and connection close. One getTcpPort WebSocket verifies upgrade/header, masked request and echo, code/reason/clean close, real server exit0 and stream EOF. Wildcards, other ports, limits, failure behavior and local equivalence remain unverified."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261013-pty-staged-17/hosted-observations-review.json",
+      "evidenceSha256": "9df8759270f696b08bee18b2093658c15feaa0ad94e70503e7ce220114118f5a",
+      "scope": "One already-running Container executes a real PTY with 80x24 initial geometry, 100x30 resize and SIGWINCH; shell PID equals ExecProcess.pid, stdin finish, merged stdout/stderr, exit7 and EOF verified. Combined PTY ExecProcess.stderr is undefined, a declaration/runtime discrepancy explicitly explained by official documentation. Other values, failure branches and local equivalence remain unverified."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/snapshot-size-directory-readonly-review-final.json",
+      "evidenceSha256": "c18e6677b8717afcca85840156b919105f63ec9c1b056c43d8c1f280e7f84526",
+      "scope": "Read-only review of snapshot size and directory qualification gaps against fixed upstream and primary Moby sources; no new hosted observation, local runtime execution or qualification claim."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/20261013-signal34-mount-controlled-18/hosted-observations-review.json",
+      "evidenceSha256": "bbd0c81e20e05699e9a4b7fdd8a5adea380b36d51ae1fae2172f15d1c4044b37",
+      "scope": "Two ordinary start/inspect/destroy controls with identical image bracket a failed typed mount-only start. Direct exec kill -34 1 reaches the prepared main trap and monitor exit23; a distinct Container.signal(34) call returns once, but six observations across actual12225ms remain pending/running/ready. 15000ms is the budget, not actual elapsed. Exact inventory cleanup verified. No universal directory, permanent-ignore, local runtime or full-member qualification claim."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/inspect-image-controlled-19-preparation/hosted-observations-review.json",
+      "evidenceSha256": "3ead3255b23a822b65b9582d4aaeccae5b555286e0a79607cf90816c231ccd85",
+      "scope": "Single controlled CF19 run exits0 after official build/deploy0: two distinct-content snapshot IDs restore their exact markers and SHA into fresh DOs; both restored inspect.image references are identical and match the prior hosted reference. Source inspect retains cloudflare/debian-trixie; public application metadata provides no immutable mapping. Base/derived/platform identity and registry formula remain unproved. Independent read-only verification restores all three inventories and finds no secret file. Application/Worker deletion does not prove snapshot-byte deletion or billing ended; no snapshot delete endpoint was discovered. No local runtime or full-member qualification."
+    }
+  ],
+  "sourceConflicts": [
+    {
+      "memberId": "containers::Container::inspect:method#0",
+      "documentation": "Snapshot-restored image is empty",
+      "hostedObservation": "CF19 restores two distinct-content snapshot IDs into fresh DOs with identical nonempty registry references; source inspect remains cloudflare/debian-trixie. Base/derived/platform identity and registry formula are unproved.",
+      "status": "blocked"
+    },
+    {
+      "memberId": "containers::Container::snapshotContainer:method#0",
+      "documentation": "Omitted options throw TypeError",
+      "fixedTypesAndMatchingSource": "Options are optional",
+      "hostedObservation": "Omitted options succeed",
+      "status": "blocked"
+    },
+    {
+      "memberId": "containers::ExecProcess::stderr:property#0",
+      "fixedTypesAndMatchingSource": "Fixed type is ReadableStream|null; matching native getter returns absent Optional for combined stderr",
+      "documentation": "Official API documentation explicitly states absent streams and combined/PTY stderr are undefined, and acknowledges the TypeScript null declarations",
+      "hostedObservation": "Combined PTY stderr is undefined; merged stdout contains both streams",
+      "classification": "documented-upstream-type-runtime-discrepancy; runtime expectation is known, formal local member qualification remains incomplete",
+      "status": "blocked"
+    }
+  ]
+}

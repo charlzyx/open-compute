@@ -280,7 +280,7 @@ request_timeout_ms = 3000
             .with_cache(cache.clone());
             let auth = source_auth.clone();
             async move {
-                serve_runtime_source(source_listener, source, auth, async move {
+                serve_runtime_source(source_listener, source, auth, None, async move {
                     let _ = receiver.changed().await;
                 })
                 .await

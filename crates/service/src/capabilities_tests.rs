@@ -182,16 +182,20 @@ fn workflow_capabilities_report_current_model_and_operator_limits() {
                     ("WorkerLoaderWorkerCode", "streamingTails"),
                 ])
             );
-        } else if name == "browser_rendering" {
+        } else if inventory.products[name].kind == ProductKind::Target
+            && inventory.products[name].status == CapabilityStatus::Blocked
+        {
             assert_eq!(product.kind, ProductKind::Target);
             assert_eq!(product.status, CapabilityStatus::Blocked);
             assert_eq!(product.capability_version, None);
             assert!(!product.members.is_empty());
             assert!(
-                product.members.iter().all(|member| {
-                    member.validate() && member.status == CapabilityStatus::Blocked
-                })
+                product
+                    .members
+                    .iter()
+                    .all(open_compute_core::CapabilityMemberV1::validate)
             );
+            assert_eq!(product.members, inventory.products[name].members);
         } else if product.kind == ProductKind::Target {
             assert!(matches!(
                 product.status,

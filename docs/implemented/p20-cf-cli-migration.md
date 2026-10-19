@@ -17,6 +17,12 @@
 - 现有 v4 产品接口继续复用 SQLite 与不可变 Version/Deployment authority。新版 Worker 删除与版本 GET/list 入口按 account 下的 name/public ID 解析到既有 authority，版本支持分页与校验后的模块读取，保留鉴权、引用、drain 与清理边界。
 - API/capability/SDK、上游 pin/刷新工具、真实 cf 测试和 portable differential runner 同步切换。服务端不根据客户端品牌选择实现，不维护双 schema/read/write 或历史 alias。
 
+## Containers producer 实施
+
+[P23](p23-cloudflare-containers.md) 使用此处固定的 cf、官方 Vite 插件和 `@cloudflare/containers`。
+Container application 和 rollout 的 producer fixture 已冻结；真实 cf deploy subprocess 与 runtime/provider 验收仍待完成。
+应用使用标准 `cloudflare.config.ts`，不增加自有 Container 构建工具或 runtime pull 路径。
+
 ## 验收证据
 
 验收输入为正式 workerd `v1.20260930.0-open-compute-r3.e3bdb07f5`（revision `e3bdb07f52affc6a618f02ed2b731a581b0b2f69`，maximum date `2026-10-07`）与正式 Caddy `2.11.4-open-compute.2`；未修改 runtime locks。所有 real-runtime Gates 使用校验后的 pinned binary。

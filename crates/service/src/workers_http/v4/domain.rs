@@ -49,6 +49,10 @@ pub(super) async fn create_from_upload(
     request_id: RequestId,
     now_ms: i64,
 ) -> Result<CreateVersionOutcome, PlatformError> {
+    super::do_lifecycle::validate_containers(&upload.metadata)?;
+    if !upload.metadata.containers.is_empty() {
+        api.require_containers().await?;
+    }
     let migration = super::do_lifecycle::prepare(
         api,
         instance_id,
@@ -111,6 +115,12 @@ async fn create_from_prepared_upload(
             )
         })
         .transpose()?;
+    input.apply_containers(
+        api,
+        instance_id,
+        worker.id,
+        migration.map(super::do_lifecycle::PreparedDoMigration::tag),
+    )?;
     input.apply_inheritance(api, previous.as_ref(), strict_inheritance)?;
     let reservation_owner = request_id.to_string();
     if let Err(error) = input.apply_explicit_bindings(
@@ -215,6 +225,10 @@ pub(super) async fn validate_new_upload(
     strict_inheritance: bool,
     now_ms: i64,
 ) -> Result<(), PlatformError> {
+    super::do_lifecycle::validate_containers(&upload.metadata)?;
+    if !upload.metadata.containers.is_empty() {
+        api.require_containers().await?;
+    }
     let mut input = UploadInput::new(upload.metadata.clone());
     input.apply_inheritance(api, None, strict_inheritance)?;
     input.apply_explicit_bindings(

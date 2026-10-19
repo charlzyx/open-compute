@@ -143,8 +143,15 @@ pub(super) async fn clone_version(
         cache_options: None,
         exports: None,
         migrations: None,
+        containers: Vec::new(),
     });
     input.apply_inheritance(api, Some(&snapshot), true)?;
+    input.runtime_features.containers =
+        open_compute_storage::containers::ContainerAuthority::new(api.storage.db())
+            .version_declarations(worker.instance_id, source_version)?;
+    if !input.runtime_features.containers.is_empty() {
+        api.require_containers().await?;
+    }
     if let Some((authority, _)) = binding_patch {
         let reservation_owner = request_id.to_string();
         if let Err(error) = input.apply_explicit_bindings(

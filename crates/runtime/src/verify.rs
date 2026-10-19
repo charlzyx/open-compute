@@ -121,6 +121,35 @@ impl VerifiedRuntime {
         &self.lock_bytes
     }
 
+    /// Require the native private Container attachment protocol from this verified executable.
+    pub async fn check_container_protocol(
+        &self,
+        deadline: Duration,
+        redactor: &Redactor,
+    ) -> Result<(), PlatformError> {
+        let output = self
+            .run(
+                &["container-protocol-version"],
+                deadline,
+                128,
+                redactor,
+                None,
+            )
+            .await?;
+        if !output.status.is_some_and(|status| status.success())
+            || output.timed_out
+            || output.stdout_overflow
+            || output.stderr_overflow
+            || output.stdout != b"open-compute-container-protocol-v3\n"
+        {
+            return Err(PlatformError::new(
+                ErrorCode::RuntimeInvalid,
+                "verified runtime lacks the required native Container attachment protocol",
+            ));
+        }
+        Ok(())
+    }
+
     /// Opened executable. Never a caller pathname.
     pub(crate) fn executable_file(&self) -> &File {
         self.file.as_ref()

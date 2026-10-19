@@ -230,6 +230,22 @@ pub struct RuntimeObservabilityIdentity {
     pub persist: bool,
 }
 
+/// Verified immutable Container class declaration supplied only to the trusted DO host.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeContainerClass {
+    /// Immutable same-Worker SQLite export.
+    pub class_name: String,
+    /// Stable Durable Object namespace identity.
+    pub namespace_resource_id: String,
+    /// Version-declared application name, independent of its mutable target.
+    pub application_name: String,
+    /// Verified immutable named images from this Version declaration.
+    pub images: BTreeMap<String, String>,
+    /// Independently verified canonical declaration digest.
+    pub descriptor_sha256: String,
+}
+
 /// Fully verified immutable version assembly.
 #[derive(Clone)]
 pub struct RuntimeSnapshot {
@@ -271,6 +287,8 @@ pub struct RuntimeSnapshot {
     pub scheduled_targets: Vec<RuntimeScheduledTarget>,
     /// Verified lazy Service declarations.
     pub services: Vec<RuntimeServiceBinding>,
+    /// Immutable Container class declarations; these carry no execution or engine authority.
+    pub container_classes: Vec<RuntimeContainerClass>,
     /// Verified automatic response-cache policy.
     pub cache_policy: RuntimeCachePolicy,
     /// Verified native Worker Loader bindings.
@@ -305,6 +323,7 @@ impl std::fmt::Debug for RuntimeSnapshot {
             .field("workflow_binding_count", &self.workflow_bindings.len())
             .field("scheduled_target_count", &self.scheduled_targets.len())
             .field("service_count", &self.services.len())
+            .field("container_class_count", &self.container_classes.len())
             .field("cache_enabled", &self.cache_policy.enabled)
             .field("worker_loader_count", &self.worker_loaders.len())
             .field("ai_binding", &self.ai_binding.is_some())

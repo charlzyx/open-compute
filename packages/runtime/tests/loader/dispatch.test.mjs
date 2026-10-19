@@ -52,7 +52,7 @@ const { handleDispatch, validateDurableObjectClass } = await importRuntime(
     "../observability/collector.js": moduleUrl(
       "export function observedEntrypoint(stub) { return stub.getEntrypoint(); }",
     ),
-    "../services/facade.js": moduleUrl(
+    "../services/websocket-handoff.js": moduleUrl(
       "export const SERVICE_WEBSOCKET_HANDOFF_HEADER='x-handoff'; export function serviceWebSocketHandoffHandles() { return []; }",
     ),
     "./bindings.js": moduleUrl(
@@ -122,6 +122,33 @@ test("runtime exceptions containing bundle vocabulary stay sanitized runtime fai
     assert.equal(invalid.status, 422);
     assert.equal((await invalid.json()).error.code, "BUNDLE_RUNTIME_INVALID");
   }
+  const invalidExport =
+    "Failed to start Worker:\nUncaught TypeError: Incorrect type for map entry 'TenantPrivateClass': the provided value is not of type 'function or ExportedHandler'.\n    at private-entry.js:1:1";
+  for (const validation of [false, true]) {
+    const response = await dispatch(async () => {
+      throw new Error(invalidExport);
+    }, validation);
+    assert.equal(response.status, validation ? 422 : 500);
+    const payload = await response.json();
+    assert.equal(
+      payload.error.code,
+      validation ? "BUNDLE_RUNTIME_INVALID" : "RUNTIME_INTERNAL",
+    );
+    assert.doesNotMatch(
+      JSON.stringify(payload),
+      /TenantPrivateClass|map entry|provided value|ExportedHandler|private-entry/,
+    );
+  }
+  const platformFailure = await dispatch(async () => {
+    throw Object.assign(new Error(invalidExport), {
+      stableCode: "ARTIFACT_UNAVAILABLE",
+    });
+  }, true);
+  assert.equal(platformFailure.status, 503);
+  assert.equal(
+    (await platformFailure.json()).error.code,
+    "ARTIFACT_UNAVAILABLE",
+  );
   const good = await dispatch(async () => new Response("ready"));
   assert.equal(good.status, 200);
   assert.equal(await good.text(), "ready");

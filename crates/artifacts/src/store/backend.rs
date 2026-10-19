@@ -93,7 +93,7 @@ impl ArtifactStore {
                 }
                 _ => error::integrity_error(),
             })?;
-        verify_reader(&mut file, expected_size, &expected)?;
+        verify_reader(&file, expected_size, &expected)?;
         file.rewind().map_err(|_| error::integrity_error())?;
         let result = self
             .backend
@@ -424,6 +424,7 @@ impl ArtifactStore {
             ObjectSource::Bytes(Bytes::from(bytes)),
             &digest,
             expected_size,
+            || Ok(()),
         )
         .await
     }
@@ -435,43 +436,63 @@ impl ArtifactStore {
         expected_sha256: &str,
         expected_size: u64,
     ) -> Result<ArtifactRef, PlatformError> {
+        parse_sha256(expected_sha256)?;
+        if expected_size > self.backend.max_object_bytes() {
+            return Err(artifact_too_large());
+        }
+        let file = open_private_source(path, expected_size).map_err(|failure| match failure {
+            BackendError::Unavailable => PlatformError::new(
+                ErrorCode::DiskHardLimit,
+                "artifact staging file is unavailable",
+            ),
+            _ => error::integrity_error(),
+        })?;
+        self.put_verified_open_file(file, expected_sha256, expected_size, || Ok(()))
+            .await
+    }
+
+    /// Consume a private regular file, including an anonymous file, without heap buffering.
+    ///
+    /// The caller must relinquish access to the source. `before_put` runs only after a
+    /// verified missing-object preflight, immediately before publication. Its failure
+    /// prevents PUT. The source is hashed again after the callback to reject tampering.
+    pub async fn put_verified_open_file<F>(
+        &self,
+        file: std::fs::File,
+        expected_sha256: &str,
+        expected_size: u64,
+        before_put: F,
+    ) -> Result<ArtifactRef, PlatformError>
+    where
+        F: FnOnce() -> Result<(), PlatformError>,
+    {
         let expected = parse_sha256(expected_sha256)?;
         if expected_size > self.backend.max_object_bytes() {
             return Err(artifact_too_large());
         }
-        let mut file =
-            open_private_source(path, expected_size).map_err(|failure| match failure {
-                BackendError::Unavailable => PlatformError::new(
-                    ErrorCode::DiskHardLimit,
-                    "artifact staging file is unavailable",
-                ),
-                _ => error::integrity_error(),
-            })?;
-        verify_reader(&mut file, expected_size, &expected)?;
-        file.rewind().map_err(|_| {
-            PlatformError::new(
-                ErrorCode::DiskHardLimit,
-                "failed to rewind artifact staging file",
-            )
-        })?;
+        let source = ObjectSource::File {
+            file,
+            length: expected_size,
+        };
+        source.validate().map_err(|_| error::integrity_error())?;
+        if let ObjectSource::File { file, .. } = &source {
+            verify_reader(file, expected_size, &expected)?;
+        }
         let digest = hex::encode(expected);
-        self.publish_artifact(
-            ObjectSource::File {
-                file,
-                length: expected_size,
-            },
-            &digest,
-            expected_size,
-        )
-        .await
+        self.publish_artifact(source, &digest, expected_size, before_put)
+            .await
     }
 
-    async fn publish_artifact(
+    async fn publish_artifact<F>(
         &self,
         source: ObjectSource,
         digest: &str,
         size: u64,
-    ) -> Result<ArtifactRef, PlatformError> {
+        before_put: F,
+    ) -> Result<ArtifactRef, PlatformError>
+    where
+        F: FnOnce() -> Result<(), PlatformError>,
+    {
         let key = physical_key(self.backend.prefix(), digest);
         let artifact = ArtifactRef::new(1, digest, size)?;
         match self.head(&artifact).await {
@@ -482,6 +503,11 @@ impl ArtifactStore {
             }
             Err(failure) if error::is_not_found(&failure) => {}
             Err(failure) => return Err(failure),
+        }
+        before_put()?;
+        source.validate().map_err(|_| error::integrity_error())?;
+        if let ObjectSource::File { file, .. } = &source {
+            verify_reader(file, size, &parse_sha256(digest)?)?;
         }
         let result = self
             .backend
@@ -562,6 +588,22 @@ impl ArtifactStore {
             .delete(&object_key(&artifact.physical_key(self.backend.prefix()))?)
             .await
             .map_err(error::from_backend)
+    }
+
+    /// Prove object absence; unavailable or corrupt storage is not evidence of deletion.
+    pub async fn is_absent(&self, artifact: &ArtifactRef) -> Result<bool, PlatformError> {
+        match self
+            .backend
+            .head(
+                &object_key(&artifact.physical_key(self.backend.prefix()))?,
+                HeadOptions::default(),
+            )
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(BackendError::NotFound) => Ok(true),
+            Err(error) => Err(error::from_backend(error)),
+        }
     }
 
     /// Bounded listing of internal artifact candidates for grace-period GC.

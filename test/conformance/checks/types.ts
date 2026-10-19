@@ -64,7 +64,7 @@ export async function publicTypesSurface(): Promise<void> {
   );
   if (
     packageJson.version !== lockTypes.version ||
-    packageJson.version !== "5.20260830.1"
+    packageJson.version !== "5.20260930.2"
   ) {
     throw new Error("installed @cloudflare/workers-types version drift");
   }
@@ -109,7 +109,7 @@ export async function publicTypesSurface(): Promise<void> {
   ) {
     throw new Error("workers-types AST digest drift");
   }
-  if (installedAst.lines !== 17525 || installedAst.statements < 100) {
+  if (installedAst.lines !== 18494 || installedAst.statements < 100) {
     throw new Error("upstream stable declaration is incomplete");
   }
   execFileSync(
@@ -179,6 +179,7 @@ export function conformanceSelfTests(): void {
         join(ROOT, "test/conformance/case-evidence.test.mjs"),
         join(ROOT, "test/conformance/inventory.test.mjs"),
         join(ROOT, "test/conformance/p6-contract.test.mjs"),
+        join(ROOT, "test/conformance/p23-cf-wire.test.mjs"),
       ],
       {
         cwd: ROOT,

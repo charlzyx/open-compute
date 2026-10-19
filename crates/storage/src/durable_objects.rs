@@ -22,10 +22,12 @@ use std::str::FromStr;
 
 #[path = "durable_object_migrations.rs"]
 mod worker_migrations;
-pub(crate) use worker_migrations::publish_worker_migration_tx;
 pub use worker_migrations::{
     DurableObjectClassRename, DurableObjectMigrationHead, DurableObjectMigrationPlan,
     DurableObjectMigrationPreparation,
+};
+pub(crate) use worker_migrations::{
+    publish_worker_migration_tx, validate_worker_migration_version_conn,
 };
 
 mod helpers;

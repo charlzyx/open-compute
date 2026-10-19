@@ -115,6 +115,7 @@ async fn exercise_worker_binding(
         r#"export default { async fetch(_request, env) {
   const created = await env.ARTIFACTS.create("worker-repo", { description: "worker" });
   const repo = await env.ARTIFACTS.get(created.name);
+  const info = await repo.info();
   const token = await repo.createToken("read", 60);
   const tokens = await repo.listTokens();
   const revoked = await repo.revokeToken(token.id);
@@ -125,7 +126,7 @@ async fn exercise_worker_binding(
   } catch (error) { invalidImport = error.code; }
   const listed = await env.ARTIFACTS.list({ limit: 50 });
   const deleted = await env.ARTIFACTS.delete(forked.name);
-  return Response.json({ created, repo: { id: repo.id, name: repo.name }, token: { id: token.id, scope: token.scope }, totalTokens: tokens.total, revoked, listed: listed.total, deleted, invalidImport });
+  return Response.json({ created, repo: { id: info.id, name: info.name }, token: { id: token.id, scope: token.scope }, totalTokens: tokens.total, revoked, listed: listed.total, deleted, invalidImport });
 } };"#,
     )
     .unwrap();

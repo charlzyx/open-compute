@@ -7,6 +7,7 @@ mod artifact;
 mod backend;
 mod cache;
 mod client;
+mod container_image;
 mod credentials;
 mod error;
 mod git_repo;
@@ -30,6 +31,11 @@ pub use backend::{
     UploadedPart,
 };
 pub use cache::{ArtifactCache, CacheCleanReport, PinnedArtifact, PinnedArtifactReader};
+pub use container_image::{
+    ContainerImageLimits, OciBlob, VerifiedContainerImage, read_container_image_configuration,
+    verify_container_archive, verify_container_image, verify_container_image_archive,
+    write_container_docker_archive, write_container_image_archive, write_container_snapshot_image,
+};
 pub use credentials::{S3Credentials, resolve_s3_credentials};
 pub use git_repo::{GitObject, GitObjectKind, GitRepositoryStore};
 pub use inspect::{CacheSample, probe_object_storage};

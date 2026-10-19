@@ -76,6 +76,7 @@ test("vinext offline checks reject changed frozen inputs and installed packages"
     .filter((name) => name.length > 0 && existsSync(resolve(root, name)));
   files.push(
     "bun.lock",
+    "package.json",
     "test/conformance/catalog.json",
     "test/conformance/applications/check-vinext.ts",
     "test/conformance/applications/vinext.json",
@@ -129,6 +130,25 @@ test("vinext offline checks reject changed frozen inputs and installed packages"
       }
     });
   }
+  await t.test("catalog version drift", () => {
+    const path = resolve(sandbox, "package.json");
+    const bytes = readFileSync(path);
+    try {
+      const metadata = JSON.parse(bytes);
+      metadata.catalog["@cloudflare/workers-types"] = "0.0.0";
+      writeFileSync(path, JSON.stringify(metadata));
+      const result = run();
+      assert.notEqual(result.status, 0);
+      assert.ok(
+        result.stderr.includes(
+          "fixture package identity drift: @cloudflare/workers-types",
+        ),
+        result.stderr,
+      );
+    } finally {
+      writeFileSync(path, bytes);
+    }
+  });
   await t.test("installed package drift", () => {
     unlinkSync(dependencies);
     const directory = resolve(dependencies, "@cloudflare/vite-plugin");

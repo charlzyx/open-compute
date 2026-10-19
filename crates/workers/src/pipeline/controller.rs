@@ -1,6 +1,8 @@
 use super::*;
+use open_compute_storage::containers::ContainerAuthority;
 
 mod debug;
+mod secrets;
 mod workflows;
 
 /// P0.2 version orchestrator over typed P0.1 capabilities.
@@ -330,6 +332,7 @@ impl<'a> VersionController<'a> {
         if content.kind() == VersionContentKind::AssetsOnly {
             cache_rows.clear();
         }
+        let descriptor = descriptor.with_containers(request.runtime_features.containers.clone())?;
         let descriptor_hash = descriptor.sha256()?;
         let artifact_reservation = self.artifacts.reserve_version_artifact().await;
         let bundle_identity = if let Some(bundle) = content.bundle() {
@@ -380,6 +383,8 @@ impl<'a> VersionController<'a> {
                 services: &service_rows,
                 cache_policies: &cache_rows,
                 builtin_bindings: &builtin_rows,
+                containers: &request.runtime_features.containers,
+                durable_object_migration: self.durable_object_migration.as_ref(),
                 queue_consumers: &queue_consumers,
                 cron: (content.kind() == VersionContentKind::Worker).then_some(&cron),
             },
@@ -480,7 +485,7 @@ impl<'a> VersionController<'a> {
         &self,
         request: &CreateVersionRequest,
         mut version: VersionRecord,
-        durable_object_classes: Vec<String>,
+        mut durable_object_classes: Vec<String>,
         queue_entrypoints: Vec<Option<String>>,
         requires_product_promoter: bool,
     ) -> Result<CreateVersionResult, PlatformError> {
@@ -520,6 +525,21 @@ impl<'a> VersionController<'a> {
                 code,
                 "real workerd validation rejected the version",
             ));
+        }
+        if version.state == VersionState::Validating {
+            let namespaces = DurableObjectRepository::new(self.storage);
+            for declaration in ContainerAuthority::new(self.storage.db())
+                .version_declarations(request.instance_id, version.id)?
+            {
+                let namespace = namespaces
+                    .get_namespace(request.instance_id, declaration.namespace_resource_id)?;
+                if namespace.owner_worker_id != request.worker_id {
+                    return Err(invariant());
+                }
+                durable_object_classes.push(namespace.class_name);
+            }
+            durable_object_classes.sort();
+            durable_object_classes.dedup();
         }
         for class_name in durable_object_classes {
             if version.state != VersionState::Validating {
@@ -758,42 +778,5 @@ impl<'a> VersionController<'a> {
             },
             refs,
         )))
-    }
-
-    fn encrypt_secrets(
-        &self,
-        instance_id: InstanceId,
-        worker_id: WorkerId,
-        version_id: VersionId,
-        secrets: &BTreeMap<String, SecretString>,
-    ) -> Result<(BTreeMap<String, StoredVersionSecret>, Vec<SecretDescriptor>), PlatformError> {
-        let mut stored = BTreeMap::new();
-        let mut descriptors = Vec::with_capacity(secrets.len());
-        for (name, value) in secrets {
-            let revision_id = Uuid::now_v7().to_string();
-            let plaintext = SecretBytes::new(value.expose().as_bytes().to_vec());
-            let envelope = self.storage.crypto().encrypt(
-                &plaintext,
-                instance_id,
-                worker_id,
-                version_id,
-                name,
-                &revision_id,
-            )?;
-            descriptors.push(SecretDescriptor {
-                name: name.clone(),
-                revision_id: revision_id.clone(),
-                ciphertext_sha256: ciphertext_sha256(&envelope.nonce, &envelope.ciphertext),
-            });
-            stored.insert(
-                name.clone(),
-                StoredVersionSecret {
-                    name: name.clone(),
-                    revision_id,
-                    envelope,
-                },
-            );
-        }
-        Ok((stored, descriptors))
     }
 }

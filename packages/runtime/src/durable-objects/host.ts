@@ -1,7 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
+import { containerAttachment } from "../containers/attachment.js";
 import { tenantEnv } from "../loader/bindings.js";
 import { modulesFor } from "../loader/modules.js";
-import type { NativeHostFacets } from "../loader/protocol.js";
+import type {
+  NativeHostContainer,
+  NativeHostFacets,
+} from "../loader/protocol.js";
 import {
   bindingError,
   doPolicy,
@@ -62,6 +66,8 @@ export class DoHost extends DurableObject<DoHostEnv> {
     (pending: PendingConnect | undefined) => void
   >();
   #nativeFacets: NativeHostFacets;
+  readonly #nativeContainers = new Set<NativeHostContainer>();
+  #tenantTurn = Promise.resolve();
   constructor(ctx: DurableObjectState, env: DoHostEnv) {
     super(ctx, env);
     this.#nativeFacets = env.WORKER_LOADER_FACTORY.getFacets(ctx.facets);
@@ -219,8 +225,16 @@ export class DoHost extends DurableObject<DoHostEnv> {
     if (snapshot.routeGeneration !== authority.routeGeneration) {
       throw bindingError("DO_VERSION_STALE");
     }
-    // The native facet owns this class; it must not consume a named Loader cache slot.
-    const loaded = this.env.LOADER.get(null, async () => {
+    const container = snapshot.containerClasses.find(
+      (declaration) => declaration.className === entrypoint,
+    );
+    const grant =
+      container !== undefined && logicalPath.length === 0
+        ? containerAttachment(this.env, this.ctx, authority, container)
+        : undefined;
+    if (grant !== undefined) this.#nativeContainers.add(grant);
+    // Issue the grant before returning the lazy class; start() loads and attaches that class.
+    const getCode = async () => {
       const built = modulesFor(snapshot, false, entrypoint, true);
       const code = {
         ...(await snapshotWorkerCode(
@@ -243,6 +257,12 @@ export class DoHost extends DurableObject<DoHostEnv> {
         ),
         globalOutbound: tenantGlobalOutbound(this.env, false),
       };
+      if (grant !== undefined) {
+        Object.defineProperty(code, "openComputeContainer", {
+          value: grant,
+          enumerable: true,
+        });
+      }
       Object.defineProperties(code.openComputePrivateEnv, {
         __OPEN_COMPUTE_PRIVATE_ALARM_INDEX: {
           value: this.ctx.exports.AlarmIndex({
@@ -278,8 +298,22 @@ export class DoHost extends DurableObject<DoHostEnv> {
         },
       });
       return collectableWorkerCode(code, this.ctx, snapshot.observability);
-    });
-    return loaded.getDurableObjectClass<LoadedDurableObject>(entrypoint);
+    };
+    // The native facet owns this class; it must not consume a named Loader cache slot.
+    try {
+      const loaded = this.env.LOADER.get(null, () =>
+        getCode().catch((error: unknown) => {
+          if (grant !== undefined && this.#nativeContainers.delete(grant))
+            grant.revoke();
+          throw error;
+        }),
+      );
+      return loaded.getDurableObjectClass<LoadedDurableObject>(entrypoint);
+    } catch (error) {
+      if (grant !== undefined && this.#nativeContainers.delete(grant))
+        grant.revoke();
+      throw error;
+    }
   }
 
   async #tenantFacet(
@@ -330,7 +364,23 @@ export class DoHost extends DurableObject<DoHostEnv> {
     }
   }
 
-  async #tenant(authority: TenantDoAuthority) {
+  async #tenantTransition<T>(operation: () => Promise<T>): Promise<T> {
+    const prior = this.#tenantTurn;
+    const next = Promise.withResolvers<void>();
+    this.#tenantTurn = next.promise;
+    await prior;
+    try {
+      return await operation();
+    } finally {
+      next.resolve();
+    }
+  }
+
+  #tenant(authority: TenantDoAuthority) {
+    return this.#tenantTransition(() => this.#loadTenant(authority));
+  }
+
+  async #loadTenant(authority: TenantDoAuthority) {
     const prior = this.#meta();
     if (prior && authority.routeGeneration < Number(prior.route_generation)) {
       throw bindingError("DO_VERSION_STALE");
@@ -350,6 +400,7 @@ export class DoHost extends DurableObject<DoHostEnv> {
     }
     if (prior && authority.routeGeneration > Number(prior.route_generation)) {
       this.#classes.clear();
+      this.#revokeContainers();
       this.#nativeFacets.revoke();
       this.#nativeFacets = this.env.WORKER_LOADER_FACTORY.getFacets(
         this.ctx.facets,
@@ -384,6 +435,11 @@ export class DoHost extends DurableObject<DoHostEnv> {
     return facet;
   }
 
+  #revokeContainers(): void {
+    for (const grant of this.#nativeContainers) grant.revoke();
+    this.#nativeContainers.clear();
+  }
+
   async fetch(request: Request): Promise<Response> {
     const operation =
       request.headers.get("x-open-compute-do-operation") || "fetch";
@@ -392,6 +448,19 @@ export class DoHost extends DurableObject<DoHostEnv> {
       return new Response(null, { status: 204 });
     }
     const authority = authorityFromHeaders(request.headers);
+    if (operation === "container-start") {
+      const { facet, grant } = await this.#tenantTransition(async () => {
+        const facet = await this.#loadTenant(authority);
+        const [grant] = this.#nativeContainers;
+        if (this.#nativeContainers.size !== 1 || grant === undefined)
+          throw bindingError("CONTAINER_UNAVAILABLE");
+        return { facet, grant };
+      });
+      // The native Container start requires an already registered tenant facet.
+      await facet.__openComputeInitialize();
+      await grant.start();
+      return Response.json({ started: true });
+    }
     if (operation === "alarm" || operation === "alarm-repair") {
       const payload: unknown = await request.json();
       const retained = this.#meta();
@@ -770,7 +839,11 @@ export class DoHost extends DurableObject<DoHostEnv> {
     }
   }
 
-  async #deleteTenant(
+  #deleteTenant(authority: ReturnType<typeof deleteAuthorityFromHeaders>) {
+    return this.#tenantTransition(() => this.#deleteLoadedTenant(authority));
+  }
+
+  async #deleteLoadedTenant(
     authority: ReturnType<typeof deleteAuthorityFromHeaders>,
   ) {
     const meta = this.#meta();
@@ -779,6 +852,7 @@ export class DoHost extends DurableObject<DoHostEnv> {
     }
     this.#nativeFacets.revoke();
     const facets = await this.#registeredFacets();
+    this.#revokeContainers();
     this.#classes.clear();
     for (const facet of facets.toReversed())
       await this.ctx.facets.delete(facet.physicalName);

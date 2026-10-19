@@ -1,5 +1,6 @@
 import wrapped from "cloudflare-internal:wrapped-binding";
 import { waitUntil } from "cloudflare:workers";
+import { createRpcTransport } from "../bindings/rpc-transport.js";
 import type { NativeHostFacets } from "../loader/protocol.js";
 import { loopbackDurableObjectMetadata } from "../loader/wrappers/runtime.js";
 import { privateWeakMap } from "../private-weak-map.js";
@@ -17,7 +18,7 @@ interface FacetStartupState {
 }
 interface TenantFacetsState {
   readonly manager: FacetManagerCapability;
-  readonly transport: Fetcher;
+  readonly connect: Fetcher["connect"];
   readonly nativeFacets: NativeHostFacets;
   readonly authority: TenantDoAuthority;
   readonly logicalPath: readonly string[];
@@ -44,6 +45,8 @@ const FORBIDDEN_RPC = new Set([
 const encoder = new TextEncoder();
 const createPrivateTransport = wrapped.createPrivateTransport.bind(wrapped);
 const admitSubrequest = wrapped.admitSubrequest.bind(wrapped);
+const validatePublicTransport = wrapped.validatePublicTransport.bind(wrapped);
+const connectPublicTransport = wrapped.connectPublicTransport.bind(wrapped);
 const tenantFacetsState = privateWeakMap<object, TenantFacetsState>();
 interface LocalFacetDescriptor {
   wire: FacetClassDescriptor;
@@ -289,10 +292,7 @@ function facetStub(state: FacetStubState): Fetcher {
               ));
           let socket: Socket;
           try {
-            socket = owner.transport.connect(
-              `${token}.facet-connect.invalid:1`,
-              options,
-            );
+            socket = owner.connect(`${token}.facet-connect.invalid:1`, options);
           } catch (error) {
             waitUntil(cancel().catch(() => undefined));
             throw error;
@@ -325,9 +325,14 @@ export class TenantFacets implements DurableObjectFacets {
     inheritedId: unknown,
     nativeFacets: NativeHostFacets,
   ) {
+    validatePublicTransport(manager);
     tenantFacetsState.set(this, {
-      manager: createPrivateTransport(manager) as FacetManagerCapability,
-      transport: manager,
+      manager: createRpcTransport(
+        createPrivateTransport(manager),
+        "facet",
+      ) as FacetManagerCapability,
+      connect: (address, options) =>
+        connectPublicTransport(manager, address, options),
       authority,
       logicalPath,
       inheritedId,

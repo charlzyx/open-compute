@@ -5,7 +5,7 @@ import type { QueueWireCodec } from "../queues/native-adapter.js";
 import {
   SERVICE_WEBSOCKET_HANDOFF_HEADER,
   serviceWebSocketHandoffHandles,
-} from "../services/facade.js";
+} from "../services/websocket-handoff.js";
 import { tenantEnv, validationEnv } from "./bindings.js";
 import { assertEnvelope } from "./envelope.js";
 import { modulesFor } from "./modules.js";
@@ -105,6 +105,9 @@ function classify(
   validation: boolean,
 ): [string, number, { code: number; outcome: string }?] {
   const message = String(error instanceof Error ? error.message : error);
+  if (validation && message.startsWith("Failed to start Worker:\n")) {
+    return ["BUNDLE_RUNTIME_INVALID", 422];
+  }
   for (const [code, status] of SERVICE_ERRORS) {
     if (message.includes(code)) return [code, status];
   }

@@ -86,7 +86,7 @@ async fn dashboard_real_runtime_serves_spa_assets_and_cloudflare_v4_api() {
         .unwrap();
         let auth = source_auth.clone();
         async move {
-            serve_runtime_source(source_listener, source, auth, async move {
+            serve_runtime_source(source_listener, source, auth, None, async move {
                 let _ = source_shutdown.changed().await;
             })
             .await

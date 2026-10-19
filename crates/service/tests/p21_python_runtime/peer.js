@@ -185,22 +185,8 @@ export default class extends WorkerEntrypoint {
       } else {
         const repo = await binding.get(name);
         if (operation === "inspect") {
-          const fields = [
-            "id",
-            "name",
-            "description",
-            "defaultBranch",
-            "createdAt",
-            "updatedAt",
-            "lastPushAt",
-            "source",
-            "readOnly",
-            "remote",
-          ];
           result = {
-            repo: Object.fromEntries(
-              fields.map((field) => [field, repo[field]]),
-            ),
+            repo: await repo.info(),
             tokens: await repo.listTokens(),
           };
         } else if (operation === "token")

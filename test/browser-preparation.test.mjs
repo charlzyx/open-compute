@@ -112,6 +112,16 @@ test("CI browser preparation verifies the archive before invoking the native pre
             url: "https://fixture.invalid/headless.zip",
             sha256: createHash("sha256").update(archive).digest("hex"),
           },
+          "linux-arm64": {
+            platform: "linux-arm64",
+            url: "https://fixture.invalid/headless.zip",
+            sha256: createHash("sha256").update(archive).digest("hex"),
+          },
+          "darwin-x64": {
+            platform: "mac-x64",
+            url: "https://fixture.invalid/headless.zip",
+            sha256: createHash("sha256").update(archive).digest("hex"),
+          },
         },
       }),
     );
@@ -149,6 +159,8 @@ test("CI browser preparation verifies the archive before invoking the native pre
     for (const host of [
       ["Darwin", "arm64", "mac-arm64"],
       ["Linux", "x86_64", "linux64"],
+      ["Linux", "aarch64", "linux-arm64"],
+      ["Darwin", "x86_64", "mac-x64"],
     ]) {
       await writeFile(join(root, "input"), archive);
       const valid = run(...host);

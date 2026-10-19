@@ -2,8 +2,8 @@ use super::*;
 
 pub use super::version_create::NewVersionProducts;
 
-/// Current immutable loader descriptor schema.
-pub const LOADER_SCHEMA_VERSION: i64 = 1;
+/// Current immutable loader descriptor schema, including Container declarations.
+pub const LOADER_SCHEMA_VERSION: i64 = 2;
 
 /// Stable system Worker name for the operator dashboard.
 pub const SYSTEM_DASHBOARD_WORKER_NAME: &str = "open-compute-dashboard";

@@ -463,7 +463,7 @@ pub(super) async fn snapshot_restore_gate() {
         env!("CARGO_PKG_VERSION")
     );
     assert!(capabilities_human.starts_with(&release_prefix));
-    assert!(capabilities_human.contains("durable_objects SupportedWithDeviation members=115"));
+    assert!(capabilities_human.contains("durable_objects SupportedWithDeviation members=114"));
     let deleted = run_cli_json(
         &source_scope_root,
         &source_config,

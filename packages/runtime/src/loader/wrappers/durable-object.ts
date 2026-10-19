@@ -43,13 +43,10 @@ function nativeHostFacets(value: unknown): value is NativeHostFacets {
 function alarmIndex(value: unknown): value is AlarmIndexCapability {
   return (
     value !== null &&
-    typeof value === "object" &&
-    "upsert" in value &&
-    typeof value.upsert === "function" &&
-    "delete" in value &&
-    typeof value.delete === "function" &&
-    "clear" in value &&
-    typeof value.clear === "function"
+    (typeof value === "object" || typeof value === "function") &&
+    typeof nativeGet(value, "upsert") === "function" &&
+    typeof nativeGet(value, "delete") === "function" &&
+    typeof nativeGet(value, "clear") === "function"
   );
 }
 
@@ -233,6 +230,9 @@ export function wrapDurableObject(
       instances.set(this, { instance, admission });
       return instance;
     }
+    __openComputeInitialize(): void {
+      if (!instances.has(this)) throw new Error("DO_RUNTIME_EXCEPTION");
+    }
     async __openComputeInvokeRpc(
       kind: "call" | "get",
       method: string,
@@ -278,6 +278,7 @@ export function wrapDurableObject(
     }
   };
   const hostMethods = {
+    __openComputeInitialize: Wrapped.prototype.__openComputeInitialize,
     __openComputeInvokeRpc: Wrapped.prototype.__openComputeInvokeRpc,
     __openComputePrepareFetch: Wrapped.prototype.__openComputePrepareFetch,
     __openComputeCancelFetch: Wrapped.prototype.__openComputeCancelFetch,

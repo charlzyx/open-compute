@@ -43,6 +43,89 @@ class GateTests(unittest.TestCase):
         self.assertIn(name, workspace)
         self.assertEqual(workspace[name].name, 'p21_python_main')
 
+    def test_containers_owns_one_exclusive_ordinary_sdk_native_scenario(self):
+        name = 'p23-containers'
+        case = 'ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers'
+        self.assertEqual(gate.CARGO_TARGETS[name], ('open-compute-service', 'p23_containers', True))
+        self.assertEqual(gate.TIMING[name], (case,))
+        self.assertEqual(gate.ONCE[name], (
+            'snapshots::snapshot_rootfs_excludes_helper_entities_and_hardlink_references',
+        ))
+        self.assertEqual(gate.GROUPS['all'].count(name), 1)
+
+    def test_containers_input_identity_freezes_actual_oci_contract_and_worker_modules(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = root / 'manifest.json'
+            manifest.write_text('{}')
+            blob = root / 'blob'
+            blob.write_bytes(b'prepared layer')
+            bundle = root / 'test/applications/containers/.cloudflare/output/v0/workers/default/bundle'
+            bundle.mkdir(parents=True)
+            module = bundle / 'index.js'
+            module.write_text('export default {}')
+            (bundle / '.vite').mkdir()
+            (bundle / '.vite/manifest.json').write_text('{}')
+            worker_config = bundle.parent / 'worker.config.json'
+            worker_config.write_text('{}')
+            container_config = bundle.parents[2] / 'containers/fixture/container.config.json'
+            container_config.parent.mkdir(parents=True)
+            container_config.write_text('{}')
+            config = root / 'input.json'
+            value = {'containers': {'broker_socket': '/tmp/p23.sock', 'provider_contract_sha256': 'a'*64,
+                                    'max_instances': 2, 'max_snapshots': 32,
+                                    'max_snapshot_bytes': 8 << 30, 'resources': {}},
+                     'images': [{'manifest': str(manifest), 'blobs': [{'path': str(blob), 'sha256': gate.digest(blob)}]}]*2}
+            config.write_text(json.dumps(value))
+            with patch.object(gate, 'ROOT', root), patch.dict(os.environ, OPEN_COMPUTE_TEST_CONTAINERS_INPUT=str(config)):
+                original = gate.container_inputs_identity()
+                self.assertEqual(original['provider_contract_sha256'], 'a'*64)
+                self.assertEqual(len(original['oci_files']), 4)
+                self.assertEqual(len(original['worker_modules']), 1)
+                self.assertEqual(len(original['build_configurations']), 2)
+                for metadata in (worker_config, container_config):
+                    metadata.write_text('{"changed":true}')
+                    self.assertNotEqual(gate.container_inputs_identity(), original)
+                    metadata.write_text('{}')
+                worker_config.unlink()
+                with self.assertRaisesRegex(ValueError, 'configuration.*regular file'):
+                    gate.container_inputs_identity()
+                worker_config.write_text('{}')
+                for field, invalid in (
+                    ('max_snapshots', 0), ('max_snapshots', 100_001),
+                    ('max_snapshots', True), ('max_snapshots', '32'),
+                    ('max_snapshot_bytes', 0), ('max_snapshot_bytes', 1 << 63),
+                    ('max_snapshot_bytes', False), ('max_snapshot_bytes', 1.5),
+                ):
+                    previous = value['containers'][field]
+                    value['containers'][field] = invalid
+                    config.write_text(json.dumps(value))
+                    with self.subTest(field=field, invalid=invalid), \
+                         self.assertRaisesRegex(ValueError, 'retention limits'):
+                        gate.container_inputs_identity()
+                    value['containers'][field] = previous
+                config.write_text(json.dumps(value))
+                module.write_text('export default {changed: true}')
+                self.assertNotEqual(gate.container_inputs_identity(), original)
+                value['containers']['provider_contract_sha256'] = 'b'*64
+                config.write_text(json.dumps(value))
+                self.assertNotEqual(gate.container_inputs_identity(), original)
+                blob.write_bytes(b'corrupted')
+                with self.assertRaisesRegex(ValueError, 'digest mismatch'):
+                    gate.container_inputs_identity()
+                value['images'][0]['blobs'][0]['sha256'] = gate.digest(blob)
+                config.write_text(json.dumps(value))
+                self.assertNotEqual(gate.container_inputs_identity(), original)
+                manifest.unlink()
+                with self.assertRaisesRegex(ValueError, 'regular file'):
+                    gate.container_inputs_identity()
+                config.write_text('{}')
+                with self.assertRaisesRegex(ValueError, 'closed schema'):
+                    gate.container_inputs_identity()
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(ValueError, 'requires OPEN_COMPUTE_TEST_CONTAINERS_INPUT'):
+                    gate.container_inputs_identity()
+
     @staticmethod
     def targets(names):
         return {name: gate.Target('package', gate.TARGETS[name][1], 'test', str(gate.ROOT),

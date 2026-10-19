@@ -111,7 +111,6 @@ function created(value: unknown): ArtifactsCreateRepoResult {
     defaultBranch: string(value.defaultBranch),
     remote: string(value.remote),
     token: string(value.token),
-    tokenExpiresAt: string(value.tokenExpiresAt),
   };
 }
 
@@ -151,37 +150,26 @@ function listedTokens(value: unknown): ArtifactsTokenListResult {
   return { tokens, total: value.total as number };
 }
 
-class ArtifactRepoHandle implements ArtifactsRepo {
+class ArtifactRepoHandle implements Pick<
+  ArtifactsRepo,
+  "info" | "createToken" | "listTokens" | "revokeToken" | "fork"
+> {
   readonly #raw: ArtifactsRawTransport;
-  readonly id: string;
-  readonly name: string;
-  readonly description: string | null;
-  readonly defaultBranch: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly lastPushAt: string | null;
-  readonly source: string | null;
-  readonly readOnly: boolean;
-  readonly remote: string;
+  readonly #name: string;
 
   constructor(raw: ArtifactsRawTransport, info: ArtifactsRepoInfo) {
     this.#raw = raw;
-    this.id = info.id;
-    this.name = info.name;
-    this.description = info.description;
-    this.defaultBranch = info.defaultBranch;
-    this.createdAt = info.createdAt;
-    this.updatedAt = info.updatedAt;
-    this.lastPushAt = info.lastPushAt;
-    this.source = info.source;
-    this.readOnly = info.readOnly;
-    this.remote = info.remote;
+    this.#name = info.name;
+  }
+
+  async info(): Promise<ArtifactsRepoInfo> {
+    return repoInfo(await call(this.#raw, "get", { name: this.#name }));
   }
 
   async createToken(scope?: "write" | "read", ttl?: number) {
     return createdToken(
       await call(this.#raw, "create-token", {
-        repository: this.name,
+        repository: this.#name,
         scope,
         ttl,
       }),
@@ -190,13 +178,13 @@ class ArtifactRepoHandle implements ArtifactsRepo {
 
   async listTokens() {
     return listedTokens(
-      await call(this.#raw, "list-tokens", { repository: this.name }),
+      await call(this.#raw, "list-tokens", { repository: this.#name }),
     );
   }
 
   async revokeToken(tokenOrId: string) {
     const value = await call(this.#raw, "revoke-token", {
-      repository: this.name,
+      repository: this.#name,
       tokenOrId,
     });
     return typeof value === "boolean" ? value : protocolError();
@@ -212,7 +200,7 @@ class ArtifactRepoHandle implements ArtifactsRepo {
   ) {
     return created(
       await call(this.#raw, "fork", {
-        repository: this.name,
+        repository: this.#name,
         name,
         opts,
       }),
@@ -220,10 +208,10 @@ class ArtifactRepoHandle implements ArtifactsRepo {
   }
 }
 
-/** Latest pinned Cloudflare Artifacts API over a private namespace transport. */
+/** Supported Cloudflare Artifacts operations over a private namespace transport. */
 export class ArtifactsBinding
   extends wrappedBinding.WrappedBinding
-  implements Artifacts
+  implements Omit<Artifacts, "get">
 {
   readonly #raw: ArtifactsRawTransport;
   constructor(raw: unknown) {
@@ -243,7 +231,7 @@ export class ArtifactsBinding
     return created(await call(this.#raw, "create", { name, opts }));
   }
 
-  async get(name: string): Promise<ArtifactsRepo> {
+  async get(name: string): Promise<ArtifactRepoHandle> {
     return new ArtifactRepoHandle(
       this.#raw,
       repoInfo(await call(this.#raw, "get", { name })),

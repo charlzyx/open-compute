@@ -206,7 +206,7 @@ async fn python_version(
     revision: &str,
     secret: &str,
 ) -> String {
-    let (status, _, body) = fixture
+    let (status, _, body, version) = fixture
         .upload_version(
             PYTHON,
             &Capture::content_type(),
@@ -224,7 +224,7 @@ async fn python_version(
     assert_eq!(status, 200, "Python Service Version upload/prepare failed");
     let response: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(response["success"], true);
-    response["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }
 
 fn structured_value(message: &str) -> Value {

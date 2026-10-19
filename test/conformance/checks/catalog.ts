@@ -49,7 +49,7 @@ export function baselineIdentity(): void {
   const workersTypes = record(value.workersTypes, "workersTypes");
   const lockTypes = record(lock.workersTypes, "lock.workersTypes");
   if (
-    workersTypes.version !== "5.20260830.1" ||
+    workersTypes.version !== "5.20260930.2" ||
     lockTypes.version !== workersTypes.version ||
     lockTypes.gitHead !== workersTypes.gitHead ||
     !/^[0-9a-f]{40}$/.test(string(lockTypes.gitHead, "workersTypes.gitHead")) ||

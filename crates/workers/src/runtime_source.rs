@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use zeroize::Zeroize;
 
+mod containers;
 mod model;
 mod python;
 mod resolution;
@@ -154,6 +155,8 @@ impl RuntimeSource {
         let services = resolution::resolve_services(&snapshot)?;
         let cache_policy = resolution::resolve_cache_policy(&snapshot)?;
         let builtins = resolution::resolve_builtin_bindings(&snapshot, bundle.as_ref(), identity)?;
+        let (container_declarations, container_classes) =
+            containers::resolve(&self.storage, instance_id, worker_id, version_id)?;
 
         let descriptor = WorkerCodeDescriptorV1::new(
             instance_id,
@@ -178,7 +181,8 @@ impl RuntimeSource {
             cache_policy.clone(),
             builtins.descriptors,
             snapshot.version.loader_schema_version,
-        )?;
+        )?
+        .with_containers(container_declarations)?;
         let actual_descriptor = descriptor.sha256()?;
         if actual_descriptor != snapshot.version.worker_code_sha256
             || hex::encode(actual_descriptor) != expected_worker_code_sha256
@@ -228,6 +232,7 @@ impl RuntimeSource {
             workflow_bindings: workflow_bindings.runtime,
             scheduled_targets,
             services: services.runtime,
+            container_classes,
             cache_policy: RuntimeCachePolicy {
                 enabled: cache_policy.enabled,
                 cross_version_cache: cache_policy.cross_version_cache,
@@ -277,6 +282,7 @@ impl RuntimeSource {
             bindings: Vec<BindingPayload<'a>>,
             scheduled_targets: &'a [RuntimeScheduledTarget],
             services: &'a [RuntimeServiceBinding],
+            container_classes: &'a [RuntimeContainerClass],
             cache_policy: &'a RuntimeCachePolicy,
             #[serde(skip_serializing_if = "Option::is_none")]
             ai_binding: Option<&'a RuntimeBuiltinBinding>,
@@ -393,6 +399,7 @@ impl RuntimeSource {
             bindings,
             scheduled_targets: &snapshot.scheduled_targets,
             services: &snapshot.services,
+            container_classes: &snapshot.container_classes,
             cache_policy: &snapshot.cache_policy,
             worker_loaders: &snapshot.worker_loaders,
             ai_binding: snapshot.ai_binding.as_ref(),

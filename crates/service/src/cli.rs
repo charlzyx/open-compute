@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 mod cache;
+mod container_broker;
 mod daemon;
 mod instance;
 mod loaded;
@@ -177,6 +178,10 @@ async fn run(
     startup_cwd: &Path,
     deps: Option<&OperatorDeps>,
 ) -> Result<ExitCode, PlatformError> {
+    if let Command::ContainerBroker { broker_config } = &cli.command {
+        container_broker::run(broker_config, startup_cwd).await?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let skip_reminder = matches!(
         &cli.command,
         Command::UpdateCheck

@@ -18,10 +18,7 @@ pub const SYSTEM_MODULE_PREFIX: &str = "cloudflare-internal:";
 const SYSTEM_WORKER_MANIFEST: &[u8] =
     include_bytes!("../../../packages/runtime/dist/manifest.json");
 
-/// SHA-256 of the embedded system Worker source manifest bound into every descriptor.
-///
-/// A change here changes every newly computed `worker_code_sha256`, so a
-/// system-owned version created by another runtime build can never be reused.
+/// Embedded system Worker manifest digest; changes prevent reuse across runtime builds.
 #[must_use]
 pub fn system_worker_sources_sha256() -> [u8; 32] {
     Sha256::digest(SYSTEM_WORKER_MANIFEST).into()
@@ -41,6 +38,11 @@ pub struct AssetDescriptorV1 {
 
 #[cfg(test)]
 mod source_tests;
+
+mod containers;
+mod secrets;
+
+pub use secrets::ciphertext_sha256;
 
 /// Secret identity included without plaintext.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -523,6 +525,8 @@ pub struct WorkerCodeDescriptorV1 {
     pub cache_policy: CachePolicyDescriptorV1,
     /// Canonically sorted platform-provided environment bindings.
     pub builtin_binding_descriptors: Vec<BuiltinBindingDescriptorV1>,
+    /// Immutable Container namespace and application associations.
+    pub container_declarations: Vec<open_compute_storage::containers::VersionContainerDeclaration>,
     /// SHA-256 of the complete generated system Worker source manifest.
     pub system_worker_sources_sha256: String,
     /// Loader host schema.
@@ -738,6 +742,7 @@ impl WorkerCodeDescriptorV1 {
             service_descriptors,
             cache_policy,
             builtin_binding_descriptors,
+            container_declarations: Vec::new(),
             loader_schema_version,
         })
     }
@@ -778,17 +783,6 @@ pub fn parse_loader_key(key: &str) -> Result<(InstanceId, WorkerId, VersionId), 
         WorkerId::from_str(worker).map_err(|_| invalid_key())?,
         VersionId::from_str(version).map_err(|_| invalid_key())?,
     ))
-}
-
-/// Hash nonce and ciphertext for a secret descriptor.
-#[must_use]
-pub fn ciphertext_sha256(nonce: &[u8], ciphertext: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update((nonce.len() as u64).to_be_bytes());
-    digest.update(nonce);
-    digest.update((ciphertext.len() as u64).to_be_bytes());
-    digest.update(ciphertext);
-    hex::encode(digest.finalize())
 }
 
 fn invalid_key() -> PlatformError {

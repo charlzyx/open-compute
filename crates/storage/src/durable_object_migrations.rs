@@ -247,37 +247,8 @@ impl DurableObjectRepository<'_> {
         version_id: VersionId,
         plan: &DurableObjectMigrationPlan,
     ) -> Result<(), PlatformError> {
-        validate_migration_plan(plan)?;
-        let plan_sha256 = plan.fingerprint()?;
         self.storage.db().with_read(|conn| {
-            let current = read_migration_head(conn, worker_id)?;
-            if let Some(current) = current {
-                if current.tag == plan.new_tag {
-                    return if current.plan_sha256 == plan_sha256 && current.version_id == version_id
-                    {
-                        Ok(())
-                    } else {
-                        Err(migration_conflict())
-                    };
-                }
-                if Some(current.tag.as_str()) != plan.old_tag.as_deref() {
-                    return Err(migration_conflict());
-                }
-            } else if plan.old_tag.is_some() {
-                return Err(migration_conflict());
-            }
-            let reused_tag: bool = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM worker_do_migrations
-                     WHERE worker_id = ?1 AND tag = ?2)",
-                    params![worker_id.to_string(), plan.new_tag],
-                    |row| row.get(0),
-                )
-                .map_err(|_| db_error())?;
-            if reused_tag {
-                return Err(migration_conflict());
-            }
-            Ok(())
+            validate_worker_migration_version_conn(conn, worker_id, version_id, plan)
         })
     }
 
@@ -355,6 +326,43 @@ impl DurableObjectRepository<'_> {
             Ok(())
         })
     }
+}
+
+pub(crate) fn validate_worker_migration_version_conn(
+    conn: &rusqlite::Connection,
+    worker_id: WorkerId,
+    version_id: VersionId,
+    plan: &DurableObjectMigrationPlan,
+) -> Result<(), PlatformError> {
+    validate_migration_plan(plan)?;
+    let plan_sha256 = plan.fingerprint()?;
+    let current = read_migration_head(conn, worker_id)?;
+    if let Some(current) = current {
+        if current.tag == plan.new_tag {
+            return if current.plan_sha256 == plan_sha256 && current.version_id == version_id {
+                Ok(())
+            } else {
+                Err(migration_conflict())
+            };
+        }
+        if Some(current.tag.as_str()) != plan.old_tag.as_deref() {
+            return Err(migration_conflict());
+        }
+    } else if plan.old_tag.is_some() {
+        return Err(migration_conflict());
+    }
+    let reused_tag: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM worker_do_migrations
+                 WHERE worker_id = ?1 AND tag = ?2)",
+            params![worker_id.to_string(), plan.new_tag],
+            |row| row.get(0),
+        )
+        .map_err(|_| db_error())?;
+    if reused_tag {
+        return Err(migration_conflict());
+    }
+    Ok(())
 }
 
 pub(crate) fn publish_worker_migration_tx(

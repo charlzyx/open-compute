@@ -181,6 +181,7 @@ pub struct StaticConfigCompiler {
     binding_generation_auth: Option<GenerationAuthRegistry>,
     observability_generation_auth: Option<GenerationAuthRegistry>,
     durable_objects: DurableObjectsConfig,
+    container_provider: Option<crate::ContainerProviderConfig>,
 }
 
 impl Debug for StaticConfigCompiler {
@@ -216,6 +217,7 @@ impl StaticConfigCompiler {
             binding_generation_auth: None,
             observability_generation_auth: None,
             durable_objects: DurableObjectsConfig::default(),
+            container_provider: None,
         }
     }
 
@@ -237,6 +239,13 @@ impl StaticConfigCompiler {
     #[must_use]
     pub fn with_observability_generation_auth(mut self, auth: GenerationAuthRegistry) -> Self {
         self.observability_generation_auth = Some(auth);
+        self
+    }
+
+    /// Enable the qualified native Container provider only on the private `DoHost` Worker.
+    #[must_use]
+    pub fn with_container_provider(mut self, config: crate::ContainerProviderConfig) -> Self {
+        self.container_provider = Some(config);
         self
     }
 
@@ -272,6 +281,7 @@ impl ConfigCompiler for StaticConfigCompiler {
                 binding_token: &binding_token,
                 observability_token: &observability_token,
                 durable_objects: self.durable_objects.clone(),
+                container_provider: self.container_provider.as_ref(),
                 deadline: self.deadline,
                 redactor: &redactor,
             })

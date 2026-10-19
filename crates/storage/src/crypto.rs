@@ -20,6 +20,8 @@ pub const SECRET_AAD_SCHEMA: u32 = 2;
 const MAX_SECRET_NAME_LEN: usize = 4096;
 const KEY_ID_LEN: usize = 64;
 
+mod containers;
+pub use containers::MAX_CONTAINER_STARTUP_BYTES;
 mod python;
 pub use python::MAX_PYTHON_SNAPSHOT_BYTES;
 

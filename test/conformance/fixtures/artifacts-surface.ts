@@ -13,7 +13,6 @@ async function exerciseArtifacts(): Promise<void> {
     string,
     string,
     string,
-    string,
   ] = [
     created.id,
     created.name,
@@ -21,10 +20,10 @@ async function exerciseArtifacts(): Promise<void> {
     created.defaultBranch,
     created.remote,
     created.token,
-    created.tokenExpiresAt,
   ];
 
   const repo = await artifacts.get(created.name);
+  const info = await repo.info();
   const repositoryFields: [
     string,
     string,
@@ -37,16 +36,16 @@ async function exerciseArtifacts(): Promise<void> {
     boolean,
     string,
   ] = [
-    repo.id,
-    repo.name,
-    repo.description,
-    repo.defaultBranch,
-    repo.createdAt,
-    repo.updatedAt,
-    repo.lastPushAt,
-    repo.source,
-    repo.readOnly,
-    repo.remote,
+    info.id,
+    info.name,
+    info.description,
+    info.defaultBranch,
+    info.createdAt,
+    info.updatedAt,
+    info.lastPushAt,
+    info.source,
+    info.readOnly,
+    info.remote,
   ];
   const token = await repo.createToken("read", 60);
   const tokenFields: [string, string, "read" | "write", string] = [

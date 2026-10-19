@@ -13,19 +13,17 @@
 | `docs/blocked/`     | 被外部条件阻塞且当前无法继续的方案   |
 | `docs/references/`  | 持续维护的接口、测试、发布和运维资料 |
 
-不要为普通单篇文档建专用目录，也不要在多个位置复述同一规则；上表按文档生命周期划分的目录除外。
+普通单篇文档不另建专用目录；同一规则只在所属入口维护，其余位置链接引用。
 
 ## 状态与移动
 
-- `planned`：最终行为已决定，代码尚未全部落地；
-- `implemented`：代码已落地，当前限制在实现或维护文档中明确列出；
-- `verified`：明确记录的检查已经成功退出；
-- `accepted limitation`：已知限制及影响被当前产品接受；
-- `blocked`：外部前置条件阻止继续，并写明恢复条件。
+`planned` 表示仍需实施；`implemented` 表示代码已落地；`verified` 只表示列出的检查成功退出；
+`accepted limitation` 需说明已接受的限制和影响；`blocked` 需说明外部阻塞、证据和恢复条件。
 
-有待实现内容时留在 `docs/` 或 `docs/workerd/`。实现完成后先删掉计划过程，再把精简结果移入 `implemented/`；正式 release notes 放入
-`releases/`。明确接受的限制写入对应实现或维护文档；仍需修复的功能缺陷和 TODO 留在活动方案。只有真正无法继续的外部阻塞才进入
-`blocked/`。验证矩阵、Gate 和测试清单不单独建活动文档。路径变化同步更新索引、生成器和链接，不保留 redirect、stub 或旧副本。
+未完成方案留在 `docs/` 或 `docs/workerd/`；完成后删去调研、候选方案、实施顺序、完整 schema/API、逐文件任务、
+测试矩阵和完成的 TODO，将结果移入 `implemented/`。接受的限制写入所属实现或参考文档；待修缺陷留在活动方案；
+仅外部条件使工作无法继续时移入 `blocked/`。不单建 qualification、acceptance、Gate 或测试计划文档。
+移动时同步索引、生成器和所有入链，不留 redirect、stub 或旧副本。
 
 ## 编号
 
@@ -49,16 +47,20 @@
 
 ## 内容与证据
 
-- 先写用户结果和会影响以后修改的边界；只在必要时补 ownership、失败语义、非目标和证据。
-- `implemented/` 不是计划归档：不保留调研、候选方案、实施顺序、完整 schema/API、逐文件任务、逐项测试矩阵或完成的 TODO。
-- 原始命令输出和失败 artifact 留在 `.temp/` 或 CI，不复制进长期文档；文档只记录日期、输入、结论和定位证据所需的标识。
-- 只有成功退出的检查才能写成通过。历史 PASS 只证明当时输入，不代表当前工作树自动通过。
-- 当前接口和支持面由源码、机器可读合同及本目录的维护文档拥有；历史实现文档不覆盖它们。
-- 当前应用入口遵循 [P20](../implemented/p20-cf-cli-migration.md)：cf/config、官方 Vite 插件 v2、Build Output 与 `ocd cf`。
-  活动方案的命令、配置和验收 producer 必须同步迁移；历史客户端 trace、报告和已发布 release notes 保留原始身份，
-  不把旧 PASS 改写为 cf PASS。Python 开发构建例外及移除条件由 [P25](../p25-platform-follow-ups.md) 管理。
-- 文档改动至少运行 `git diff --check` 并核对链接、状态和 verified 声明；过期内容直接删除，Git 保存历史。
-- 新增或移动文档时核对上述目录中除 `README.md` 外不存在无编号文件。
+- 先写用户结果、维护边界和实际验证；ownership、失败语义和非目标只写影响后续修改的部分。
+- 原始输出与失败 artifact 留在 `.temp/` 或 CI；长期文档记录日期、输入、结论和证据标识。清理遵循[测试证据生命周期](testing.md#日志与保留证据)，`docs/implemented/g0-results.md` 原样保留。
+- 历史 PASS 仅证明当时输入，不覆盖当前源码、机器可读合同和维护参考。旧客户端 trace、报告和已发布 release notes 保留原始身份，不能把旧 PASS 改写为 cf PASS。
+- 当前应用入口遵循 [P20](../implemented/p20-cf-cli-migration.md)；活动方案同步命令、配置和验收 producer。Python 构建例外及移除条件由 [P25](../p25-platform-follow-ups.md) 管理。
+- 文档改动运行 `git diff --check`、`bun scripts/check-docs.ts`，并核对所改内部链接、命令、状态和验证声明；该脚本检查网站文档，不覆盖本目录所有相对链接。新增/移动文档检查编号；根 `AGENTS.md` 和 `docs/references/**` 属于源码摘要输入，按[测试说明](testing.md#按输入选择测试)同步身份。
+
+## 指令维护
+
+按 [OpenAI 官方指南](https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)核对自主执行、指令冲突与验证范围；以下是本仓库的维护约定，不是模型版本或 API 迁移要求。
+
+- 根 `AGENTS.md` 保留全局约束、授权边界和任务入口；目录规则只补局部要求，参考文档拥有操作细节。按当前任务读取相关资料，不要求每次遍历全部文档。
+- 规则写清适用条件、目标和完成标准。合并重复条款，删除已过时的流程；保留安全、数据完整性、正式 pin、发布迁移和验收边界。历史证据与现行指令分开。
+- 授权和冲突处理引用根 [Operating Contract](../../AGENTS.md#operating-contract)，不另立审批流程，也不把历史计划中的步骤当作当前任务授权。
+- 修改后核对规则是否仍可执行、是否误扩验证范围；不以文档缩短推断质量、成本或模型表现已经改善。
 
 ## 维护资料
 
@@ -68,6 +70,7 @@
 | [Cloudflare 兼容矩阵](cloudflare-compatibility.md)    | 当前支持面和 deviation                                                   |
 | [Cloudflare 上游刷新](cloudflare-upstream-refresh.md) | OpenAPI、官方 SDK 与 cf 的定期发现和协调升级                             |
 | [能力偏差](p1-deviations.md)                          | 当前 deviation ID 与边界                                                 |
+| [Containers 运维](containers.md)                    | 独立 Broker、provider 资格与 execution 恢复边界                           |
 | [测试节奏](testing.md)                                | Gate、case discovery、覆盖率和验收                                       |
 | [单二进制分发](single-binary.md)                      | 构建输入、离线启动和发行合同                                             |
 | [发布流程](releasing.md)                              | 版本、tag、release workflow 和校验                                       |

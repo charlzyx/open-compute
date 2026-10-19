@@ -51,6 +51,7 @@ export async function activateServiceCapabilities(
   value: unknown,
   acquire: () => Promise<unknown>,
   deadlineAt: number,
+  sourceTransport: (source: object) => object,
 ): Promise<void> {
   const seen = new NativeWeakSet<object>();
   const retentions: Retention[] = [];
@@ -77,10 +78,11 @@ export async function activateServiceCapabilities(
       }
       nativeApply(nativePush, retentions, [retention]);
       if (Date.now() >= deadlineAt) throw bindingError("SERVICE_TIMEOUT");
-      const activate = nativeGet(item.handle, "activate");
+      const source = sourceTransport(item.handle);
+      const activate = nativeGet(source, "activate");
       if (typeof activate !== "function")
         throw bindingError("SERVICE_BINDING_DENIED");
-      await nativeApply(activate, item.handle, [retained]);
+      await nativeApply(activate, source, [retained]);
       return;
     }
     if (nativeArray(item)) {

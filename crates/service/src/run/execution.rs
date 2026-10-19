@@ -50,6 +50,38 @@ fn with_test_runtime_restart(
     }))
 }
 
+async fn run_container_maintenance(
+    service: Option<Arc<crate::ContainerService>>,
+    transport: WorkerdTransport,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), PlatformError> {
+    if *shutdown.borrow() {
+        return Ok(());
+    }
+    let Some(service) = service else {
+        let _ = shutdown.changed().await;
+        return Ok(());
+    };
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = shutdown.changed() => return Ok(()),
+            _ = interval.tick() => {
+                tokio::select! {
+                    _ = shutdown.changed() => return Ok(()),
+                    result = service.reconcile_rollouts(&transport) => if let Err(error) = result {
+                        tracing::warn!(error_code = ?error.code(), "Container reconciliation failed");
+                    },
+                }
+            }
+        }
+    }
+}
+
 async fn serve(composed: composition::ComposedPlatform) -> Result<(), PlatformError> {
     let composition::ComposedPlatform {
         loaded,
@@ -191,67 +223,76 @@ async fn serve(composed: composition::ComposedPlatform) -> Result<(), PlatformEr
     let maintenance_resource_pins = resource_pins.clone();
     let maintenance_metrics = metrics.clone();
     let maintenance_snapshot_pins = snapshot_pins.clone();
+    let containers = state.container_service().cloned();
+    let container_shutdown = shutdown_rx.clone();
+    let container_transport = transport.clone();
     let maintenance_task = tokio::spawn(async move {
-        let mut r2_maintenance = R2Maintenance::default();
-        let mut interval = tokio::time::interval(Duration::from_millis(
-            maintenance_config.artifact_gc_interval_ms,
-        ));
-        loop {
-            tokio::select! {
-                _ = shutdown_maintenance.changed() => return Ok(()),
-                _ = interval.tick() => {
-                    run_worker_maintenance(
-                        &maintenance_storage,
-                        &maintenance_store,
-                        &maintenance_cache,
-                        &maintenance_response_cache,
-                        &maintenance_pins,
-                        &maintenance_config,
-                        &maintenance_snapshot_pins,
-                        &maintenance_metrics,
-                    ).await;
-                    run_kv_maintenance(
-                        &maintenance_storage,
-                        &maintenance_resource_pins,
-                        &maintenance_kv_config,
-                        &maintenance_metrics,
-                    ).await;
-                    r2_maintenance.run(
-                        &maintenance_storage,
-                        &maintenance_r2_objects,
-                        &maintenance_resource_pins,
-                        &maintenance_r2_config,
-                        &maintenance_health,
-                    ).await;
-                    let _ = update_local_object_storage_health(
-                        &maintenance_backend,
-                        &maintenance_object_storage,
-                        &maintenance_health,
-                    );
-                    let _ = update_do_storage_health(
-                        &maintenance_storage,
-                        &maintenance_do_config,
-                        &maintenance_health,
-                        &maintenance_metrics,
-                    );
-                    let _ = update_operations_health(
-                        maintenance_storage.data_dir(),
-                        maintenance_snapshot_stale_after_ms,
-                        &maintenance_health,
-                    );
-                    if let Err(error) = refresh_p1_metrics(
-                        &maintenance_storage,
-                        &maintenance_metrics,
-                        maintenance_emergency_reserve_bytes,
-                    ) {
-                        tracing::warn!(
-                            code = error.code().as_str(),
-                            "P1 disk and resource metrics refresh failed"
+        let products = async move {
+            let mut r2_maintenance = R2Maintenance::default();
+            let mut interval = tokio::time::interval(Duration::from_millis(
+                maintenance_config.artifact_gc_interval_ms,
+            ));
+            loop {
+                tokio::select! {
+                    _ = shutdown_maintenance.changed() => return Ok(()),
+                    _ = interval.tick() => {
+                        run_worker_maintenance(
+                            &maintenance_storage,
+                            &maintenance_store,
+                            &maintenance_cache,
+                            &maintenance_response_cache,
+                            &maintenance_pins,
+                            &maintenance_config,
+                            &maintenance_snapshot_pins,
+                            &maintenance_metrics,
+                        ).await;
+                        run_kv_maintenance(
+                            &maintenance_storage,
+                            &maintenance_resource_pins,
+                            &maintenance_kv_config,
+                            &maintenance_metrics,
+                        ).await;
+                        r2_maintenance.run(
+                            &maintenance_storage,
+                            &maintenance_r2_objects,
+                            &maintenance_resource_pins,
+                            &maintenance_r2_config,
+                            &maintenance_health,
+                        ).await;
+                        let _ = update_local_object_storage_health(
+                            &maintenance_backend,
+                            &maintenance_object_storage,
+                            &maintenance_health,
                         );
+                        let _ = update_do_storage_health(
+                            &maintenance_storage,
+                            &maintenance_do_config,
+                            &maintenance_health,
+                            &maintenance_metrics,
+                        );
+                        let _ = update_operations_health(
+                            maintenance_storage.data_dir(),
+                            maintenance_snapshot_stale_after_ms,
+                            &maintenance_health,
+                        );
+                        if let Err(error) = refresh_p1_metrics(
+                            &maintenance_storage,
+                            &maintenance_metrics,
+                            maintenance_emergency_reserve_bytes,
+                        ) {
+                            tracing::warn!(
+                                code = error.code().as_str(),
+                                "P1 disk and resource metrics refresh failed"
+                            );
+                        }
+                        let _ = maintenance_do_lifecycle.reconcile_pending().await;
                     }
-                    let _ = maintenance_do_lifecycle.reconcile_pending().await;
                 }
             }
+        };
+        tokio::select! {
+            result = products => result,
+            result = run_container_maintenance(containers, container_transport, container_shutdown) => result,
         }
     });
     let shared_routes = opts
@@ -312,4 +353,39 @@ async fn serve(composed: composition::ComposedPlatform) -> Result<(), PlatformEr
         maintenance_task,
     })
     .await
+}
+
+#[cfg(test)]
+mod container_maintenance_tests {
+    use super::*;
+
+    fn test_transport() -> WorkerdTransport {
+        WorkerdTransport::new(GenerationAuthRegistry::new(), Arc::new(Mutex::new(None)))
+    }
+
+    #[tokio::test]
+    async fn container_maintenance_observes_existing_shutdown() {
+        let (_sender, receiver) = watch::channel(true);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            run_container_maintenance(None, test_transport(), receiver),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn container_maintenance_waits_for_shutdown_without_provider() {
+        let (sender, receiver) = watch::channel(false);
+        let task = tokio::spawn(run_container_maintenance(None, test_transport(), receiver));
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+        sender.send(true).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
 }

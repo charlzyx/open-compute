@@ -240,6 +240,7 @@ pub(crate) fn digest_for(
         binding_token,
         observability_token,
         &DurableObjectsConfig::default(),
+        None,
         ConfigRole::Runtime,
     )
 }
@@ -257,6 +258,7 @@ pub(crate) fn digest_for_with_tokens_and_policy(
     binding_token: &SecretString,
     observability_token: &SecretString,
     durable_objects: &DurableObjectsConfig,
+    container_provider: Option<&crate::ContainerProviderConfig>,
     role: ConfigRole,
 ) -> Result<(String, String, WorkerFiles), PlatformError> {
     let (template, workers, _) = load_assets(assets_dir)?;
@@ -277,6 +279,7 @@ pub(crate) fn digest_for_with_tokens_and_policy(
     let rendered =
         render_config_with_tokens(template_str, token, binding_token, observability_token)?;
     let rendered = render_do_policy(rendered, durable_objects)?;
+    let rendered = crate::container_provider::render(&rendered, container_provider)?;
     let rendered = render_lock_compatibility(rendered, runtime.lock())?;
     let digest = config_input_digest(&DigestInputs {
         role,

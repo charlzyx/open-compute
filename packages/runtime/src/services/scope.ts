@@ -15,18 +15,29 @@ function object(value: unknown): value is object {
   );
 }
 
+function copyPublicEnvironment(userEnv: object) {
+  const copy: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(userEnv)) {
+    if (key === SCOPE) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(userEnv, key);
+    if (descriptor) Object.defineProperty(copy, key, descriptor);
+  }
+  return copy;
+}
+
+/** Capture declared event variables without retaining the event's private Service frame. */
+export function captureServiceEnvironment(): Record<string, unknown> {
+  if (!object(env)) throw new Error("SERVICE_BINDING_DENIED");
+  return copyPublicEnvironment(env);
+}
+
 /** Run tenant code with one unforgeable module-local Service frame association. */
 export function withServiceScope<T>(
   userEnv: Record<string, unknown>,
   frame: ServiceFrame,
   action: (scopedEnv: Record<string, unknown>) => T,
 ): T {
-  const scoped: Record<string, unknown> = {};
-  for (const key of Reflect.ownKeys(userEnv)) {
-    if (key === SCOPE) continue;
-    const descriptor = Object.getOwnPropertyDescriptor(userEnv, key);
-    if (descriptor) Object.defineProperty(scoped, key, descriptor);
-  }
+  const scoped = copyPublicEnvironment(userEnv);
   const identity = Object.freeze({});
   scopes.set(identity, frame);
   Object.defineProperty(scoped, SCOPE, {

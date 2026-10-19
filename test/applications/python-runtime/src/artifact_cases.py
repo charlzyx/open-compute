@@ -56,7 +56,7 @@ async def artifact_case(env, payload):
     repo = await binding.get(name)
     if operation == "inspect":
         return {
-            "repo": {field: getattr(repo, field) for field in ("id", "name", "description", "defaultBranch", "createdAt", "updatedAt", "lastPushAt", "source", "readOnly", "remote")},
+            "repo": (await repo.info()).to_py(),
             "tokens": (await repo.listTokens()).to_py(),
         }
     if operation == "token":

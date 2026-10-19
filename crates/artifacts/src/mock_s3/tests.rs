@@ -1,6 +1,30 @@
 use super::*;
 use tokio::net::TcpStream;
 
+#[tokio::test]
+async fn get_bodies_share_storage_and_corruption_preserves_existing_readers() {
+    let mock = MockS3::spawn("bucket").await;
+    mock.put_raw("shared", b"original".to_vec());
+    let stored = mock.state.lock().unwrap().objects["shared"].clone();
+    let read = stored.body_for_get(Fault::None);
+    assert_eq!(read.as_ptr(), stored.body.as_ptr());
+    let range = read.slice(1..4);
+    assert_eq!(range.as_ptr(), read[1..].as_ptr());
+    assert_eq!(range.as_ref(), b"rig");
+
+    let corrupted = stored.body_for_get(Fault::CorruptBody);
+    assert_eq!(corrupted.as_ref(), b"original\x01");
+    assert_eq!(stored.body_for_get(Fault::None).as_ref(), b"original");
+
+    mock.corrupt_body("shared");
+    let changed = mock.state.lock().unwrap().objects["shared"].clone();
+    assert_eq!(changed.body.as_ref(), b"original\xff");
+    assert_eq!(changed.sha256, stored.sha256);
+    assert_eq!(changed.etag, stored.etag);
+    assert_eq!(read.as_ref(), b"original");
+    assert_eq!(range.as_ref(), b"rig");
+}
+
 #[test]
 fn request_parsing_helpers_cover_valid_and_invalid_inputs() {
     assert_eq!(find_headers_end(b"GET / HTTP/1.1\r\n\r\n"), Some(18));

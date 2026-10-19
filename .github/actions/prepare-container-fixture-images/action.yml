@@ -1,0 +1,47 @@
+name: Prepare Container fixture images
+description: Verify this run's native image artifacts and expose image-only build inputs
+
+outputs:
+  directory:
+    description: Verified OCI graphs and Docker bootstrap archives
+    value: ${{ steps.platform.outputs.directory }}
+  input:
+    description: Image-only build input; real Gates require a separate qualified Broker handshake
+    value: ${{ steps.verify.outputs.input }}
+
+runs:
+  using: composite
+  steps:
+    - name: Select native image architecture
+      id: platform
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ runner.arch }}" in
+          X64) architecture=amd64 ;;
+          ARM64) architecture=arm64 ;;
+          *) echo 'Unsupported Container fixture host architecture' >&2; exit 1 ;;
+        esac
+        directory="$(python3 -c 'import os; print(os.path.realpath(os.environ["RUNNER_TEMP"]))')/p23-fixture-images"
+        test ! -e "$directory"
+        echo "architecture=$architecture" >> "$GITHUB_OUTPUT"
+        echo "directory=$directory" >> "$GITHUB_OUTPUT"
+    - uses: actions/download-artifact@v8
+      with:
+        name: p23-images-${{ steps.platform.outputs.architecture }}
+        path: ${{ steps.platform.outputs.directory }}
+    - name: Verify current sources, OCI graphs and bootstrap archives
+      id: verify
+      shell: bash
+      env:
+        IMAGE_DIRECTORY: ${{ steps.platform.outputs.directory }}
+        IMAGE_ARCHITECTURE: ${{ steps.platform.outputs.architecture }}
+      run: |
+        set -euo pipefail
+        umask 077
+        input="$IMAGE_DIRECTORY/build-input.json"
+        test ! -e "$input"
+        python3 -I -B test/containers-fixture/consume-images.py \
+          --directory "$IMAGE_DIRECTORY" --architecture "$IMAGE_ARCHITECTURE" > "$input"
+        echo "OPEN_COMPUTE_TEST_CONTAINERS_INPUT=$input" >> "$GITHUB_ENV"
+        echo "input=$input" >> "$GITHUB_OUTPUT"

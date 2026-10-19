@@ -63,6 +63,7 @@ pub fn public_router(state: HttpState) -> Router {
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
         .merge(crate::artifact_git_http::router())
+        .merge(crate::cloudflare_v4::container_registry_router())
         .merge(removed_management_router(true))
         .fallback(workers_http::local_ingress)
         .layer(middleware::from_fn_with_state(
@@ -121,6 +122,7 @@ fn admin_routes(state: &HttpState) -> Router<HttpState> {
             ),
         )
         .merge(removed_management_router(false));
+    router = router.merge(crate::cloudflare_v4::container_registry_router());
     if state.platform.metrics_enabled {
         router = router.route("/metrics", get(metrics_handler));
     }
@@ -450,7 +452,12 @@ async fn bounds_middleware(
             return Err(StatusCode::PAYLOAD_TOO_LARGE);
         }
     }
-    let body_limit = if request.uri().path().starts_with("/git/") {
+    let body_limit = if request.uri().path().starts_with("/v2/") {
+        state
+            .container_service()
+            .and_then(|service| usize::try_from(service.registry_request_bytes()).ok())
+            .unwrap_or(MAX_BODY)
+    } else if request.uri().path().starts_with("/git/") {
         state
             .artifact_api()
             .and_then(|api| usize::try_from(api.max_request_bytes()).ok())

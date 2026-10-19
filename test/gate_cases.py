@@ -24,6 +24,7 @@ SERVICE_PROCESS_CASES = (
 )
 
 ONCE = {
+    'p23-containers': ('snapshots::snapshot_rootfs_excludes_helper_entities_and_hardlink_references',),
     'p3-contract': (
         'baseline-identity',
         'catalog-schema',
@@ -111,6 +112,9 @@ ONCE = {
 }
 
 TIMING = {
+    'p23-containers': (
+        'ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers',
+    ),
     'p22-browser-run': (
         'fixed_clients_actions_public_cf_and_restart_use_real_browser',
         'managed::managed_puppeteer_actions_frames_and_restart_use_real_browser',

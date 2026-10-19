@@ -11,6 +11,238 @@ use open_compute_workers::{
 use std::collections::BTreeMap;
 
 #[tokio::test]
+async fn containers_endpoints_preserve_authority_and_require_positive_cleanup() {
+    use crate::containers::test_support::{do_authority, fixture, generation};
+    let fixture = fixture().await;
+    let image = fixture.admit_image("main").await;
+    let authority = do_authority(&fixture.service, &fixture._artifacts, image, true);
+    let repo =
+        open_compute_storage::containers::ContainerAuthority::new(fixture._artifacts.storage.db());
+    let target = repo
+        .target(authority.object.instance_id, authority.app.id, 1)
+        .unwrap();
+    let declarations = repo
+        .version_declarations(authority.object.instance_id, target.spec.worker_version_id)
+        .unwrap();
+    let (auth, credential) = generation();
+    let state = SourceState {
+        source: RuntimeSource::new(
+            fixture._artifacts.storage.clone(),
+            fixture._artifacts.artifacts.clone(),
+            BundleLimits::default(),
+            PythonRuntimePin {
+                workerd_revision: "a".repeat(40),
+                workerd_binary_sha256: "b".repeat(64),
+                process_flags: vec!["--experimental".to_owned()],
+                pyodide_bundle_sha256: "c".repeat(64),
+                runtime_assets_sha256: "d".repeat(64),
+            },
+        )
+        .unwrap(),
+        auth: auth.clone(),
+        containers: Some(fixture.service.clone()),
+    };
+    let request = |value: &serde_json::Value| {
+        Request::builder()
+            .method(Method::POST)
+            .header(TOKEN_HEADER, credential.expose())
+            .header(GENERATION_HEADER, "containers-process")
+            .body(Body::from(serde_json::to_vec(value).unwrap()))
+            .unwrap()
+    };
+    let mut body = serde_json::json!({
+        "instanceId": authority.object.instance_id,
+        "namespaceResourceId": authority.object.namespace_resource_id,
+        "applicationName": authority.app.name,
+        "objectId": authority.object.object_id,
+        "objectGeneration": authority.object.object_generation,
+        "routeGeneration": authority.object.route_generation,
+        "descriptorSha256": hex::encode(authority.object.descriptor_sha256),
+        "start": true, "forStop": false, "forMonitor": false,
+        "startup": {"image":declarations[0].images["main"]},
+    });
+    let response = container_resolve(State(state.clone()), request(&body)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let resolved: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+    assert_eq!(resolved["lease"]["state"], "starting");
+    fixture.running().await;
+    body.as_object_mut().unwrap().remove("startup");
+    body["start"] = serde_json::json!(false);
+    let response = container_resolve(State(state.clone()), request(&body)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let running: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+    assert_eq!(running["lease"]["state"], "running");
+    assert_eq!(
+        running["lease"]["opaqueEngineKey"],
+        resolved["lease"]["opaqueEngineKey"]
+    );
+    for field in ["start", "forStop", "forMonitor"] {
+        body.as_object_mut().unwrap().remove(field);
+    }
+    body["leaseGeneration"] = running["lease"]["leaseGeneration"].clone();
+    body["opaqueEngineKey"] = running["lease"]["opaqueEngineKey"].clone();
+    *fixture.protocol.snapshot_rootfs.lock().await =
+        crate::containers::test_support::snapshots::rootfs(b"saved");
+    fixture
+        .protocol
+        .image_size
+        .store(173, std::sync::atomic::Ordering::SeqCst);
+    let snapshot_body = serde_json::json!({"source":body,"name":"checkpoint"});
+    let response = container_snapshot(State(state.clone()), request(&snapshot_body)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let snapshot: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(snapshot.as_object().unwrap().len(), 1);
+    assert_eq!(snapshot["snapshot"].as_object().unwrap().len(), 3);
+    assert_eq!(snapshot["snapshot"]["name"], "checkpoint");
+    assert!(snapshot["snapshot"]["size"].as_u64().unwrap() > 0);
+    let mut invalid = snapshot_body.clone();
+    invalid["archive"] = serde_json::json!("untrusted");
+    assert_eq!(
+        container_snapshot(State(state.clone()), request(&invalid))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        container_begin_stop(State(state.clone()), request(&body))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        container_stop(State(state.clone()), request(&body))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(fixture.protocol.terminated.lock().await.len(), 1);
+    auth.activate_for_test(SecretString::new("rotated"));
+    assert_eq!(
+        container_snapshot(State(state.clone()), request(&snapshot_body))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        container_stop(State(state), request(&body)).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(fixture.protocol.terminated.lock().await.len(), 1);
+}
+
+#[tokio::test]
+async fn container_endpoints_require_generation_auth_and_an_available_provider() {
+    let fixture = Fixture::create().await;
+    let frozen = serde_json::json!({
+        "instanceId": fixture.base.account,
+        "namespaceResourceId": open_compute_core::ResourceId::generate(),
+        "applicationName": "application",
+        "objectId": "0".repeat(64),
+        "objectGeneration": 1,
+        "routeGeneration": 1,
+        "descriptorSha256": "0".repeat(64),
+    });
+    let mut resolve_body = frozen.clone();
+    resolve_body["start"] = serde_json::json!(false);
+    resolve_body["forStop"] = serde_json::json!(false);
+    resolve_body["forMonitor"] = serde_json::json!(false);
+    let mut stop_body = frozen;
+    stop_body["leaseGeneration"] = serde_json::json!(1);
+    stop_body["opaqueEngineKey"] = serde_json::json!("a".repeat(64));
+    let resolve = container_resolve(
+        State(fixture.state.clone()),
+        fixture.request(Body::from(serde_json::to_vec(&resolve_body).unwrap())),
+    )
+    .await;
+    assert_eq!(resolve.status(), StatusCode::NOT_FOUND);
+    let mut startup_body = resolve_body.clone();
+    startup_body["start"] = serde_json::json!(true);
+    startup_body["startup"] = serde_json::json!({"environmentVariables": [format!("VALUE={}", "x".repeat(MAX_SOURCE_REQUEST))]});
+    assert!(serde_json::to_vec(&startup_body).unwrap().len() > MAX_SOURCE_REQUEST);
+    assert_eq!(
+        container_resolve(
+            State(fixture.state.clone()),
+            fixture.request(Body::from(serde_json::to_vec(&startup_body).unwrap()))
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        container_resolve(
+            State(fixture.state.clone()),
+            fixture.request(Body::from(vec![
+                b' ';
+                MAX_SOURCE_REQUEST + open_compute_storage::crypto::MAX_CONTAINER_STARTUP_BYTES
+                    + 1
+            ]))
+        )
+        .await
+        .status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let stop = container_stop(
+        State(fixture.state.clone()),
+        fixture.request(Body::from(serde_json::to_vec(&stop_body).unwrap())),
+    )
+    .await;
+    assert_eq!(stop.status(), StatusCode::NOT_FOUND);
+    let begin = container_begin_stop(
+        State(fixture.state.clone()),
+        fixture.request(Body::from(serde_json::to_vec(&stop_body).unwrap())),
+    )
+    .await;
+    assert_eq!(begin.status(), StatusCode::NOT_FOUND);
+    let snapshot_body = serde_json::json!({"source":stop_body});
+    assert_eq!(
+        container_snapshot(
+            State(fixture.state.clone()),
+            fixture.request(Body::from(serde_json::to_vec(&snapshot_body).unwrap()))
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    let mut unauthorized = fixture.request(Body::from(serde_json::to_vec(&snapshot_body).unwrap()));
+    unauthorized.headers_mut().remove(TOKEN_HEADER);
+    assert_eq!(
+        container_snapshot(State(fixture.state.clone()), unauthorized)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        container_snapshot(
+            State(fixture.state.clone()),
+            fixture.request(Body::from(vec![b' '; MAX_SOURCE_REQUEST + 1]))
+        )
+        .await
+        .status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let mut unauthorized = fixture.request(Body::from(serde_json::to_vec(&resolve_body).unwrap()));
+    unauthorized.headers_mut().remove(TOKEN_HEADER);
+    assert_eq!(
+        container_resolve(State(fixture.state.clone()), unauthorized)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        container_resolve(
+            State(fixture.state.clone()),
+            fixture.request(Body::from("{}"))
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
 async fn prepared_pin_uses_verified_host_binary_and_current_embedded_system_assets() {
     let directory = tempfile::tempdir().unwrap();
     let package = open_compute_runtime::materialize_embedded_runtime(directory.path()).unwrap();
@@ -154,7 +386,11 @@ impl Fixture {
         auth.activate_for_test(SecretString::new("a".repeat(64)));
         Self {
             base,
-            state: SourceState { source, auth },
+            state: SourceState {
+                source,
+                auth,
+                containers: None,
+            },
             body: serde_json::json!({"key":key,"expectedWorkerCodeSha256":digest,"expectedPreparedSha256":prepared,"scope":"runtime"}),
         }
     }
@@ -179,7 +415,7 @@ async fn python_snapshot_endpoint_returns_only_authenticated_verified_private_bi
     let source = fixture.state.source.clone();
     let auth = fixture.state.auth.clone();
     let server = tokio::spawn(async move {
-        serve_runtime_source(listener, source, auth, async move {
+        serve_runtime_source(listener, source, auth, None, async move {
             let _ = receiver.await;
         })
         .await
@@ -277,6 +513,7 @@ async fn python_snapshot_endpoint_returns_only_authenticated_verified_private_bi
 async fn source_request_rejects_invalid_frames_and_rechecks_generation_before_response_commit() {
     let fixture = Fixture::create().await;
     let empty = SourceState {
+        containers: None,
         source: fixture.state.source.clone(),
         auth: GenerationAuthRegistry::new(),
     };

@@ -46,6 +46,7 @@ pub(super) fn prepare(
     bundle: Option<&[u8]>,
     now_ms: i64,
 ) -> Result<Option<PreparedDoMigration>, PlatformError> {
+    validate_containers(metadata)?;
     let repository = DurableObjectRepository::new(&api.storage);
     let current = repository.current_worker_migration(worker_id)?;
     let current_tag = current.as_ref().map(|migration| migration.tag.clone());
@@ -105,6 +106,55 @@ pub(super) fn declares_live_class(metadata: &WorkerUploadMetadata, class_name: &
             }
             WorkerUploadExport::Worker { .. } | WorkerUploadExport::Workflow { .. } => false,
         })
+}
+
+pub(super) fn validate_containers(metadata: &WorkerUploadMetadata) -> Result<(), PlatformError> {
+    let mut classes = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for container in &metadata.containers {
+        open_compute_storage::containers::validate_container_images(&container.images).map_err(
+            |_| invalid("Container images require valid names and immutable references"),
+        )?;
+        if container.name.is_empty()
+            || container.name.len() > 63
+            || !container
+                .name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || !classes.insert(&container.class_name)
+            || !names.insert(&container.name)
+        {
+            return Err(invalid(
+                "Container declarations must have unique valid names and classes",
+            ));
+        }
+        let export = metadata
+            .exports
+            .as_ref()
+            .and_then(|exports| exports.get(&container.class_name));
+        if !matches!(export, Some(WorkerUploadExport::DurableObject { state, storage, container: Some(name), renamed_to: None, transferred_to: None, transfer_from: None }) if state.as_deref().unwrap_or("created") == "created" && storage.as_deref() == Some("sqlite") && name == &container.name)
+        {
+            return Err(invalid(
+                "Container declarations require a matching same-Worker SQLite export",
+            ));
+        }
+    }
+    if metadata.exports.as_ref().is_some_and(|exports| {
+        exports.iter().any(|(class, export)| {
+            matches!(
+                export,
+                WorkerUploadExport::DurableObject {
+                    container: Some(_),
+                    ..
+                }
+            ) && !classes.contains(class)
+        })
+    }) {
+        return Err(invalid(
+            "Container exports require an application declaration",
+        ));
+    }
+    Ok(())
 }
 
 fn migration_plan(
@@ -198,9 +248,11 @@ fn declarative_export_plan(
         tag_material.push(0);
         tag_material.extend_from_slice(renamed_to.as_deref().unwrap_or_default().as_bytes());
         tag_material.push(0xff);
-        if container.is_some() || transferred_to.is_some() || transfer_from.is_some() {
+        tag_material.extend_from_slice(container.as_deref().unwrap_or_default().as_bytes());
+        tag_material.push(0);
+        if transferred_to.is_some() || transfer_from.is_some() {
             return Err(unsupported(
-                "Durable Object containers and cross-Script transfer are unsupported",
+                "Durable Object cross-Script transfer is unsupported",
             ));
         }
         match state.as_deref().unwrap_or("created") {

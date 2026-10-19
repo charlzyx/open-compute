@@ -42,7 +42,7 @@ fn worker_list_uses_cursor_and_omits_remote_while_get_returns_handle_info() {
             serde_json::Map::from_iter([("name".to_owned(), Value::String(name.to_owned()))]);
         let created = create(&api, account, "apps", &body, 2_000).unwrap();
         assert!(created["token"].as_str().unwrap().starts_with("art_v1_"));
-        assert!(created.get("tokenExpiresAt").is_some());
+        assert!(created.get("tokenExpiresAt").is_none());
     }
     let page = list(
         &api,

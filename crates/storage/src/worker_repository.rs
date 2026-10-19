@@ -464,6 +464,11 @@ pub(crate) fn invariant() -> PlatformError {
 }
 
 pub(crate) fn db_error() -> PlatformError {
+    #[cfg(any(test, feature = "test-support"))]
+    eprintln!(
+        "temporary version DB diagnostic: {}",
+        std::backtrace::Backtrace::force_capture()
+    );
     PlatformError::new(ErrorCode::Internal, "control database operation failed")
 }
 

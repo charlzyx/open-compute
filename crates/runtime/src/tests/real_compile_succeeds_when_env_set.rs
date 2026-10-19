@@ -73,6 +73,53 @@ async fn real_compile_succeeds_when_env_set() {
             .windows(b"do-router".len())
             .any(|window| window == b"do-router")
     );
+    let broker_socket = dir.path().join("broker.sock");
+    let provider = crate::ContainerProviderConfig::new(
+        broker_socket.clone(),
+        format!("sha256:{}", "a".repeat(64)),
+    )
+    .unwrap();
+    let socket_address = format!("unix:{}", broker_socket.to_str().unwrap());
+    for (role, unconfigured, unconfigured_bytes) in [
+        (crate::ConfigRole::Runtime, &compiled, &bytes),
+        (
+            crate::ConfigRole::PythonPreparation,
+            &prepared,
+            &prepared_bytes,
+        ),
+    ] {
+        let mut request = compile_req(
+            &runtime,
+            &lock_path,
+            &assets,
+            &data,
+            &platform,
+            &token,
+            &redactor,
+            Duration::from_secs(20),
+        );
+        request.role = role;
+        request.container_provider = Some(&provider);
+        let configured = compile_static_config(request)
+            .await
+            .expect("real compile with Container provider");
+        let configured_bytes = configured.read_bytes().unwrap();
+        assert_ne!(configured.digest(), unconfigured.digest());
+        match role {
+            crate::ConfigRole::Runtime => {
+                assert_ne!(&configured_bytes, unconfigured_bytes);
+                assert!(
+                    configured_bytes
+                        .windows(socket_address.len())
+                        .any(|window| window == socket_address.as_bytes())
+                );
+            }
+            crate::ConfigRole::PythonPreparation => {
+                assert_eq!(&configured_bytes, unconfigured_bytes);
+            }
+        }
+    }
+    assert!(!broker_socket.exists());
     assert_eq!(compiled.read_bytes().unwrap(), bytes);
     assert!(!format!("{compiled:?}").contains(TOKEN));
     assert!(!compiled.to_string().contains(TOKEN));

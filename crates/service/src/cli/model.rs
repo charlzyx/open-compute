@@ -24,6 +24,12 @@ pub struct Cli {
 /// Top-level subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Run the independently operated restricted Container engine Broker.
+    ContainerBroker {
+        /// Broker TOML configuration; separate from an instance configuration.
+        #[arg(long, conflicts_with_all = ["config", "instance", "system"])]
+        broker_config: PathBuf,
+    },
     /// Start the platform process in the foreground.
     Run,
     /// Start the one managed daemon service in the selected scope.

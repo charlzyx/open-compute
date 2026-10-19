@@ -12,9 +12,9 @@ const calls = [];
 globalThis.__hostPolicyCalls = calls;
 const factories = moduleUrl(`
   const calls = globalThis.__hostPolicyCalls;
-  export function createServiceBinding(env, createStub, control, admit) {
-    calls.push(['service-policy', control, admit]);
-    return createStub(env);
+  export function createServiceBinding(createStub, control, admit, http) {
+    calls.push(['service-policy', control, admit, http]);
+    return createStub({ fetcher: control.control });
   }
   export default { createServiceRpcStub(policy) { return { native: policy }; },
     createPrivateTransport(raw) {
@@ -22,6 +22,9 @@ const factories = moduleUrl(`
       calls.push(['private-control', raw, control]);
       return control;
     },
+    validatePublicTransport(raw) { calls.push(["validated-public-transport", raw]); },
+    fetchPublicTransport(raw, request) { return raw.fetch(request); },
+    connectPublicTransport(raw, address, options) { return raw.connect(address, options); },
     admitSubrequest() { calls.push(['admit']); },
     createDurableObjectId(value, name, jurisdiction) { return { value, name, jurisdiction }; },
     createDurableObjectNamespace(policy) { return policy; },
@@ -29,7 +32,14 @@ const factories = moduleUrl(`
     isRpcStub() { return false; },
     installQueuePolicy(queue, policy) { calls.push(["install-queue", queue, policy]); }, decodeQueueV8() {} };
   export function registerServiceBinding() {}
+  export const serviceChannels = new WeakMap();
+  export const objectChannels = new WeakMap();
+  export function serviceChannelCallbacks(policy) { return serviceChannels.get(policy) ?? null; }
+  export function durableObjectChannelCallbacks(policy) { return objectChannels.get(policy) ?? null; }
+  export function createPolicyChannelCallbacks(callbacks) { return { issued: callbacks }; }
   export function createDurableObjectNamespace(...args) { calls.push(['do-binding',...args]); return {}; }
+  export function createRpcTransport(value) { calls.push(["rpc-view", value]); return value; }
+  export function disposeRpcResult() {}
   export function createDurableObjectStubPolicy(env, factories) { return factories.createRpcStub(env); }
   export class QueuePublisher { constructor(binding, ...args) { calls.push(["queue",...args]); }
     send() {} sendBatch() {} metrics() {} }
@@ -56,6 +66,7 @@ const imports = Object.fromEntries(
   [
     "cloudflare-internal:open-compute-forwarding",
     "cloudflare-internal:wrapped-binding",
+    "../bindings/rpc-transport.js",
     "../cache/facade.js",
     "../durable-objects/namespace.js",
     "../durable-objects/stub.js",
@@ -74,6 +85,7 @@ const {
   default: hostPolicy,
   createServiceBinding,
   createDurableObjectStubPolicy,
+  createBindingChannelCallbacks,
 } = await importRuntime("loader/host-policy.ts", {
   ...imports,
   "./policy.js": policyModule,
@@ -102,6 +114,7 @@ const snapshot = {
   scheduledTargets: [],
   workerLoaders: [],
   browserBindings: [],
+  containerClasses: [],
   cachePolicy: {
     enabled: true,
     failOpen: false,
@@ -439,4 +452,21 @@ test("module assembly keeps the original Python main and excludes platform sourc
       () => modulesFor({ ...configured, ...overrides }, false, undefined),
       /VERSION_INVARIANT/,
     );
+});
+
+test("native channel factory accepts only issued private DO and Service policies", async () => {
+  const { serviceChannels, objectChannels } = await import(factories);
+  const callbacks = { fetch() {}, connect() {} };
+  const service = {};
+  const object = {};
+  serviceChannels.set(service, callbacks);
+  objectChannels.set(object, callbacks);
+  assert.equal(createBindingChannelCallbacks(service).issued, callbacks);
+  assert.equal(createBindingChannelCallbacks(object).issued, callbacks);
+  assert.throws(
+    () => createBindingChannelCallbacks({ fetch() {}, connect() {} }),
+    /SERVICE_BINDING_DENIED/,
+  );
+  assert.deepEqual(Reflect.ownKeys(service), []);
+  assert.deepEqual(Reflect.ownKeys(object), []);
 });

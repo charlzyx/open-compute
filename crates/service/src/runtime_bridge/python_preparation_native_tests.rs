@@ -162,6 +162,7 @@ async fn fresh_native_preparation_publishes_once_and_reaps_after_import_rejectio
         source_listener,
         source.clone(),
         services[0].0.clone(),
+        None,
         async {
             let _ = stopped.await;
         },

@@ -3,10 +3,9 @@
 This file owns the stable deviation identifiers emitted by `ocd capabilities --json`.
 It records verified single-node topology or pinned-runtime capacity differences, not a claim that unlisted
 Cloudflare behavior is supported.
-Functional gaps are blocked inventory members, never deviation IDs. The current Day1 inventory has no blocked target
-member: Workers, KV, R2, D1, Durable Objects, Alarms, Queues, Cron, Workflows, Cache API, Vectorize, AI Search,
-Markdown Conversion, Version Metadata, hibernatable WebSockets, and Cloudflare Artifacts are qualified against the
-pinned stable surface. `OC-WKR-TCP-001` and
+Functional gaps use blocked inventory members, never deviation IDs. The catalog marks unverified Dynamic Workers
+controls, Browser Run members, and the P23 Container surface as `blocked`. The catalog lists their exact members and
+missing evidence. `OC-WKR-TCP-001` and
 `OC-WKR-LIMIT-001` record only the reviewed properties that this self-host contract cannot reproduce from
 Cloudflare's hosted edge. D1 Session bookmark sequential visibility, Durable Object hibernation/output gates, Queue `v8`/metadata, and Workflow
 batch/rollback/structured-clone/parallel are implemented behavior, not deviations. Conformance inventory audits every

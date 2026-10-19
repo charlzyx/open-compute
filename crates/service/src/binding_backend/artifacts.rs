@@ -476,7 +476,7 @@ fn created_repo(
     Ok(json!({
         "id": info["id"], "name": info["name"], "description": info["description"],
         "defaultBranch": info["defaultBranch"], "remote": info["remote"],
-        "token": token.plaintext, "tokenExpiresAt": timestamp(token.record.expires_at_ms)?,
+        "token": token.plaintext,
     }))
 }
 

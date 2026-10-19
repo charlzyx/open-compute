@@ -1,5 +1,6 @@
 import { env as currentEnv, RpcTarget, waitUntil } from "cloudflare:workers";
 import { preserveRpcDisposal } from "../bindings/rpc-disposal.js";
+import { createRpcTransport } from "../bindings/rpc-transport.js";
 import { privateWeakMap } from "../private-weak-map.js";
 import {
   activateServiceCapabilities,
@@ -61,6 +62,7 @@ const nativeFreeze = Object.freeze;
 const nativeEntries = Object.entries;
 const nativePrototype = Object.getPrototypeOf;
 const nativeCreate = Object.create;
+const nativeSetPrototypeOf = Object.setPrototypeOf;
 const nativeDefine = Object.defineProperty;
 const objectPrototype = Object.prototype;
 const RESERVED = new Set([
@@ -125,6 +127,8 @@ class SourceCapability extends RpcTarget {
   }
 
   activate(retention: unknown): void {
+    if (!object(retention)) throw failure("SERVICE_BINDING_DENIED");
+    retention = createRpcTransport(retention, "service-retention");
     if (
       !object(retention) ||
       this.#disposed ||
@@ -285,16 +289,20 @@ async function activateNestedCapabilities(
         ? (nativeApply(duplicate, controller, []) as CapabilityController)
         : controller;
       try {
-        return await transfer.retainCapability(
+        const retained: unknown = await transfer.retainCapability(
           operationHandle,
           owner,
           deadlineAt,
         );
+        if (!object(retained)) throw failure("SERVICE_BINDING_DENIED");
+        return createRpcTransport(retained, "service-retention");
       } finally {
         if (owned) transfer[Symbol.dispose]?.();
       }
     },
     deadlineAt,
+    (source) =>
+      owner === "caller" ? createRpcTransport(source, "capability") : source,
   );
 }
 
@@ -553,7 +561,7 @@ export function decodeServiceValue(
 ): unknown {
   if (capabilityEnvelope(value))
     return capability(
-      value.handle as NativeCapabilityHandle,
+      createRpcTransport(value.handle, "capability") as NativeCapabilityHandle,
       value.kind,
       undefined,
       callbackController,
@@ -609,25 +617,28 @@ export function serviceCapabilityController(
 ): CapabilityController {
   const duplicate = nativeGet(transport, "dup");
   const dispose = nativeGet(transport, Symbol.dispose);
-  return {
-    createStub,
-    beginCapability: (retention, frame) =>
-      transport.beginCapability(retention, frame),
-    releaseRetention: (retention) => transport.releaseRetention(retention),
-    completeOperation: (handle) => transport.completeOperation(handle),
-    retainCapability: (handle, owner, deadlineAt) =>
-      transport.retainCapability(handle, owner, deadlineAt),
-    ...(callable(duplicate)
-      ? {
-          dup: () =>
-            serviceCapabilityController(
-              nativeApply(duplicate, transport, []) as CapabilityController,
-              createStub,
-            ),
-        }
-      : {}),
-    ...(callable(dispose)
-      ? { [Symbol.dispose]: () => nativeApply(dispose, transport, []) }
-      : {}),
-  };
+  return nativeSetPrototypeOf(
+    {
+      createStub,
+      beginCapability: (retention, frame) =>
+        transport.beginCapability(retention, frame),
+      releaseRetention: (retention) => transport.releaseRetention(retention),
+      completeOperation: (handle) => transport.completeOperation(handle),
+      retainCapability: (handle, owner, deadlineAt) =>
+        transport.retainCapability(handle, owner, deadlineAt),
+      ...(callable(duplicate)
+        ? {
+            dup: () =>
+              serviceCapabilityController(
+                nativeApply(duplicate, transport, []) as CapabilityController,
+                createStub,
+              ),
+          }
+        : {}),
+      ...(callable(dispose)
+        ? { [Symbol.dispose]: () => nativeApply(dispose, transport, []) }
+        : {}),
+    } satisfies CapabilityController,
+    null,
+  );
 }

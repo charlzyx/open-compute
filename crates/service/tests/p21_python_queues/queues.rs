@@ -184,7 +184,7 @@ async fn python_version(
     revision: &str,
     secret: &str,
 ) -> String {
-    let (status, _, bytes) = fixture
+    let (status, _, bytes, version) = fixture
         .upload_version(
             PYTHON,
             &Capture::content_type(),
@@ -194,5 +194,5 @@ async fn python_version(
     assert_eq!(status, 200, "Python Queue Version admission/prepare failed");
     let response: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(response["success"], true);
-    response["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }

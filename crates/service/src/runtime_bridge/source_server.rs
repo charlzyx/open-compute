@@ -8,6 +8,7 @@ const PYTHON_SNAPSHOT_PATH: &str = "/internal/runtime/v1/versions/python-snapsho
 struct SourceState {
     source: RuntimeSource,
     auth: GenerationAuthRegistry,
+    containers: Option<Arc<crate::ContainerService>>,
 }
 
 /// Bind the private `RuntimeSource` endpoint to an ephemeral IPv4 loopback port.
@@ -27,12 +28,30 @@ pub async fn serve_runtime_source(
     listener: TcpListener,
     source: RuntimeSource,
     auth: GenerationAuthRegistry,
+    containers: Option<Arc<crate::ContainerService>>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), PlatformError> {
-    let state = SourceState { source, auth };
+    let state = SourceState {
+        source,
+        auth,
+        containers,
+    };
     let router = Router::new()
         .route(SOURCE_PATH, post(resolve))
         .route(PYTHON_SNAPSHOT_PATH, post(resolve_python))
+        .route(
+            "/internal/runtime/v1/containers/resolve",
+            post(container_resolve),
+        )
+        .route("/internal/runtime/v1/containers/stop", post(container_stop))
+        .route(
+            "/internal/runtime/v1/containers/snapshot",
+            post(container_snapshot),
+        )
+        .route(
+            "/internal/runtime/v1/containers/begin-stop",
+            post(container_begin_stop),
+        )
         .with_state(state);
     axum::serve(
         crate::http::nodelay_listener(listener),
@@ -46,6 +65,154 @@ pub async fn serve_runtime_source(
             "private RuntimeSource listener failed",
         )
     })
+}
+
+async fn container_resolve(State(state): State<SourceState>, request: Request) -> Response {
+    let (body, credential) = match source_request::<crate::containers::ResolveRequest>(
+        &state,
+        request,
+        MAX_SOURCE_REQUEST + open_compute_storage::crypto::MAX_CONTAINER_STARTUP_BYTES,
+    )
+    .await
+    {
+        Ok(parsed) => parsed,
+        Err(response) => return response,
+    };
+    let Some(service) = &state.containers else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if state.auth.with_current(&credential, || ()).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let result = service
+        .resolve(
+            body,
+            open_compute_core::wall_time_ms(),
+            &state.auth,
+            &credential,
+        )
+        .await;
+    state
+        .auth
+        .with_current(&credential, || match result {
+            Ok(body) => axum::Json(body).into_response(),
+            Err(error) => source_platform_error(error),
+        })
+        .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
+}
+
+async fn container_stop(State(state): State<SourceState>, request: Request) -> Response {
+    let (body, credential) =
+        match source_request::<crate::containers::StopRequest>(&state, request, MAX_SOURCE_REQUEST)
+            .await
+        {
+            Ok(parsed) => parsed,
+            Err(response) => return response,
+        };
+    let Some(service) = &state.containers else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if state.auth.with_current(&credential, || ()).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let result = service
+        .stop(
+            &body,
+            open_compute_core::wall_time_ms(),
+            &state.auth,
+            &credential,
+        )
+        .await;
+    state
+        .auth
+        .with_current(&credential, || match result {
+            Ok(()) => StatusCode::NO_CONTENT.into_response(),
+            Err(error) => source_platform_error(error),
+        })
+        .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
+}
+
+async fn container_begin_stop(State(state): State<SourceState>, request: Request) -> Response {
+    let (body, credential) =
+        match source_request::<crate::containers::StopRequest>(&state, request, MAX_SOURCE_REQUEST)
+            .await
+        {
+            Ok(parsed) => parsed,
+            Err(response) => return response,
+        };
+    let Some(service) = &state.containers else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match service.begin_stop(
+        &body,
+        open_compute_core::wall_time_ms(),
+        &state.auth,
+        &credential,
+    ) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => source_platform_error(error),
+    }
+}
+
+async fn container_snapshot(State(state): State<SourceState>, request: Request) -> Response {
+    #[cfg(feature = "test-support")]
+    tracing::info!(
+        phase = "request-received",
+        "Controlled snapshot private request"
+    );
+    let (body, credential) = match source_request::<crate::containers::SnapshotRequest>(
+        &state,
+        request,
+        MAX_SOURCE_REQUEST,
+    )
+    .await
+    {
+        Ok(parsed) => parsed,
+        Err(response) => {
+            #[cfg(feature = "test-support")]
+            tracing::info!(
+                phase = "request-rejected",
+                status = response.status().as_u16(),
+                "Controlled snapshot private request"
+            );
+            return response;
+        }
+    };
+    #[cfg(feature = "test-support")]
+    tracing::info!(
+        phase = "request-validated",
+        "Controlled snapshot private request"
+    );
+    let Some(service) = &state.containers else {
+        #[cfg(feature = "test-support")]
+        tracing::info!(
+            phase = "service-unavailable",
+            "Controlled snapshot private request"
+        );
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if state.auth.with_current(&credential, || ()).is_none() {
+        #[cfg(feature = "test-support")]
+        tracing::info!(
+            phase = "generation-rejected",
+            "Controlled snapshot private request"
+        );
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let result = service
+        .capture_snapshot(body, state.auth.clone(), credential.clone())
+        .await;
+    #[cfg(feature = "test-support")]
+    if let Err(error) = &result {
+        tracing::info!(phase = "capture-rejected", code = %error.code(), "Controlled snapshot private request");
+    }
+    state
+        .auth
+        .with_current(&credential, || match result {
+            Ok(body) => axum::Json(body).into_response(),
+            Err(error) => source_platform_error(error),
+        })
+        .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
 }
 
 #[derive(Deserialize)]
@@ -88,6 +255,7 @@ impl From<SourceScope> for RuntimeScope {
 async fn source_request<T: serde::de::DeserializeOwned>(
     state: &SourceState,
     request: Request,
+    max_bytes: usize,
 ) -> Result<(T, GenerationCredential), Response> {
     let credential = state
         .auth
@@ -111,14 +279,14 @@ async fn source_request<T: serde::de::DeserializeOwned>(
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<usize>().ok())
-        .is_some_and(|length| length > MAX_SOURCE_REQUEST)
+        .is_some_and(|length| length > max_bytes)
     {
         return Err(source_error(
             ErrorCode::BundleTooLarge,
             StatusCode::PAYLOAD_TOO_LARGE,
         ));
     }
-    let Ok(bytes) = to_bytes(request.into_body(), MAX_SOURCE_REQUEST).await else {
+    let Ok(bytes) = to_bytes(request.into_body(), max_bytes).await else {
         return Err(source_error(
             ErrorCode::BundleTooLarge,
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -130,10 +298,11 @@ async fn source_request<T: serde::de::DeserializeOwned>(
 }
 
 async fn resolve(State(state): State<SourceState>, request: Request) -> Response {
-    let (body, credential): (ResolveRequest, _) = match source_request(&state, request).await {
-        Ok(parsed) => parsed,
-        Err(response) => return response,
-    };
+    let (body, credential): (ResolveRequest, _) =
+        match source_request(&state, request, MAX_SOURCE_REQUEST).await {
+            Ok(parsed) => parsed,
+            Err(response) => return response,
+        };
     let snapshot = match state
         .source
         .resolve(
@@ -176,11 +345,11 @@ impl AsRef<[u8]> for SnapshotBody {
 }
 
 async fn resolve_python(State(state): State<SourceState>, request: Request) -> Response {
-    let (body, credential): (ResolvePythonRequest, _) = match source_request(&state, request).await
-    {
-        Ok(parsed) => parsed,
-        Err(response) => return response,
-    };
+    let (body, credential): (ResolvePythonRequest, _) =
+        match source_request(&state, request, MAX_SOURCE_REQUEST).await {
+            Ok(parsed) => parsed,
+            Err(response) => return response,
+        };
     let snapshot = match state
         .source
         .resolve_python_prepared(

@@ -405,11 +405,24 @@ fn os_start_key(pid: i32) -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn linux_start_key(pid: i32) -> Option<String> {
-    let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let rparen = text.rfind(')')?;
-    let rest = text.get(rparen + 2..)?;
-    let start = rest.split_whitespace().nth(19)?;
-    Some(format!("linux:{start}"))
+    let stat = std::fs::read(format!("/proc/{pid}/stat")).ok()?;
+    Some(format!("linux:{}", linux_start_ticks(&stat)?))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_start_ticks(stat: &[u8]) -> Option<&str> {
+    // The kernel comm field contains arbitrary bytes, including non-UTF-8 names and ')'.
+    // Process identity uses the ASCII start-time field after the final comm delimiter.
+    let rparen = stat.iter().rposition(|byte| *byte == b')')?;
+    if stat.get(rparen + 1) != Some(&b' ') {
+        return None;
+    }
+    let rest = std::str::from_utf8(stat.get(rparen + 2..)?).ok()?;
+    let start = rest.split_ascii_whitespace().nth(19)?;
+    start
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then_some(start)
 }
 
 #[cfg(target_os = "macos")]

@@ -26,6 +26,7 @@ const snapshot = {
   moduleBindings: [],
   workerLoaders: [],
   browserBindings: [],
+  containerClasses: [],
   services: [],
   cachePolicy: {
     enabled: false,

@@ -174,7 +174,7 @@ pub(super) async fn upload(
             match snapshot
                 .map_err(|error| V4Error::from(&error))
                 .and_then(|snapshot| {
-                    VersionItem::from_snapshot(&api, &account_authority, &snapshot)
+                    UploadItem::from_snapshot(&api, &account_authority, &snapshot, deploy)
                 }) {
                 Ok(item) => success_response(context, item),
                 Err(error) => error_response(error, context.request_id()),
@@ -193,7 +193,7 @@ pub(super) async fn upload(
                         .map_err(|error| V4Error::from(&error))
                 })
                 .and_then(|snapshot| {
-                    VersionItem::from_snapshot(&api, &account_authority, &snapshot)
+                    UploadItem::from_snapshot(&api, &account_authority, &snapshot, deploy)
                 });
             match item {
                 Ok(item) => success_response(context, item),
@@ -217,3 +217,41 @@ fn observability_patch(
         persist: logs.and_then(|settings| settings.persist),
     }
 }
+
+// PUT identifies the Script and the Version it deployed. POST versions returns
+// the immutable Version projection used by the Version read endpoints.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum UploadItem {
+    Script(ScriptUploadItem),
+    Version(VersionItem),
+}
+
+#[derive(Serialize)]
+struct ScriptUploadItem {
+    #[serde(flatten)]
+    script: ScriptItem,
+    deployment_id: VersionId,
+}
+
+impl UploadItem {
+    fn from_snapshot(
+        api: &crate::workers_http::WorkerApiState,
+        authority: &crate::cloudflare_v4::accounts::V4InstanceContext,
+        snapshot: &VersionSnapshot,
+        deploy: bool,
+    ) -> Result<Self, V4Error> {
+        if deploy {
+            Ok(Self::Script(ScriptUploadItem {
+                script: ScriptItem::from_worker(&snapshot.worker, Some(&snapshot.version))?,
+                deployment_id: snapshot.version.id,
+            }))
+        } else {
+            VersionItem::from_snapshot(api, authority, snapshot).map(Self::Version)
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "scripts_tests.rs"]
+mod tests;

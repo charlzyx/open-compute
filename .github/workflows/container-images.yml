@@ -1,0 +1,72 @@
+name: Container fixture images
+
+on:
+  workflow_call:
+    inputs:
+      arm64:
+        description: Also prepare native ARM64 images for release consumers
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  MBX_BUILD_SCRIPT_EXECUTION: "0"
+  MBX_TARGET_VIEWS: "0"
+  MBX_RESTORE_HARDLINK: "0"
+  MBX_GC_AUTO: "false"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  images:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.arm64 && '[{"os":"ubuntu-24.04","architecture":"amd64"},{"os":"ubuntu-24.04-arm","architecture":"arm64"}]' || '[{"os":"ubuntu-24.04","architecture":"amd64"}]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.4
+          cache: false
+      - uses: jdx/mr-boxington-action@v1
+        with:
+          version: 1.22.0
+          backend: local
+          cache-links: "false"
+      - name: Configure global mbx build policy
+        run: |
+          mbx settings set build_script_execution false
+          mbx settings set target.views false
+          mbx settings set restore_hardlink false
+          mbx settings set gc.auto false
+      - name: Build and test the locked sidecar source
+        run: ./scripts/build-container-sidecar-source.sh
+      - name: Build and verify native image artifacts
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$(python3 -c 'import os; print(os.path.realpath(os.environ["RUNNER_TEMP"]))')/p23-images"
+          socket="$(python3 -c 'import os; print(os.path.realpath("/var/run/docker.sock"))')"
+          mbx="$(python3 -c 'import os, shutil; print(os.path.realpath(shutil.which("mbx")))')"
+          python3 -I -B test/containers-fixture/build-images.py \
+            --docker-host "unix://$socket" --mbx "$mbx" \
+            --sidecar "$GITHUB_WORKSPACE/.temp/container-sidecar-source/container-sidecar" \
+            --output "$output"
+          python3 -I -B test/containers-fixture/consume-images.py \
+            --directory "$output" --architecture "${{ matrix.architecture }}" > "$RUNNER_TEMP/p23-build-input.json"
+          echo "directory=$output" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: p23-images-${{ matrix.architecture }}
+          path: ${{ steps.images.outputs.directory }}
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

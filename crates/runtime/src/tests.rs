@@ -248,6 +248,7 @@ fn compile_req<'a>(
         binding_token: &TEST_BINDING_TOKEN,
         observability_token: &TEST_OBSERVABILITY_TOKEN,
         durable_objects: open_compute_core::DurableObjectsConfig::default(),
+        container_provider: None,
         deadline,
         redactor,
     }
@@ -289,6 +290,7 @@ mod lock_validation_rejects_every_malformed_authority_field;
 mod lock_target_url_identity_and_accessors_are_strict;
 
 mod digest_assets_tokens_and_supervisor_auth_are_fail_closed;
+mod native_container_protocol;
 
 mod missing_symlink_directory_non_executable_tampered_rejected_before_version;
 

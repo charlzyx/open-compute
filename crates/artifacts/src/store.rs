@@ -11,7 +11,8 @@ use futures::{Stream, StreamExt as _};
 use open_compute_core::{ErrorCode, PlatformError};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
-use std::io::{Read as _, Seek as _};
+use std::io::Seek as _;
+use std::os::unix::fs::FileExt as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -138,7 +139,7 @@ fn immutable_options(size: u64, sha256: &str, content_type: Option<&str>) -> Put
 }
 
 fn verify_reader(
-    reader: &mut std::fs::File,
+    reader: &std::fs::File,
     expected_size: u64,
     expected_sha256: &[u8; 32],
 ) -> Result<(), PlatformError> {
@@ -147,7 +148,7 @@ fn verify_reader(
     let mut total = 0_u64;
     loop {
         let count = reader
-            .read(&mut buffer[..])
+            .read_at(&mut buffer[..], total)
             .map_err(|_| error::integrity_error())?;
         if count == 0 {
             break;

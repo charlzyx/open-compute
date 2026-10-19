@@ -1,3 +1,4 @@
+import type { PublicTransport } from "cloudflare-internal:wrapped-binding";
 import { waitUntil } from "cloudflare:workers";
 import { preserveRpcDisposal } from "../bindings/rpc-disposal.js";
 import { privateWeakMap } from "../private-weak-map.js";
@@ -15,7 +16,10 @@ interface StubState {
   identity: DoObjectIdentity;
   createRpcStub: (policy: object) => object;
   isRpcStub: (value: unknown) => boolean;
-  raw: DoRawTransport;
+  httpTransport: PublicTransport;
+  rpcTransport: DoRawTransport;
+  disposeRpcResult: (value: object) => void;
+  createUserRpcTransport: (value: object) => object;
   control: DoRawTransport;
   order: StubOrder;
   rpcWrappers: WeakMap<object, object>;
@@ -30,6 +34,18 @@ interface StubOrder {
   startTail: Promise<void>;
 }
 const stubState = privateWeakMap<object, StubState>();
+const channelCallbacks = privateWeakMap<
+  object,
+  {
+    readonly fetch: (request: Request) => Promise<Response>;
+    readonly connect: (address: string) => Socket;
+    readonly hold: (
+      handles: readonly string[],
+    ) => Promise<ReadableStream<Uint8Array>>;
+  }
+>();
+const nativeChannelApply = Reflect.apply;
+const nativeChannelGet = Reflect.get;
 const FORBIDDEN_RPC = new Set([
   "constructor",
   "prototype",
@@ -290,7 +306,10 @@ function protectProvider(state: StubState, value: unknown): unknown {
   if (!object(value)) return value;
   const prior = state.rpcWrappers.get(value);
   if (prior) return prior;
-  const wrapper = new Proxy(value, {
+  const target = state.isRpcStub(value)
+    ? state.createUserRpcTransport(value)
+    : value;
+  const wrapper = new Proxy(target, {
     get(target, property) {
       try {
         const member: unknown = Reflect.get(target, property, target);
@@ -364,7 +383,7 @@ function rpcOperation(
     let started: DoRpcResultProvider;
     try {
       assertActive(state);
-      started = state.raw.startRpc(
+      started = state.rpcTransport.startRpc(
         state.identity.value,
         operation.channelId,
         operation.sequence,
@@ -392,7 +411,7 @@ function rpcOperation(
     }
     waitUntil(
       started.then(
-        (holder) => holder[Symbol.dispose](),
+        (holder) => state.disposeRpcResult(holder),
         (error: unknown) => {
           noteFailure(state, error);
           return state.control
@@ -445,20 +464,31 @@ function rpcMember(
 
 export function createStubPolicy(
   identity: DoObjectIdentity,
-  raw: DoRawTransport,
+  raw: object,
   factories: Pick<
     DoNativeFactories,
-    "createRpcStub" | "isRpcStub" | "createPrivateTransport"
+    | "createRpcStub"
+    | "isRpcStub"
+    | "createPrivateTransport"
+    | "createPublicTransport"
+    | "createRpcTransport"
+    | "createUserRpcTransport"
+    | "disposeRpcResult"
   >,
 ): object {
   const control = factories.createPrivateTransport(raw);
-  if (!rawTransport(control)) throw failure("DO_INTERNAL_PROTOCOL_ERROR");
+  const rpcTransport = factories.createRpcTransport(raw);
+  if (!rawTransport(rpcTransport) || !rawTransport(control))
+    throw failure("DO_INTERNAL_PROTOCOL_ERROR");
   const target = new StubPolicy();
   const state: StubState = {
     identity,
     createRpcStub: factories.createRpcStub,
     isRpcStub: factories.isRpcStub,
-    raw,
+    httpTransport: factories.createPublicTransport(raw),
+    rpcTransport,
+    disposeRpcResult: factories.disposeRpcResult,
+    createUserRpcTransport: factories.createUserRpcTransport,
     control,
     order: {
       channelId: crypto.randomUUID().replaceAll("-", ""),
@@ -487,6 +517,15 @@ export function createStubPolicy(
     },
   });
   stubState.set(proxy, state);
+  const callbacks = {
+    fetch: (request: Request) =>
+      nativeChannelApply(nativeStubFetch, target, [request]),
+    connect: (address: string) =>
+      nativeChannelApply(nativeStubConnect, target, [address]),
+    hold: (handles: readonly string[]) => control.holdWebSocketHandoff(handles),
+  };
+  channelCallbacks.set(target, callbacks);
+  channelCallbacks.set(proxy, callbacks);
   return proxy;
 }
 
@@ -529,7 +568,7 @@ class StubPolicy {
     };
     let socket: Socket;
     try {
-      socket = state.raw.connect(
+      socket = state.httpTransport.connect(
         `${operationId}.do-transport.invalid:1`,
         options,
       );
@@ -591,7 +630,7 @@ class StubPolicy {
       try {
         await operation.predecessor;
         assertActive(state);
-        pending = state.raw.fetch(outbound);
+        pending = state.httpTransport.fetch(outbound);
         // The host enforces sequence order. A response can depend on a later call.
         operation.started();
       } catch (error) {
@@ -618,18 +657,33 @@ class StubPolicy {
   }
 }
 
+const nativeStubFetch = StubPolicy.prototype.fetch;
+const nativeStubConnect = StubPolicy.prototype.connect;
+
+/** Return ordered HTTP and TCP dispatch only for a policy issued by this DO authority. */
+export function durableObjectChannelCallbacks(policy: object) {
+  return channelCallbacks.get(policy) ?? null;
+}
+
 /** Rebuild only dispatch policy after a native stub transfers as a Fetcher. */
 export function createDurableObjectStubPolicy(
   env: { fetcher: unknown; id: unknown },
   factories: Pick<
     DoNativeFactories,
-    "createRpcStub" | "isRpcStub" | "createPrivateTransport"
+    | "createRpcStub"
+    | "isRpcStub"
+    | "createPrivateTransport"
+    | "createPublicTransport"
+    | "createRpcTransport"
+    | "createUserRpcTransport"
+    | "disposeRpcResult"
   >,
 ): object {
   if (
     typeof env.id !== "string" ||
     !ID.test(env.id) ||
-    !rawTransport(env.fetcher)
+    !record(env.fetcher) ||
+    !rawTransport(factories.createRpcTransport(env.fetcher))
   )
     throw failure("DO_ID_INVALID", TypeError);
   return createStubPolicy(
@@ -640,13 +694,8 @@ export function createDurableObjectStubPolicy(
 }
 
 export function rawTransport(value: unknown): value is DoRawTransport {
-  if (!record(value)) return false;
-  return [
-    "startRpc",
-    "cancelOrder",
-    "prepareConnect",
-    "cancelConnect",
-    "fetch",
-    "connect",
-  ].every((method) => typeof value[method] === "function");
+  if (!object(value)) return false;
+  return ["startRpc", "cancelOrder", "prepareConnect", "cancelConnect"].every(
+    (method) => typeof nativeChannelGet(value, method) === "function",
+  );
 }

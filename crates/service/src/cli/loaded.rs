@@ -275,6 +275,7 @@ pub(super) async fn run_loaded(
         | Command::Status { .. }
         | Command::Logs { .. }
         | Command::Dashboard { .. }
+        | Command::ContainerBroker { .. }
         | Command::Setup { .. }
         | Command::Instance { .. }
         | Command::Cache { .. }

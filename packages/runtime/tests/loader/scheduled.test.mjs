@@ -14,7 +14,7 @@ const imports = {
     "export function observedEntrypoint(stub) { return stub.getEntrypoint(); }",
   ),
   "../queues/metrics.js": moduleUrl(await compileRuntime("queues/metrics.ts")),
-  "../services/facade.js": moduleUrl(
+  "../services/websocket-handoff.js": moduleUrl(
     "export const SERVICE_WEBSOCKET_HANDOFF_HEADER='x-handoff'; export function serviceWebSocketHandoffHandles() { throw Error('unused'); }",
   ),
   "./bindings.js": moduleUrl(

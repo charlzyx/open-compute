@@ -4,7 +4,6 @@ import type {
   DoNamespaceCapability,
   DoNativeFactories,
   DoObjectIdentity,
-  DoRawTransport,
 } from "./protocol.js";
 import { createStubPolicy, rawTransport } from "./stub.js";
 
@@ -13,7 +12,7 @@ interface NamespaceState {
   prefix: string;
   key: Uint8Array;
   maxNameBytes: number;
-  raw: DoRawTransport;
+  raw: object;
   jurisdiction: string | undefined;
 }
 const namespaceState = privateWeakMap<object, NamespaceState>();
@@ -234,7 +233,7 @@ class NamespacePolicy {
       Object.freeze(this);
       return;
     }
-    if (!namespaceCapability(composite)) {
+    if (!namespaceCapability(composite, factories)) {
       throw failure("DO_NAMESPACE_NOT_FOUND");
     }
     const key = base64Bytes(composite.namespaceNameKey);
@@ -345,7 +344,10 @@ export function createDurableObjectNamespace(
   return nativeNamespace(new NamespacePolicy(composite, factories), factories);
 }
 
-function namespaceCapability(value: unknown): value is DoNamespaceCapability {
+function namespaceCapability(
+  value: unknown,
+  factories: DoNativeFactories,
+): value is DoNamespaceCapability {
   if (
     value === null ||
     typeof value !== "object" ||
@@ -366,5 +368,5 @@ function namespaceCapability(value: unknown): value is DoNamespaceCapability {
     typeof value.transport !== "object"
   )
     return false;
-  return rawTransport(value.transport);
+  return rawTransport(factories.createRpcTransport(value.transport));
 }

@@ -442,10 +442,21 @@ async function deleteAuthorized(request: Request, env: DoHostEnv) {
   });
 }
 
-async function alarmAuthority(request: Request, env: DoHostEnv) {
+async function alarmAuthority(
+  request: Request,
+  env: DoHostEnv,
+  closed = false,
+) {
   const body: unknown = await request.json();
   if (
     !record(body) ||
+    (closed &&
+      Object.keys(body).some(
+        (key) =>
+          !["namespaceResourceId", "objectId", "objectGeneration"].includes(
+            key,
+          ),
+      )) ||
     typeof body.namespaceResourceId !== "string" ||
     typeof body.objectId !== "string" ||
     !/^[0-9a-f]{64}$/.test(body.objectId) ||
@@ -503,6 +514,18 @@ async function dispatchAlarm(
         : "http://do-host/internal/alarm",
       { method: "POST", headers, body: JSON.stringify(payload) },
     ),
+  );
+}
+
+async function startContainer(request: Request, env: DoHostEnv) {
+  const { authority } = await alarmAuthority(request, env, true);
+  const headers = hostHeaders(request, authority);
+  headers.set("x-open-compute-do-operation", "container-start");
+  return host(env, authority).fetch(
+    new Request("http://do-host/internal/container-start", {
+      method: "POST",
+      headers,
+    }),
   );
 }
 
@@ -625,6 +648,10 @@ export default class DoRouter extends WorkerEntrypoint<DoHostEnv> {
         return deleteObject(request, this.env);
       if (path === "/internal/do-delete")
         return deleteAuthorized(request, this.env);
+      if (path === "/internal/container-start")
+        return await admitted(this.env, () =>
+          startContainer(request, this.env),
+        );
       if (path === "/internal/do-alarm")
         return admitted(this.env, () =>
           dispatchAlarm(request, this.env, false),

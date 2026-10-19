@@ -88,6 +88,7 @@ test("delegated DO HTTP keeps identity and streams but strips the generation tok
       "/internal/do-delete",
       "/internal/do-alarm",
       "/internal/do-alarm-repair",
+      "/internal/container-start",
     ]) {
       assert.equal(
         await (await gateway.fetch(request(path, "POST", {}, "admin"))).text(),
@@ -120,6 +121,15 @@ test("delegated DO HTTP keeps identity and streams but strips the generation tok
         "x-open-compute-internal-token": "old",
       }),
       request("/internal/do-delete"),
+      request(
+        "/internal/container-start",
+        "POST",
+        {
+          "x-open-compute-internal-token": "old",
+        },
+        "{}",
+      ),
+      request("/internal/container-start?extra=1", "POST", {}, "{}"),
     ]) {
       const count = forwarded.length;
       assert.equal((await gateway.fetch(req)).status, 404);

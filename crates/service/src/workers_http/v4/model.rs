@@ -42,6 +42,9 @@ pub(crate) struct WorkerUploadMetadata {
     pub cache_options: Option<WorkerUploadCacheOptions>,
     /// Declarative Durable Object and Worker entrypoint exports.
     pub exports: Option<BTreeMap<String, WorkerUploadExport>>,
+    /// Container application and Durable Object class associations.
+    #[serde(default)]
+    pub containers: Vec<WorkerUploadContainer>,
     /// Declarative Durable Object migrations.
     pub migrations: Option<WorkerUploadMigrations>,
     /// Standard resource limits declared through the Cloudflare upload wire.
@@ -149,6 +152,19 @@ pub(crate) enum WorkerUploadExport {
         transferred_to: Option<String>,
         transfer_from: Option<String>,
     },
+}
+
+/// Container association emitted by the fixed cf standard deployment producer.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WorkerUploadContainer {
+    /// Application name associated with the SQLite export.
+    pub name: String,
+    /// Same-Worker Durable Object export.
+    pub class_name: String,
+    /// Prepared named images emitted by Durable Object-managed deployments.
+    #[serde(default)]
+    pub images: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

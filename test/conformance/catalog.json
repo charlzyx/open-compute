@@ -18,7 +18,7 @@
       "id": "workers.runtime.common",
       "product": "workers",
       "surface": "modules/fetch/rpc/streams/websocket/outbound-fetch",
-      "status": "supported_with_deviation",
+      "status": "blocked",
       "sources": [
         {
           "kind": "cloudflare-doc",
@@ -405,7 +405,7 @@
       "id": "workflows.binding.lifecycle",
       "product": "workflows",
       "surface": "create/status/steps/waits/events/lifecycle/replay",
-      "status": "supported_with_deviation",
+      "status": "blocked",
       "sources": [
         {
           "kind": "cloudflare-doc",
@@ -650,7 +650,7 @@
       "id": "artifacts.binding-and-git",
       "product": "artifacts",
       "surface": "namespace-scoped repository lifecycle, tokens, fork/import, and Git Smart HTTP",
-      "status": "supported_with_deviation",
+      "status": "blocked",
       "sources": [
         {
           "kind": "cloudflare-workers-types",
@@ -677,6 +677,23 @@
       "id": "browser.binding.methods",
       "product": "browser_rendering",
       "surface": "P22 BrowserRun Fetcher and fixed Quick Action overloads; full backend and protocol qualification pending",
+      "status": "blocked",
+      "sources": [
+        {
+          "kind": "cloudflare-workers-types",
+          "revision": "e9dda5963aba7ee4323960db795690ec78fec118",
+          "path": "index.d.ts",
+          "sha256": "a00b4783854c9028158f776d605790d9a3e17e6a97f4d255beb70035c59c40dd"
+        }
+      ],
+      "positiveCases": [],
+      "negativeCases": [],
+      "deviations": []
+    },
+    {
+      "id": "containers.native",
+      "product": "containers",
+      "surface": "P23 pinned native Container and ExecProcess stable surface; dynamic attachment and provider qualification pending",
       "status": "blocked",
       "sources": [
         {
@@ -2566,16 +2583,6 @@
     },
     {
       "id": "durable_objects::DurableObjectState::blockConcurrencyWhile:method#0",
-      "status": "supported_with_deviation",
-      "compileCases": ["ts::test/conformance/fixtures/do-surface.ts"],
-      "runtimeCases": [
-        "p0-7::p0_7_real_durable_objects_matrix",
-        "p3-cf-diff::durable-objects/portable/object"
-      ],
-      "deviations": ["OC-DO-001"]
-    },
-    {
-      "id": "durable_objects::DurableObjectState::container:property#0",
       "status": "supported_with_deviation",
       "compileCases": ["ts::test/conformance/fixtures/do-surface.ts"],
       "runtimeCases": [
@@ -17357,21 +17364,6 @@
       "deviations": []
     },
     {
-      "id": "workers::MessageEventInit::source:property#0",
-      "status": "supported",
-      "compileCases": [
-        "ts::test/conformance/fixtures/upstream-stable-surface.ts",
-        "ts::test/conformance/fixtures/workers/portable-runtime/src/index.ts"
-      ],
-      "runtimeCases": [
-        "p0-2::p0_2_real_worker_create_validate_dispatch_promote_rollback_restart",
-        "p0-2::nodejs::p0_2_nodejs_default_surface_isolation_and_unsupported_stubs",
-        "p3-cf-diff::workers/portable/runtime",
-        "p3-services-hard::p3_services_native_rpc_type_pipeline_and_lifecycle_matrix"
-      ],
-      "deviations": []
-    },
-    {
       "id": "workers::MessagePort::addEventListener:method#0",
       "status": "supported",
       "compileCases": [
@@ -29739,21 +29731,6 @@
       "deviations": []
     },
     {
-      "id": "workers::cloudflare:node.NodeStyleServer::address:method#0",
-      "status": "supported",
-      "compileCases": [
-        "ts::test/conformance/fixtures/upstream-stable-surface.ts",
-        "ts::test/conformance/fixtures/workers/portable-runtime/src/index.ts"
-      ],
-      "runtimeCases": [
-        "p0-2::p0_2_real_worker_create_validate_dispatch_promote_rollback_restart",
-        "p0-2::nodejs::p0_2_nodejs_default_surface_isolation_and_unsupported_stubs",
-        "p3-cf-diff::workers/portable/runtime",
-        "p3-services-hard::p3_services_native_rpc_type_pipeline_and_lifecycle_matrix"
-      ],
-      "deviations": []
-    },
-    {
       "id": "workers::cloudflare:node.NodeStyleServer::listen:method#0",
       "status": "supported",
       "compileCases": [
@@ -30389,18 +30366,6 @@
       "deviations": ["OC-WORKFLOW-001"]
     },
     {
-      "id": "workflows::InstanceStatus::status:property#0",
-      "status": "supported_with_deviation",
-      "compileCases": ["ts::test/conformance/fixtures/workflow-surface.ts"],
-      "runtimeCases": [
-        "workflow-runtime::workflow_runtime_suspension_timeout_parallel_and_native_errors",
-        "workflow-product::durable_execution::production_driver_replays_waits_retries_and_events_after_runtime_restart",
-        "workflow-recovery::product_bindings::workflow_step_uses_kv_d1_r2_do_queue_and_replay_preserves_external_effects",
-        "p3-cf-diff::workflows/portable/lifecycle"
-      ],
-      "deviations": ["OC-WORKFLOW-001"]
-    },
-    {
       "id": "workflows::Rpc.WorkflowEntrypointBranded::[__WORKFLOW_ENTRYPOINT_BRAND]:property#0",
       "status": "supported_with_deviation",
       "compileCases": ["ts::test/conformance/fixtures/workflow-surface.ts"],
@@ -30788,15 +30753,6 @@
       "deviations": []
     },
     {
-      "id": "artifacts::ArtifactsCreateRepoResult::tokenExpiresAt:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
       "id": "artifacts::ArtifactsCreateTokenResult::expiresAt:property#0",
       "status": "supported",
       "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
@@ -30860,34 +30816,7 @@
       "deviations": []
     },
     {
-      "id": "artifacts::ArtifactsRepo::createdAt:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
       "id": "artifacts::ArtifactsRepo::createToken:method#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::defaultBranch:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::description:property#0",
       "status": "supported",
       "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
       "runtimeCases": [
@@ -30905,24 +30834,6 @@
       "deviations": []
     },
     {
-      "id": "artifacts::ArtifactsRepo::id:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::lastPushAt:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
       "id": "artifacts::ArtifactsRepo::listTokens:method#0",
       "status": "supported",
       "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
@@ -30932,52 +30843,7 @@
       "deviations": []
     },
     {
-      "id": "artifacts::ArtifactsRepo::name:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::readOnly:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::remote:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
       "id": "artifacts::ArtifactsRepo::revokeToken:method#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::source:property#0",
-      "status": "supported",
-      "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
-      "runtimeCases": [
-        "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
-      ],
-      "deviations": []
-    },
-    {
-      "id": "artifacts::ArtifactsRepo::updatedAt:property#0",
       "status": "supported",
       "compileCases": ["ts::test/conformance/fixtures/artifacts-surface.ts"],
       "runtimeCases": [
@@ -31178,7 +31044,17 @@
     {
       "id": "browser_rendering.unverified-stable-members",
       "memberIds": [
+        "browser_rendering::BrowserRun::acquire:method#0",
+        "browser_rendering::BrowserRun::closeSession:method#0",
+        "browser_rendering::BrowserRun::connectSession:method#0",
+        "browser_rendering::BrowserRun::devtools:get#0",
         "browser_rendering::BrowserRun::fetch:method#0",
+        "browser_rendering::BrowserRun::getLiveView:method#0",
+        "browser_rendering::BrowserRun::getSession:method#0",
+        "browser_rendering::BrowserRun::history:method#0",
+        "browser_rendering::BrowserRun::launch:method#0",
+        "browser_rendering::BrowserRun::limits:method#0",
+        "browser_rendering::BrowserRun::listSessions:method#0",
         "browser_rendering::BrowserRun::quickAction:method#0",
         "browser_rendering::BrowserRun::quickAction:method#1",
         "browser_rendering::BrowserRun::quickAction:method#2",
@@ -31215,6 +31091,17 @@
         "browser_rendering::BrowserRunAccessibilityTreeSuccessResponse::meta:property#0",
         "browser_rendering::BrowserRunAccessibilityTreeSuccessResponse::result:property#0",
         "browser_rendering::BrowserRunAccessibilityTreeSuccessResponse::success:property#0",
+        "browser_rendering::BrowserRunAcquireGuardrails::allowedDomainSets:property#0",
+        "browser_rendering::BrowserRunAcquireGuardrails::allowedDomains:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::guardrails:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::keepAlive:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::liveViewUrlExpiresInMs:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::location:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::outboundByHost:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::recording:property#0",
+        "browser_rendering::BrowserRunAcquireOptions::targets:property#0",
+        "browser_rendering::BrowserRunAcquireResult::sessionId:property#0",
+        "browser_rendering::BrowserRunAcquireResult::targets:property#0",
         "browser_rendering::BrowserRunAlternateBackendOptions::browser:property#0",
         "browser_rendering::BrowserRunBaseOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunBaseOptions::addScriptTag:property#0",
@@ -31235,6 +31122,7 @@
         "browser_rendering::BrowserRunBaseOptions::viewport:property#0",
         "browser_rendering::BrowserRunBaseOptions::waitForSelector:property#0",
         "browser_rendering::BrowserRunBaseOptions::waitForTimeout:property#0",
+        "browser_rendering::BrowserRunCloseSessionResult::status:property#0",
         "browser_rendering::BrowserRunCommonOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunCommonOptions::addScriptTag:property#0",
         "browser_rendering::BrowserRunCommonOptions::addStyleTag:property#0",
@@ -31256,6 +31144,11 @@
         "browser_rendering::BrowserRunCommonOptions::viewport:property#0",
         "browser_rendering::BrowserRunCommonOptions::waitForSelector:property#0",
         "browser_rendering::BrowserRunCommonOptions::waitForTimeout:property#0",
+        "browser_rendering::BrowserRunConnectOptions::targetId:property#0",
+        "browser_rendering::BrowserRunConnection::sessionId:property#0",
+        "browser_rendering::BrowserRunConnection::targets:property#0",
+        "browser_rendering::BrowserRunConnection::webSocket:property#0",
+        "browser_rendering::BrowserRunConnectionGuardrails::mode:property#0",
         "browser_rendering::BrowserRunContentOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunContentOptions::addScriptTag:property#0",
         "browser_rendering::BrowserRunContentOptions::addStyleTag:property#0",
@@ -31281,8 +31174,38 @@
         "browser_rendering::BrowserRunContentSuccessResponse::meta:property#0",
         "browser_rendering::BrowserRunContentSuccessResponse::result:property#0",
         "browser_rendering::BrowserRunContentSuccessResponse::success:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocol::domains:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocol::version:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::commands:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::dependencies:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::domain:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::events:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::experimental:property#0",
+        "browser_rendering::BrowserRunDevToolsProtocolDomain::types:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::description:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::devtoolsFrontendUrl:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::id:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::title:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::type:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::url:property#0",
+        "browser_rendering::BrowserRunDevToolsTarget::webSocketDebuggerUrl:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::Browser:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::Protocol-Version:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::User-Agent:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::V8-Version:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::WebKit-Version:property#0",
+        "browser_rendering::BrowserRunDevToolsVersion::webSocketDebuggerUrl:property#0",
+        "browser_rendering::BrowserRunDevtools::activateTarget:method#0",
+        "browser_rendering::BrowserRunDevtools::closeTarget:method#0",
+        "browser_rendering::BrowserRunDevtools::getProtocol:method#0",
+        "browser_rendering::BrowserRunDevtools::getTarget:method#0",
+        "browser_rendering::BrowserRunDevtools::getVersion:method#0",
+        "browser_rendering::BrowserRunDevtools::listTargets:method#0",
+        "browser_rendering::BrowserRunDevtools::newTarget:method#0",
         "browser_rendering::BrowserRunErrorResponse::errors:property#0",
         "browser_rendering::BrowserRunErrorResponse::success:property#0",
+        "browser_rendering::BrowserRunHistoryOptions::limit:property#0",
+        "browser_rendering::BrowserRunHistoryOptions::offset:property#0",
         "browser_rendering::BrowserRunJsonBaseOptions::custom_ai:property#0",
         "browser_rendering::BrowserRunJsonErrorResponse::errors:property#0",
         "browser_rendering::BrowserRunJsonErrorResponse::rawAiResponse:property#0",
@@ -31317,6 +31240,11 @@
         "browser_rendering::BrowserRunJsonSuccessResponse::meta:property#0",
         "browser_rendering::BrowserRunJsonSuccessResponse::result:property#0",
         "browser_rendering::BrowserRunJsonSuccessResponse::success:property#0",
+        "browser_rendering::BrowserRunLimits::activeSessions:property#0",
+        "browser_rendering::BrowserRunLimits::allowedBrowserAcquisitions:property#0",
+        "browser_rendering::BrowserRunLimits::maxConcurrentSessions:property#0",
+        "browser_rendering::BrowserRunLimits::timeUntilNextAllowedBrowserAcquisition:property#0",
+        "browser_rendering::BrowserRunLimits::usedBrowserTimeSeconds:property#0",
         "browser_rendering::BrowserRunLinksOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunLinksOptions::addScriptTag:property#0",
         "browser_rendering::BrowserRunLinksOptions::addStyleTag:property#0",
@@ -31343,6 +31271,16 @@
         "browser_rendering::BrowserRunLinksSuccessResponse::meta:property#0",
         "browser_rendering::BrowserRunLinksSuccessResponse::result:property#0",
         "browser_rendering::BrowserRunLinksSuccessResponse::success:property#0",
+        "browser_rendering::BrowserRunListSessionsOptions::limit:property#0",
+        "browser_rendering::BrowserRunListSessionsOptions::offset:property#0",
+        "browser_rendering::BrowserRunLiveView::devtoolsFrontendUrl:property#0",
+        "browser_rendering::BrowserRunLiveView::id:property#0",
+        "browser_rendering::BrowserRunLiveView::options:property#0",
+        "browser_rendering::BrowserRunLiveView::webSocketDebuggerUrl:property#0",
+        "browser_rendering::BrowserRunLiveViewOptions::expiresInMs:property#0",
+        "browser_rendering::BrowserRunLiveViewOptions::guardrails:property#0",
+        "browser_rendering::BrowserRunLiveViewOptions::mode:property#0",
+        "browser_rendering::BrowserRunLiveViewOptions::targetId:property#0",
         "browser_rendering::BrowserRunMarkdownOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunMarkdownOptions::addScriptTag:property#0",
         "browser_rendering::BrowserRunMarkdownOptions::addStyleTag:property#0",
@@ -31484,6 +31422,17 @@
         "browser_rendering::BrowserRunSerializedAXNode::valuemax:property#0",
         "browser_rendering::BrowserRunSerializedAXNode::valuemin:property#0",
         "browser_rendering::BrowserRunSerializedAXNode::valuetext:property#0",
+        "browser_rendering::BrowserRunSession::closeReason:property#0",
+        "browser_rendering::BrowserRunSession::closeReasonText:property#0",
+        "browser_rendering::BrowserRunSession::connectionEndTime:property#0",
+        "browser_rendering::BrowserRunSession::connectionId:property#0",
+        "browser_rendering::BrowserRunSession::connectionStartTime:property#0",
+        "browser_rendering::BrowserRunSession::devtoolsFrontendUrl:property#0",
+        "browser_rendering::BrowserRunSession::endTime:property#0",
+        "browser_rendering::BrowserRunSession::lastUpdated:property#0",
+        "browser_rendering::BrowserRunSession::sessionId:property#0",
+        "browser_rendering::BrowserRunSession::startTime:property#0",
+        "browser_rendering::BrowserRunSession::webSocketDebuggerUrl:property#0",
         "browser_rendering::BrowserRunSnapshotOptions::actionTimeout:property#0",
         "browser_rendering::BrowserRunSnapshotOptions::addScriptTag:property#0",
         "browser_rendering::BrowserRunSnapshotOptions::addStyleTag:property#0",
@@ -31509,8 +31458,210 @@
         "browser_rendering::BrowserRunSnapshotOptions::waitForTimeout:property#0",
         "browser_rendering::BrowserRunSnapshotSuccessResponse::meta:property#0",
         "browser_rendering::BrowserRunSnapshotSuccessResponse::result:property#0",
-        "browser_rendering::BrowserRunSnapshotSuccessResponse::success:property#0"
+        "browser_rendering::BrowserRunSnapshotSuccessResponse::success:property#0",
+        "browser_rendering::BrowserRunTargetActionResult::message:property#0",
+        "browser_rendering::BrowserRunTargetOptions::liveViewUrlExpiresInMs:property#0"
       ]
+    },
+    {
+      "id": "containers.unverified-stable-members",
+      "memberIds": [
+        "containers::Container::destroy:method#0",
+        "containers::Container::exec:method#0",
+        "containers::Container::getTcpPort:method#0",
+        "containers::Container::images:get#0",
+        "containers::Container::inspect:method#0",
+        "containers::Container::interceptAllOutboundHttp:method#0",
+        "containers::Container::interceptOutboundHttp:method#0",
+        "containers::Container::interceptOutboundHttps:method#0",
+        "containers::Container::monitor:method#0",
+        "containers::Container::running:get#0",
+        "containers::Container::setInactivityTimeout:method#0",
+        "containers::Container::signal:method#0",
+        "containers::Container::snapshotContainer:method#0",
+        "containers::Container::start:method#0",
+        "containers::ContainerDirectorySnapshot::dir:property#0",
+        "containers::ContainerDirectorySnapshot::id:property#0",
+        "containers::ContainerDirectorySnapshot::name:property#0",
+        "containers::ContainerDirectorySnapshot::size:property#0",
+        "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#0",
+        "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#1",
+        "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#0",
+        "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#1",
+        "containers::ContainerExecOptions::cwd:property#0",
+        "containers::ContainerExecOptions::env:property#0",
+        "containers::ContainerExecOptions::pty:property#0",
+        "containers::ContainerExecOptions::signal:property#0",
+        "containers::ContainerExecOptions::stderr:property#0",
+        "containers::ContainerExecOptions::stdin:property#0",
+        "containers::ContainerExecOptions::stdout:property#0",
+        "containers::ContainerExecOptions::user:property#0",
+        "containers::ContainerExecPtyOptions::cols:property#0",
+        "containers::ContainerExecPtyOptions::rows:property#0",
+        "containers::ContainerInfo::image:property#0",
+        "containers::ContainerInfo::labels:property#0",
+        "containers::ContainerSnapshot::id:property#0",
+        "containers::ContainerSnapshot::name:property#0",
+        "containers::ContainerSnapshot::size:property#0",
+        "containers::ContainerSnapshotOptions::name:property#0",
+        "containers::ContainerSnapshotRestoreParams::id:property#0",
+        "containers::ContainerStartResources::diskMb:property#0",
+        "containers::ContainerStartResources::memoryMib:property#0",
+        "containers::ContainerStartResources::vcpu:property#0",
+        "containers::ContainerStartupOptions::containerSnapshot:property#0",
+        "containers::ContainerStartupOptions::containerSnapshot:property#1",
+        "containers::ContainerStartupOptions::directorySnapshots:property#0",
+        "containers::ContainerStartupOptions::enableInternet:property#0",
+        "containers::ContainerStartupOptions::entrypoint:property#0",
+        "containers::ContainerStartupOptions::env:property#0",
+        "containers::ContainerStartupOptions::image:property#0",
+        "containers::ContainerStartupOptions::image:property#1",
+        "containers::ContainerStartupOptions::instance:property#0",
+        "containers::ContainerStartupOptions::labels:property#0",
+        "containers::DurableObjectState::container:property#0",
+        "containers::ExecOutput::exitCode:property#0",
+        "containers::ExecOutput::stderr:property#0",
+        "containers::ExecOutput::stdout:property#0",
+        "containers::ExecProcess::exitCode:property#0",
+        "containers::ExecProcess::isPty:property#0",
+        "containers::ExecProcess::kill:method#0",
+        "containers::ExecProcess::output:method#0",
+        "containers::ExecProcess::pid:property#0",
+        "containers::ExecProcess::resize:method#0",
+        "containers::ExecProcess::stderr:property#0",
+        "containers::ExecProcess::stdin:property#0",
+        "containers::ExecProcess::stdout:property#0"
+      ],
+      "reason": "P23 requires a qualified native dynamic DO attachment, immutable image admission, restricted provider and full real-runtime lifecycle evidence. Storage and compile fixtures do not prove the public Container API."
+    },
+    {
+      "id": "workers-types.20260930-unqualified-signatures",
+      "memberIds": [
+        "artifacts::ArtifactsCommitMetadata::author:property#0",
+        "artifacts::ArtifactsCommitMetadata::authoredAt:property#0",
+        "artifacts::ArtifactsCommitMetadata::committedAt:property#0",
+        "artifacts::ArtifactsCommitMetadata::committer:property#0",
+        "artifacts::ArtifactsCommitMetadata::hash:property#0",
+        "artifacts::ArtifactsCommitMetadata::message:property#0",
+        "artifacts::ArtifactsCommitMetadata::parents:property#0",
+        "artifacts::ArtifactsCommitMetadata::treeHash:property#0",
+        "artifacts::ArtifactsRepo::info:method#0",
+        "artifacts::ArtifactsRepo::log:method#0",
+        "artifacts::ArtifactsRepo::readBlob:method#0",
+        "artifacts::ArtifactsRepo::readCommit:method#0",
+        "artifacts::ArtifactsRepo::readFile:method#0",
+        "artifacts::ArtifactsRepo::readTree:method#0",
+        "artifacts::ArtifactsTreeEntry::hash:property#0",
+        "artifacts::ArtifactsTreeEntry::mode:property#0",
+        "artifacts::ArtifactsTreeEntry::name:property#0",
+        "artifacts::ArtifactsTreeEntry::type:property#0",
+        "workers::AnalyticsSQLBinding::query:method#0",
+        "workers::AnalyticsSQLQuery::params:property#0",
+        "workers::AnalyticsSQLQuery::query:property#0",
+        "workers::AnalyticsSQLResult::data:property#0",
+        "workers::AnalyticsSQLResult::rows:property#0",
+        "workers::AnalyticsSQLResult::statistics:property#0",
+        "workers::AnalyticsSQLStatistics::bytes_read:property#0",
+        "workers::AnalyticsSQLStatistics::elapsed_ms:property#0",
+        "workers::AnalyticsSQLStatistics::rows_read:property#0",
+        "workers::CfProperties::originRangeRequests:property#0",
+        "workers::JsonWebKey::priv:property#0",
+        "workers::JsonWebKey::pub:property#0",
+        "workers::JsonWebKeyWithKid::priv:property#0",
+        "workers::JsonWebKeyWithKid::pub:property#0",
+        "workers::LoopbackForExport::create:method#0",
+        "workers::LoopbackForExport::createBatch:method#0",
+        "workers::LoopbackForExport::deleteBatch:method#0",
+        "workers::LoopbackForExport::get:method#0",
+        "workers::MessageEventInit::source:property#0",
+        "workers::RequestInitCfProperties::originRangeRequests:property#0",
+        "workers::Span::recordException:method#0",
+        "workers::Span::setStatus:method#0",
+        "workers::Span::updateName:method#0",
+        "workers::SubtleCryptoSignAlgorithm::context:property#0",
+        "workers::Tracing::getActiveSpan:method#0",
+        "workers::TracingSpanStatus::code:property#0",
+        "workers::TracingSpanStatus::message:property#0",
+        "workers::cloudflare:durable-objects::retryable:function#0",
+        "workers::cloudflare:node.NodeStyleServer::address:method#0",
+        "workers::cloudflare:node::connectHandler:function#0",
+        "workers::cloudflare:node::handleAsNodeConnection:function#0",
+        "workers::cloudflare:node::handleAsNodeRequest:function#0",
+        "workflows::InstanceStatus::status:property#0",
+        "workflows::WorkflowInstance::subscribe:method#0",
+        "workflows::WorkflowInstanceEvent::attempt:property#0",
+        "workflows::WorkflowInstanceEvent::attempt:property#1",
+        "workflows::WorkflowInstanceEvent::attempt:property#2",
+        "workflows::WorkflowInstanceEvent::attempt:property#3",
+        "workflows::WorkflowInstanceEvent::attempt:property#4",
+        "workflows::WorkflowInstanceEvent::attempt:property#5",
+        "workflows::WorkflowInstanceEvent::config:property#0",
+        "workflows::WorkflowInstanceEvent::config:property#1",
+        "workflows::WorkflowInstanceEvent::durationMs:property#0",
+        "workflows::WorkflowInstanceEvent::error:property#0",
+        "workflows::WorkflowInstanceEvent::error:property#1",
+        "workflows::WorkflowInstanceEvent::error:property#2",
+        "workflows::WorkflowInstanceEvent::error:property#3",
+        "workflows::WorkflowInstanceEvent::eventId:property#0",
+        "workflows::WorkflowInstanceEvent::eventType:property#0",
+        "workflows::WorkflowInstanceEvent::instanceId:property#0",
+        "workflows::WorkflowInstanceEvent::output:property#0",
+        "workflows::WorkflowInstanceEvent::output:property#1",
+        "workflows::WorkflowInstanceEvent::params:property#0",
+        "workflows::WorkflowInstanceEvent::retryDelayMs:property#0",
+        "workflows::WorkflowInstanceEvent::retryDelayMs:property#1",
+        "workflows::WorkflowInstanceEvent::stepName:property#0",
+        "workflows::WorkflowInstanceEvent::stepName:property#1",
+        "workflows::WorkflowInstanceEvent::stepName:property#10",
+        "workflows::WorkflowInstanceEvent::stepName:property#11",
+        "workflows::WorkflowInstanceEvent::stepName:property#12",
+        "workflows::WorkflowInstanceEvent::stepName:property#13",
+        "workflows::WorkflowInstanceEvent::stepName:property#14",
+        "workflows::WorkflowInstanceEvent::stepName:property#15",
+        "workflows::WorkflowInstanceEvent::stepName:property#16",
+        "workflows::WorkflowInstanceEvent::stepName:property#2",
+        "workflows::WorkflowInstanceEvent::stepName:property#3",
+        "workflows::WorkflowInstanceEvent::stepName:property#4",
+        "workflows::WorkflowInstanceEvent::stepName:property#5",
+        "workflows::WorkflowInstanceEvent::stepName:property#6",
+        "workflows::WorkflowInstanceEvent::stepName:property#7",
+        "workflows::WorkflowInstanceEvent::stepName:property#8",
+        "workflows::WorkflowInstanceEvent::stepName:property#9",
+        "workflows::WorkflowInstanceEvent::timestamp:property#0",
+        "workflows::WorkflowInstanceEvent::type:property#0",
+        "workflows::WorkflowInstanceEvent::type:property#1",
+        "workflows::WorkflowInstanceEvent::type:property#10",
+        "workflows::WorkflowInstanceEvent::type:property#11",
+        "workflows::WorkflowInstanceEvent::type:property#12",
+        "workflows::WorkflowInstanceEvent::type:property#13",
+        "workflows::WorkflowInstanceEvent::type:property#14",
+        "workflows::WorkflowInstanceEvent::type:property#15",
+        "workflows::WorkflowInstanceEvent::type:property#16",
+        "workflows::WorkflowInstanceEvent::type:property#17",
+        "workflows::WorkflowInstanceEvent::type:property#18",
+        "workflows::WorkflowInstanceEvent::type:property#19",
+        "workflows::WorkflowInstanceEvent::type:property#2",
+        "workflows::WorkflowInstanceEvent::type:property#20",
+        "workflows::WorkflowInstanceEvent::type:property#21",
+        "workflows::WorkflowInstanceEvent::type:property#22",
+        "workflows::WorkflowInstanceEvent::type:property#23",
+        "workflows::WorkflowInstanceEvent::type:property#24",
+        "workflows::WorkflowInstanceEvent::type:property#25",
+        "workflows::WorkflowInstanceEvent::type:property#26",
+        "workflows::WorkflowInstanceEvent::type:property#27",
+        "workflows::WorkflowInstanceEvent::type:property#28",
+        "workflows::WorkflowInstanceEvent::type:property#3",
+        "workflows::WorkflowInstanceEvent::type:property#4",
+        "workflows::WorkflowInstanceEvent::type:property#5",
+        "workflows::WorkflowInstanceEvent::type:property#6",
+        "workflows::WorkflowInstanceEvent::type:property#7",
+        "workflows::WorkflowInstanceEvent::type:property#8",
+        "workflows::WorkflowInstanceEvent::type:property#9",
+        "workflows::WorkflowInstanceSubscribeOptions::cursor:property#0",
+        "workflows::WorkflowInstanceSubscribeOptions::filter:property#0",
+        "workflows::WorkflowInstanceSubscription::next:method#0"
+      ],
+      "reason": "New or changed signatures in workers-types 5.20260930.2 have no matching prior compile and runtime evidence. These members remain blocked until their owning regressions pass."
     }
   ],
   "cf": {

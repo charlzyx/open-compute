@@ -45,7 +45,7 @@ pub(super) async fn run() {
         .unwrap();
         let auth = auth.clone();
         async move {
-            serve_runtime_source(source_listener, source, auth, async move {
+            serve_runtime_source(source_listener, source, auth, None, async move {
                 let _ = shutdown_rx.changed().await;
             })
             .await

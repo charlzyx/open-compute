@@ -75,7 +75,7 @@ async fn p0_4_real_kv_matrix() {
         .unwrap();
         let auth = source_auth.clone();
         async move {
-            serve_runtime_source(source_listener, source, auth, async move {
+            serve_runtime_source(source_listener, source, auth, None, async move {
                 let _ = source_shutdown.changed().await;
             })
             .await

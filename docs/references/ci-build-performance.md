@@ -131,26 +131,21 @@ workspace/final binary。当前没有应用 benchmark，且仓库 cache 已接�
 
 ## 缓存与证据
 
-- 正式 tag workflow 使用 `cache-mode: read`。GitHub cache 按 branch/tag 隔离，tag 可以读取默认分支缓存，
-  但下一个 tag 不能读取前一个 tag 写入的条目；main 负责写入可复用缓存，正式发布
-  不再压缩、上传和占用只服务当前 tag 的缓存。setup action 只在成功的 main push 保存共享 target，PR 和 tag 只恢复。
+当前配置以 [setup action](../../.github/actions/setup-open-compute/action.yml) 为准；全局 mbx 设置、磁盘预算与本地清理见[测试说明](testing.md#验证磁盘预算)。
+
+- CI 直接缓存可写 Cargo target；不导出 mbx object bundle，不使用 sccache。key 区分工具链、平台、编译输入及 job/suite，防止并行任务争抢同一不可覆盖条目。
+- 只有成功的 main push 写共享缓存，PR/tag 只恢复；Cargo registry/index/git 下载缓存与编译产物分开。
+- 正式 package profile 使用 `.temp/release-target/`，普通开发使用 `target/`；不互相覆盖，不把开发产物或缓存当发行物。
+- 保留 Cargo timings 和 cache statistics，结合实际 restore、fresh units 与墙钟判断收益；最终链接等不可缓存部分仍可能占主要耗时。下一次必需 package run 提供测量，不为性能分析单独重复构建。
+- pin、source、生成资产和 artifact SHA 仍需校验。不得伪造 mtime、复用不同 revision 的二进制或把 cache hit 当成验证通过。诊断产物按[证据生命周期](testing.md#日志与保留证据)保留。
+
+### 历史缓存测量
+
+以下是当时的预算、sccache 和旧 key 测量记录，不要求恢复旧工具、调整当前账户预算或删除远端缓存。
+
 - 0.2.2 发布时 inventory 为 22 个条目、约 10.43 GiB；11 个旧 `v0.1.10` tag-scope 条目占约
   6.06 GiB。它们既不能服务后续 tag，又使新保存因 configured budget 进入 read-only。删除这些可重建
   的旧 tag cache 或提高预算后，main/诊断 workflow 才能重新写入；不能把失败的 save 当成暖缓存证据。
-
-- 所有 Rust 构建、Clippy、Gate、coverage 和 package 统一使用全局 mbx；其对象键区分
-  工具链、平台、编译参数和输入内容。CI 直接保存 Cargo target，不导出对象 bundle，也不使用 Swatinem rust-cache 或 sccache。
-  GitHub 缓存 key 加 job/suite 后缀，避免并行任务争抢同一个不可覆盖的条目；恢复仍使用共同的工具链前缀。
-  缓存导入步骤提前禁用 target views、build-script execution 缓存和输出硬链接，随后写入同样的全局策略，确保暖跑仍使用普通 `target/`。
-- package 把正式 profile 隔离在 `.temp/release-target/`；普通 `target/` 仍只服务 main 与
-  `single-binary` Gate。default branch 没有 `v3-release-*` writer，而新 tag 不能读取旧 tag 的 cache，
-  因此已删除这个确定 miss 的 release-target cache layer。两个 profile 不互相覆盖，也不保存 incremental
-  或把开发产物当作发行物。
-- Cargo registry/index/git 下载使用独立、仅由 OS 与 `Cargo.lock` 定位的缓存，避免 profile-specific
-  target cache 未命中时重新下载全部 Rust 依赖。
-- mbx 本地对象使用全局用户缓存，macOS 默认为 `~/Library/Caches/mbx/`；全局配置的总预算为 8 GiB、最低空闲目标为 4 GiB。
-  build.rs 执行缓存、target views 和 hardlink 恢复关闭，保留运行时 pin 校验及普通可写 target。
-  正式 tag 只恢复 default branch 已有的 Actions target cache；缓存不作为测试通过证据或可信发行物。
 - 2026-09-16 inventory 有 22 个条目、约 9.57 GiB，已经贴近 GitHub 每仓库 10 GiB 上限；其中
   8 个旧 package compiler key 含 run/attempt，约 3.9 GiB，几乎没有跨发布复用价值。v2 key
   目标是三个平台各 512 MiB，稳定占用约 1.5 GiB；旧条目由 GitHub 的 LRU 淘汰，不手工删除失败证据。
@@ -179,17 +174,10 @@ SKU，单独增加 SKU 预算不能覆盖它。要允许 cache 写入，Actions 
   target cache；相同 SHA 的 `35080400786` 精确命中且没有重复保存。此时仓库共 29 个 cache、
   16,963,407,475 bytes，仍低于 20 GB 上限；旧 fat-LTO key 交给 GitHub LRU 淘汰，不为了回收约 1.36 GB
   手工删除证据。
-- CI 使用 mbx action 的对象传输，不启用逐 crate 的 GHA sccache backend。
-  最终链接、bin/proc-macro 编译等仍有不可缓存部分；不承诺完全免编译。
-- 保存 Cargo `--timings` 报告、cache statistics、失败时的未验收原生 binary 和现有失败 Gate evidence。
-  一般日志显示子命令 stderr，避免长时间只看到一个无输出步骤。
-- 正式 release 上传 `.temp/release-target/cargo-timings/`；本地 Docker 诊断把对应 target/cache 保留在
-  `.temp/release-dry-run/source/`。下一次真实 package run 直接提供 crate/编译单元关键路径，不为性能
-  分析单独重复构建。
-- source、formal runtime pin、生成资产和 artifact SHA 校验仍执行；不得通过伪造 mtime 或复用不同
-  revision 的发布二进制制造命中。输入发生变化，已有 Gate 结果只证明它原来的输入。
 
-## 研究取舍
+## 历史研究取舍（2026-09-26）
+
+该表保留当时的决定与依据；现行缓存策略以上节和 setup action 为准。
 
 | 候选                            | 当前决定与依据                                                                                                      |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -209,48 +197,21 @@ SKU，单独增加 SKU 预算不能覆盖它。要允许 cache 写入，Actions 
 
 ## 测试与复用边界
 
-- `main` 的静态资格先跑 source/release-tool `failfast`，再按变更范围执行 build/typecheck、JS/Python
-  tooling、fmt、Clippy、no-default-features、MSRV target check、production hygiene、metadata 和边界检查。
-  tag 的 `failfast` 读取对应 main source commit 的成功 run，并额外验证 release-only environment/notes/npm
-  contracts；release 不重复 Clippy 或 MSRV。
-- release 仍必须保留不同职责的 coverage、macOS 未插桩 workspace Gate、Linux `p0-2` 受控 egress、
-  三平台单文件 package、SDK tarball 和最终 bytes/checksum 回读。coverage 与 Gate 使用不同编译
-  插桩和宿主，不能拿一个替代另一个；package 的 native binary 也不能由 main 的 `cargo check` 代替。
-- 固定输入变化的最小选择：只改 docs/notes 只做文档检查；只改 SDK 做 SDK typecheck/test/pack；
-  只改 Rust 代码做受影响 crate/Gate，源码冻结前再做一次完整 workspace；修改 `workerd.lock.json`、
-  `workerd.lock.json`、`caddy.lock.json`、对应 submodule、runtime loader、Cap'n Proto 或 compatibility baseline 时，至少重跑
-  `bun run build`、`p3-contract`、所有依赖真实 workerd 的 P0/P1/P2/Workflow/P3 targets、coverage
-  和三平台 package。发布 tag 仍按 release workflow 的完整矩阵执行，不以窄选集冒充正式资格。
-- Gate registry 统计当前 49 个 ONCE cases、55 个 TIMING cases；同一物理 target 的重叠选择只调度一次，
-  `p2-3` 复用 `p0-2`，Linux egress 不再附带第二个 workspace round。确定性 case 不做重复轮次，
-  取消、崩溃、重启和并发断言仍在所属 case 内执行。
+本地选择、单轮策略与 evidence 复用统一见[测试说明](testing.md#按输入选择测试)。CI 各职责见上文；
+release 的 coverage、未插桩 Gate、受控 egress、安装生命周期、stress、三平台 package 与公开字节回读互不替代。
+变更后的输入不能继承旧 PASS，也不重复调度未变化且身份一致的检查。
 
 ## 失败后的选择性重跑
 
-1. 源码或正式 pin 失败：修复后生成新的 release commit/tag；旧 run 的测试和 artifact 只证明旧输入，
-   不复用到新 tag。
-2. runner、网络或 GitHub 服务瞬时失败：在同一 tag 上只 rerun failed jobs，保留已成功 jobs/artifacts。
-   `publish` 创建 Draft 已幂等，已有完整 Draft 可直接重跑 publish。
-3. qualification 全部成功但 assemble/publish 失败：使用 `release-recovery` 的 `tag + source_run_id`，
-   它重新验证 8 个成功 job，下载原 artifact，只重建 manifest、校验 Draft、npm 和公开 release，
-   不重跑 coverage/Gate/package。
-4. Draft asset 缺失、内容不一致或 source run 不完整：recovery fail closed；不得覆盖 asset，保留
-   失败证据并生成新的候选或人工处理 Draft。
+按[发布恢复](releasing.md#失败重跑与修复版本)区分源码缺陷、基础设施失败和 assemble/publish 失败。
+recovery 使用原 tag 与 source run 的完整成功证据和产物，不重跑 coverage/Gate/package；
+缺失或不一致的输入失败关闭，不覆盖 Draft asset。
 
 ## Dry-run release
 
-远端 dry-run 已删除。需要在发布前隔离验证原生打包路径时，从干净的候选 `HEAD` 运行：
-
-```sh
-./scripts/release-dry-run.sh
-```
-
-脚本构建固定的 Ubuntu 24.04/Linux ARM64 工具链镜像；依赖 hydration 有网络，真正资格阶段使用
-`--network none` 和 Cargo offline。它复用正式 `package-release.sh`，随后只跑一次 `single-binary` Gate 与
-正式 Linux ARM64 Dashboard smoke。保留 worktree、Cargo/Bun/build cache 供下一次复用；候选、report 和
-server 日志位于 `.temp/release-dry-run/output/`，Gate/Playwright 详细失败树留在 retained worktree 的
-`.temp/` 与 `apps/dashboard/test-results/`。它只证明 Linux ARM64 package 路径，不替代正式 tag 的 macOS
-coverage/workspace Gate、Linux x64/Darwin package、受控 egress、SDK/assemble 或公开发布回读。
+需要隔离验证时，经授权从干净候选 `HEAD` 执行 `./scripts/release-dry-run.sh`。
+它仅验证本机 Docker 中的 Linux ARM64 package 路径；前置输入、离线阶段和保留路径见
+[发布流程](releasing.md#三条工作流)。不替代正式 tag 的其他平台与发布资格。
 
 主要资料：
 

@@ -10,6 +10,7 @@ pub mod admission;
 pub mod capability;
 pub mod clock;
 pub mod config;
+pub mod containers;
 pub mod cron;
 pub mod durable_objects;
 pub mod error;
@@ -44,7 +45,7 @@ pub use config::{
     AiEmbeddingModelConfig, AiEmbeddingProfileConfig, AiGenerationCapability,
     AiGenerationModelConfig, AiRerankingModelConfig, AiSourceProviderConfig, AiTokenizer,
     AiTokenizerArtifactConfig, AiTokenizerConfig, AiVlmModelConfig, ArtifactsConfig,
-    BrowserBackendConfig, BrowserConfig, CacheConfig, CaddyFileConfig, D1Config,
+    BrowserBackendConfig, BrowserConfig, CacheConfig, CaddyFileConfig, ContainersConfig, D1Config,
     DaemonGatewayConfig, DaemonServerConfig, DataConfig, DocumentParserConfig,
     DurableObjectsConfig, GatewayDnsRecord, GatewayDnsRecordKind, HardeningConfig, ImagesConfig,
     InstanceAuthConfig, InstanceMetadataConfig, KvConfig, LocalExtensionConfig,

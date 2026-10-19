@@ -139,10 +139,21 @@ pub(super) async fn exercise(
             expected
         );
     }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status = get(format!("{base}/json/list/{target}")).await.0;
+            if status == 404 {
+                break;
+            }
+            assert_eq!(status, 200, "unexpected status while target is closing");
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("closed target remained available after five seconds");
     for (suffix, status) in [
-        (format!("json/list/{target}"), 404),
-        ("json/list?unknown=true".into(), 501),
-        ("json/list?url=x&url=y".into(), 400),
+        ("json/list?unknown=true", 501),
+        ("json/list?url=x&url=y", 400),
     ] {
         assert_eq!(get(format!("{base}/{suffix}")).await.0, status);
     }

@@ -5,6 +5,7 @@
     reason = "test-only mock fields are intentionally direct fixture controls"
 )]
 
+use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -26,6 +27,7 @@ pub enum Fault {
     CorruptBody,
     DeleteFail,
     PutResponseLoss,
+    LatePutResponseLoss,
     DeleteResponseLoss,
     CreateResponseLoss,
     CompleteResponseLoss,
@@ -57,7 +59,7 @@ pub struct Recorded {
 
 #[derive(Clone)]
 pub(crate) struct StoredObject {
-    pub body: Vec<u8>,
+    pub body: Bytes,
     pub sha256: String,
     pub etag: String,
     pub metadata: HashMap<String, String>,
@@ -69,6 +71,18 @@ pub(crate) struct StoredObject {
     pub modified: SystemTime,
     pub storage_class: String,
     pub ssec_key_md5: Option<String>,
+}
+
+impl StoredObject {
+    fn body_for_get(&self, fault: Fault) -> Bytes {
+        if fault == Fault::CorruptBody {
+            let mut body = self.body.to_vec();
+            body.push(0x01);
+            body.into()
+        } else {
+            self.body.clone()
+        }
+    }
 }
 
 struct MultipartUpload {
@@ -86,6 +100,13 @@ pub struct MockS3 {
     state: Arc<Mutex<Inner>>,
     shutdown: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     join: Arc<Mutex<Option<JoinHandle<()>>>>,
+    late_put: Arc<LatePut>,
+}
+
+struct LatePut {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::watch::Sender<bool>,
+    committed: tokio::sync::Notify,
 }
 
 impl std::fmt::Debug for MockS3 {
@@ -108,12 +129,18 @@ struct Inner {
     head_barrier: Option<Arc<tokio::sync::Barrier>>,
     conditional_put_race: Option<Vec<u8>>,
     strict_multipart_minimum: bool,
+    late_put: Arc<LatePut>,
 }
 
 impl MockS3 {
     pub async fn spawn(bucket: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
+        let late_put = Arc::new(LatePut {
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::watch::channel(false).0,
+            committed: tokio::sync::Notify::new(),
+        });
         let state = Arc::new(Mutex::new(Inner {
             bucket: bucket.to_string(),
             objects: HashMap::new(),
@@ -126,6 +153,7 @@ impl MockS3 {
             head_barrier: None,
             conditional_put_race: None,
             strict_multipart_minimum: false,
+            late_put: Arc::clone(&late_put),
         }));
         let (tx, mut rx) = oneshot::channel();
         let state_clone = Arc::clone(&state);
@@ -152,11 +180,27 @@ impl MockS3 {
             state,
             shutdown: Arc::new(Mutex::new(Some(tx))),
             join: Arc::new(Mutex::new(Some(join))),
+            late_put,
         }
     }
 
     pub fn set_fault(&self, fault: Fault) {
         self.state.lock().expect("lock").fault = fault;
+    }
+
+    /// Wait until a complete PUT body has lost its response but has not committed.
+    pub async fn wait_for_late_put(&self) {
+        self.late_put.entered.notified().await;
+    }
+
+    /// Allow delayed PUT requests to reach their original conditional commit fence.
+    pub fn release_late_put(&self) {
+        self.late_put.release.send_replace(true);
+    }
+
+    /// Wait for a released delayed PUT to commit successfully.
+    pub async fn wait_for_late_put_commit(&self) {
+        self.late_put.committed.notified().await;
     }
 
     pub fn synchronize_next_heads(&self, participants: usize) {
@@ -204,7 +248,7 @@ impl MockS3 {
             key.to_string(),
             StoredObject {
                 etag: hex::encode(md5::Md5::digest(&body)),
-                body,
+                body: body.into(),
                 sha256,
                 metadata: HashMap::new(),
                 response_headers: HashMap::new(),
@@ -217,7 +261,9 @@ impl MockS3 {
 
     pub fn corrupt_body(&self, key: &str) {
         if let Some(obj) = self.state.lock().expect("lock").objects.get_mut(key) {
-            obj.body.push(0xff);
+            let mut body = obj.body.to_vec();
+            body.push(0xff);
+            obj.body = body.into();
         }
     }
 
@@ -246,6 +292,7 @@ impl MockS3 {
 
 impl Drop for MockS3 {
     fn drop(&mut self) {
+        self.release_late_put();
         if let Some(tx) = self.shutdown.lock().expect("lock").take() {
             let _ = tx.send(());
         }

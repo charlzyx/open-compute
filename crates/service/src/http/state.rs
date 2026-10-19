@@ -50,6 +50,7 @@ pub(super) struct ProductState {
     pub(super) cache_images_api: Option<Arc<CacheImagesApiState>>,
     pub(super) search_api: Option<Arc<SearchApiState>>,
     pub(super) browser: Option<Arc<crate::browser::BrowserService>>,
+    pub(super) containers: Option<Arc<crate::containers::ContainerService>>,
 }
 
 #[derive(Clone)]
@@ -452,6 +453,18 @@ impl HttpState {
 
     pub(crate) fn browser_service(&self) -> Option<&Arc<crate::browser::BrowserService>> {
         self.products.browser.as_ref()
+    }
+
+    pub(crate) fn with_containers(
+        mut self,
+        containers: Option<Arc<crate::containers::ContainerService>>,
+    ) -> Self {
+        self.products.containers = containers;
+        self
+    }
+
+    pub(crate) fn container_service(&self) -> Option<&Arc<crate::containers::ContainerService>> {
+        self.products.containers.as_ref()
     }
 
     pub(crate) fn search_api(&self) -> Option<&Arc<SearchApiState>> {

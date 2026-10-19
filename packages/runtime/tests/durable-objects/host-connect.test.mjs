@@ -8,10 +8,12 @@ import {
 
 const shared = moduleUrl(`
   export const bindingError = code => new Error(code);
-  export const resolveSnapshot = async () => ({ routeGeneration: 1 });
+  export const resolveSnapshot = async () => ({ routeGeneration: 1, containerClasses: [] });
   export const doPolicy = () => ({});
   export const snapshotWorkerCode = () => ({});
   export const tenantGlobalOutbound = () => null;
+  export const currentStartupGeneration = () => 'generation';
+  export const TOKEN_HEADER = 'x-open-compute-internal-token';
 `);
 const protocol = moduleUrl(
   await compileRuntime("durable-objects/host-protocol.ts", {
@@ -23,6 +25,11 @@ const protocol = moduleUrl(
   }),
 );
 const { DoHost } = await importRuntime("durable-objects/host.ts", {
+  "../containers/attachment.js": moduleUrl(
+    await compileRuntime("containers/attachment.ts", {
+      "../loader/shared.js": shared,
+    }),
+  ),
   "cloudflare:workers": moduleUrl(`
     export class DurableObject {
       constructor(ctx, env) { this.ctx = ctx; this.env = env; }

@@ -171,6 +171,107 @@ fn compose_browser(
         .transpose()
 }
 
+async fn compose_queues(
+    storage: &Arc<PlatformStorage>,
+    scheduler: &Arc<SchedulerService>,
+    config: &open_compute_core::PlatformConfig,
+    metrics: &Arc<MetricsRegistry>,
+) -> Result<QueueApiState, PlatformError> {
+    let api = QueueApiState::new(
+        storage.clone(),
+        scheduler.clone(),
+        config.queues.max_consumer_concurrency,
+    )
+    .with_metrics(metrics.clone())
+    .with_default_max_backlog_bytes(config.queues.default_max_backlog_bytes);
+    api.reconcile_pending().await?;
+    Ok(api)
+}
+
+fn compose_kv(
+    storage: &Arc<PlatformStorage>,
+    config: &open_compute_core::PlatformConfig,
+    metrics: &Arc<MetricsRegistry>,
+) -> Arc<SqliteKvBindingExecutor> {
+    Arc::new(
+        SqliteKvBindingExecutor::with_config(storage.clone(), Arc::new(SystemClock), &config.kv)
+            .with_metrics(metrics.clone()),
+    )
+}
+
+async fn compose_r2(
+    storage: &Arc<PlatformStorage>,
+    pins: &ResourcePins,
+    objects: &R2ObjectStore,
+    config: &open_compute_core::PlatformConfig,
+    metrics: &Arc<MetricsRegistry>,
+) -> Result<(Arc<R2BindingService>, R2ApiState), PlatformError> {
+    let backend = Arc::new(
+        R2BindingService::new(
+            storage.clone(),
+            pins.clone(),
+            objects.clone(),
+            config.r2.clone(),
+        )?
+        .with_metrics(metrics.clone()),
+    );
+    let api = R2ApiState::new(
+        storage.clone(),
+        objects.clone(),
+        pins.clone(),
+        config.r2.clone(),
+        Duration::from_millis(config.workers.delete_drain_timeout_ms),
+    )
+    .with_binding(backend.clone());
+    api.reconcile_pending().await?;
+    Ok((backend, api))
+}
+
+async fn compose_containers(
+    config: &open_compute_core::PlatformConfig,
+    runtime: &open_compute_runtime::VerifiedRuntime,
+    redactor: &Redactor,
+    storage: &Arc<PlatformStorage>,
+    store: &ArtifactStore,
+    cache: &Arc<ArtifactCache>,
+) -> Option<(
+    Arc<crate::ContainerService>,
+    open_compute_runtime::ContainerProviderConfig,
+)> {
+    let containers = config.containers.as_ref()?;
+    let qualified = async {
+        runtime
+            .check_container_protocol(
+                Duration::from_millis(config.runtime.startup_timeout_ms),
+                redactor,
+            )
+            .await?;
+        let provider =
+            crate::container_broker::QualifiedContainerProvider::preflight(containers).await?;
+        let native_config = open_compute_runtime::ContainerProviderConfig::new(
+            containers.broker_socket.clone(),
+            provider.sidecar_image().to_owned(),
+        )?;
+        Ok::<_, PlatformError>((provider, native_config))
+    }
+    .await;
+    match qualified {
+        Ok((provider, native_config)) => Some((
+            Arc::new(crate::ContainerService::new(
+                storage.clone(),
+                store.clone(),
+                cache.clone(),
+                provider,
+            )),
+            native_config,
+        )),
+        Err(error) => {
+            tracing::warn!(error_code = ?error.code(), "Container provider qualification failed");
+            None
+        }
+    }
+}
+
 pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatform, PlatformError> {
     open_compute_core::OperatorProxyPolicy::from_process_env()?;
     let PreparedPlatform {
@@ -189,7 +290,7 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         binding_backend_addr,
         observability_backend_listener,
         observability_backend_addr,
-        compiler,
+        mut compiler,
     } = prepared;
     let ObjectPlatform {
         base,
@@ -227,8 +328,12 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
     let admin_addr = opts.shared_admin_addr;
 
     let version_pins = VersionPins::new();
-    let (service_invocations, host_extension_broker) =
-        compose_extensions(&storage, &version_pins, local_extensions.clone(), redactor)?;
+    let (service_invocations, host_extension_broker) = compose_extensions(
+        &storage,
+        &version_pins,
+        local_extensions.clone(),
+        redactor.clone(),
+    )?;
     let supervisor_handle: Arc<Mutex<Option<Arc<WorkerdSupervisor>>>> = Arc::new(Mutex::new(None));
     let transport = WorkerdTransport::new(generation_auth.clone(), supervisor_handle.clone())
         .with_version_pins(version_pins.clone())
@@ -250,24 +355,14 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
     )?;
     let bundle_limits = worker_bundle_limits(loaded.config.workers.max_bundle_bytes)?;
     let resource_pins = ResourcePins::new();
-    let r2_backend = Arc::new(
-        R2BindingService::new(
-            storage.clone(),
-            resource_pins.clone(),
-            r2_objects.clone(),
-            loaded.config.r2.clone(),
-        )?
-        .with_metrics(metrics.clone()),
-    );
-    let r2_api = R2ApiState::new(
-        storage.clone(),
-        r2_objects.clone(),
-        resource_pins.clone(),
-        loaded.config.r2.clone(),
-        Duration::from_millis(loaded.config.workers.delete_drain_timeout_ms),
+    let (r2_backend, r2_api) = compose_r2(
+        &storage,
+        &resource_pins,
+        &r2_objects,
+        &loaded.config,
+        &metrics,
     )
-    .with_binding(r2_backend.clone());
-    r2_api.reconcile_pending().await?;
+    .await?;
     let d1_backend = Arc::new(
         D1BindingService::new(
             storage.clone(),
@@ -292,30 +387,16 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
     )
     .with_metrics(metrics.clone())
     .with_scheduler(Some(scheduler_store.clone()));
-    let queue_api = QueueApiState::new(
-        storage.clone(),
-        scheduler_service.clone(),
-        loaded.config.queues.max_consumer_concurrency,
-    )
-    .with_metrics(metrics.clone())
-    .with_default_max_backlog_bytes(loaded.config.queues.default_max_backlog_bytes);
+    let queue_api = compose_queues(&storage, &scheduler_service, &loaded.config, &metrics).await?;
     let workflow_api = crate::workflow_http::WorkflowApiState::new(
         storage.clone(),
         scheduler_store.clone(),
         transport.clone(),
         loaded.config.workflows.clone(),
     );
-    queue_api.reconcile_pending().await?;
     metrics.set_do_storage_watermark(0);
     let maintenance_do_lifecycle = do_lifecycle.clone();
-    let binding_executor = Arc::new(
-        SqliteKvBindingExecutor::with_config(
-            storage.clone(),
-            Arc::new(SystemClock),
-            &loaded.config.kv,
-        )
-        .with_metrics(metrics.clone()),
-    );
+    let binding_executor = compose_kv(&storage, &loaded.config, &metrics);
     let binding_ai_search = Arc::new(
         AiSearchBindingService::new(
             storage.clone(),
@@ -329,6 +410,21 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         .with_metrics(metrics.clone()),
     );
     recover_force_delete_intents(&storage, &response_cache_manager)?;
+    let containers = if let Some((service, native_config)) = compose_containers(
+        &loaded.config,
+        &runtime,
+        &redactor,
+        &storage,
+        &store,
+        &cache,
+    )
+    .await
+    {
+        compiler = compiler.with_container_provider(native_config);
+        Some(service)
+    } else {
+        None
+    };
     let worker_api = WorkerApiState::new(
         storage.clone(),
         store.clone(),
@@ -338,6 +434,7 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         Duration::from_millis(loaded.config.workers.delete_drain_timeout_ms),
     )
     .with_browser(browser.clone())
+    .with_containers(containers.clone())
     .with_local_extensions(local_extensions)
     .with_response_cache(response_cache_manager.clone())
     .with_queue_consumer_limit(loaded.config.queues.max_consumer_concurrency)
@@ -376,6 +473,7 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
     .with_dashboard_dispatch(dashboard_dispatch.clone())
     .with_dashboard_auth(dashboard_auth.clone())
     .with_browser(browser.clone())
+    .with_containers(containers)
     .with_worker_api(worker_api)
     .with_kv_api(
         KvApiState::new(

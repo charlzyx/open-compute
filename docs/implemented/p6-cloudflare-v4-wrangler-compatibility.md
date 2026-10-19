@@ -26,6 +26,13 @@ DevTools session/browser、CDP WebSocket 和 Live View；逐 route 保留 raw JS
 [兼容矩阵](../references/cloudflare-compatibility.md#browser-run)公开官方来源冲突与未资格化范围；
 机器合同中 Browser 的全量 stable members 仍 blocked，不把常见路径通过声明为完整协议支持。
 
+## Containers 管理面实施
+
+[P23](p23-cloudflare-containers.md) 增加 application、immutable image、rollout 和 instance authority。
+私有 image registry 使用独立凭证鉴权；Docker socket 由独立 Broker 持有。
+本次先验收基础 13 个 operation family，snapshot 保持 `blocked`。
+这些新路径仍在集中测试和正式 runtime/provider 验收中，不由 P6 历史结果证明通过。
+
 ## 历史固定客户端与偏差
 
 2026-09-03 的验收固定 Wrangler `4.127.1`、Cloudflare TypeScript SDK `7.1.0`、OpenAPI revision

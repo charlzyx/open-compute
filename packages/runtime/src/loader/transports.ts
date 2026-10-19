@@ -18,6 +18,7 @@ import type {
 } from "../durable-objects/protocol.js";
 import { collectObservabilityTail } from "../observability/collector.js";
 import { makeR2TransportBase } from "../r2/transport.js";
+import { holdServiceWebSocketHandoff } from "../services/control.js";
 import {
   inboundSocketAddress,
   tunnelSockets,
@@ -269,6 +270,13 @@ export class DoTransport extends WorkerEntrypoint<
   LoaderEnv,
   ResourceBindingProps
 > {
+  /** Private channel owner; public DO dispatch still passes through its issued policy. */
+  holdWebSocketHandoff(
+    handles: readonly string[],
+  ): Promise<ReadableStream<Uint8Array>> {
+    return holdServiceWebSocketHandoff(this.env, handles);
+  }
+
   #props() {
     return doTransportProps(this.ctx.props);
   }

@@ -45,8 +45,19 @@ async fn p1_capability_release_support_bundle_and_metrics_contract_is_bounded() 
     );
     assert_eq!(
         capabilities.products["workflows"].status,
-        open_compute_core::CapabilityStatus::SupportedWithDeviation
+        open_compute_core::CapabilityStatus::Blocked
     );
+    for status in [
+        open_compute_core::CapabilityStatus::Blocked,
+        open_compute_core::CapabilityStatus::SupportedWithDeviation,
+    ] {
+        assert!(
+            capabilities.products["workflows"]
+                .members
+                .iter()
+                .any(|member| member.status == status)
+        );
+    }
     assert_eq!(
         capabilities.products["workflows"].deviations,
         vec!["OC-WORKFLOW-001"]

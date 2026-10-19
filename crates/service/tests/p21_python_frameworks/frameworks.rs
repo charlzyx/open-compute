@@ -198,7 +198,7 @@ async fn upload(
         "SELECT count(*) FROM worker_versions v JOIN workers w ON w.id=v.worker_id WHERE w.name=?1 AND v.state='rejected'",
         [script], |row| row.get(0),
     ).unwrap();
-    let (status, _, bytes) = fixture
+    let (status, _, bytes, version) = fixture
         .upload_version(
             script,
             &Capture::content_type(),
@@ -214,6 +214,7 @@ async fn upload(
     let value: Value = serde_json::from_slice(&bytes).unwrap();
     if fault.is_some() {
         assert_eq!(status, 400);
+        assert!(version.is_none());
         assert_eq!(value["success"], false);
         assert_eq!(value["errors"][0]["code"], 10021);
         assert!(value["result"].is_null());
@@ -233,7 +234,7 @@ async fn upload(
     }
     assert_eq!(status, 200, "framework Version upload/prepare must succeed");
     assert_eq!(value["success"], true);
-    value["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }
 
 async fn verify_application(fixture: &Fixture, framework: Framework, script: &str, revision: &str) {

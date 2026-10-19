@@ -1,6 +1,8 @@
 use super::*;
 use serde_json::Value;
 
+mod containers;
+
 pub(in crate::workers_http::v4) struct UploadInput {
     metadata: WorkerUploadMetadata,
     pub(in crate::workers_http::v4) vars: BTreeMap<String, Value>,

@@ -218,7 +218,7 @@ async fn python_version(
     if live {
         bindings.push(namespace("OBJECTS", PYTHON));
     }
-    let (status, _, bytes) = fixture
+    let (status, _, bytes, version) = fixture
         .upload_version(
             PYTHON,
             &Capture::content_type(),
@@ -232,5 +232,5 @@ async fn python_version(
         response["errors"]
     );
     assert_eq!(response["success"], true);
-    response["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }

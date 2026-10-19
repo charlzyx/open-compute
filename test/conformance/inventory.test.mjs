@@ -31,16 +31,142 @@ function hasCommit(repository, revision) {
 }
 
 const PINNED = {
-  workers_types_version: "5.20260830.1",
+  workers_types_version: "5.20260930.2",
   ast_sha256:
-    "da29f5ec1d9a81cc0094bd083ed3b28013573fcb2d4febd9fd62aecbfb53c6b3",
-  named_declarations: 1165,
-  target_declarations: 495,
-  target_declarations_with_surface: 445,
-  target_declarations_type_only: 50,
-  inventoried_members: 2588,
-  inventoried_symbols: 396,
+    "c49a9c138ef23712f324432807840b7eec7cbcd696487ad9c42217015482be5b",
+  named_declarations: 1217,
+  target_declarations: 547,
+  target_declarations_with_surface: 492,
+  target_declarations_type_only: 55,
+  inventoried_members: 2846,
+  inventoried_symbols: 440,
 };
+
+const NEW_PIN_BLOCKED_MEMBERS = [
+  "artifacts::ArtifactsCommitMetadata::author:property#0",
+  "artifacts::ArtifactsCommitMetadata::authoredAt:property#0",
+  "artifacts::ArtifactsCommitMetadata::committedAt:property#0",
+  "artifacts::ArtifactsCommitMetadata::committer:property#0",
+  "artifacts::ArtifactsCommitMetadata::hash:property#0",
+  "artifacts::ArtifactsCommitMetadata::message:property#0",
+  "artifacts::ArtifactsCommitMetadata::parents:property#0",
+  "artifacts::ArtifactsCommitMetadata::treeHash:property#0",
+  "artifacts::ArtifactsRepo::info:method#0",
+  "artifacts::ArtifactsRepo::log:method#0",
+  "artifacts::ArtifactsRepo::readBlob:method#0",
+  "artifacts::ArtifactsRepo::readCommit:method#0",
+  "artifacts::ArtifactsRepo::readFile:method#0",
+  "artifacts::ArtifactsRepo::readTree:method#0",
+  "artifacts::ArtifactsTreeEntry::hash:property#0",
+  "artifacts::ArtifactsTreeEntry::mode:property#0",
+  "artifacts::ArtifactsTreeEntry::name:property#0",
+  "artifacts::ArtifactsTreeEntry::type:property#0",
+  "workers::AnalyticsSQLBinding::query:method#0",
+  "workers::AnalyticsSQLQuery::params:property#0",
+  "workers::AnalyticsSQLQuery::query:property#0",
+  "workers::AnalyticsSQLResult::data:property#0",
+  "workers::AnalyticsSQLResult::rows:property#0",
+  "workers::AnalyticsSQLResult::statistics:property#0",
+  "workers::AnalyticsSQLStatistics::bytes_read:property#0",
+  "workers::AnalyticsSQLStatistics::elapsed_ms:property#0",
+  "workers::AnalyticsSQLStatistics::rows_read:property#0",
+  "workers::CfProperties::originRangeRequests:property#0",
+  "workers::JsonWebKey::priv:property#0",
+  "workers::JsonWebKey::pub:property#0",
+  "workers::JsonWebKeyWithKid::priv:property#0",
+  "workers::JsonWebKeyWithKid::pub:property#0",
+  "workers::LoopbackForExport::create:method#0",
+  "workers::LoopbackForExport::createBatch:method#0",
+  "workers::LoopbackForExport::deleteBatch:method#0",
+  "workers::LoopbackForExport::get:method#0",
+  "workers::MessageEventInit::source:property#0",
+  "workers::RequestInitCfProperties::originRangeRequests:property#0",
+  "workers::Span::recordException:method#0",
+  "workers::Span::setStatus:method#0",
+  "workers::Span::updateName:method#0",
+  "workers::SubtleCryptoSignAlgorithm::context:property#0",
+  "workers::Tracing::getActiveSpan:method#0",
+  "workers::TracingSpanStatus::code:property#0",
+  "workers::TracingSpanStatus::message:property#0",
+  "workers::cloudflare:durable-objects::retryable:function#0",
+  "workers::cloudflare:node.NodeStyleServer::address:method#0",
+  "workers::cloudflare:node::connectHandler:function#0",
+  "workers::cloudflare:node::handleAsNodeConnection:function#0",
+  "workers::cloudflare:node::handleAsNodeRequest:function#0",
+  "workflows::InstanceStatus::status:property#0",
+  "workflows::WorkflowInstance::subscribe:method#0",
+  "workflows::WorkflowInstanceEvent::attempt:property#0",
+  "workflows::WorkflowInstanceEvent::attempt:property#1",
+  "workflows::WorkflowInstanceEvent::attempt:property#2",
+  "workflows::WorkflowInstanceEvent::attempt:property#3",
+  "workflows::WorkflowInstanceEvent::attempt:property#4",
+  "workflows::WorkflowInstanceEvent::attempt:property#5",
+  "workflows::WorkflowInstanceEvent::config:property#0",
+  "workflows::WorkflowInstanceEvent::config:property#1",
+  "workflows::WorkflowInstanceEvent::durationMs:property#0",
+  "workflows::WorkflowInstanceEvent::error:property#0",
+  "workflows::WorkflowInstanceEvent::error:property#1",
+  "workflows::WorkflowInstanceEvent::error:property#2",
+  "workflows::WorkflowInstanceEvent::error:property#3",
+  "workflows::WorkflowInstanceEvent::eventId:property#0",
+  "workflows::WorkflowInstanceEvent::eventType:property#0",
+  "workflows::WorkflowInstanceEvent::instanceId:property#0",
+  "workflows::WorkflowInstanceEvent::output:property#0",
+  "workflows::WorkflowInstanceEvent::output:property#1",
+  "workflows::WorkflowInstanceEvent::params:property#0",
+  "workflows::WorkflowInstanceEvent::retryDelayMs:property#0",
+  "workflows::WorkflowInstanceEvent::retryDelayMs:property#1",
+  "workflows::WorkflowInstanceEvent::stepName:property#0",
+  "workflows::WorkflowInstanceEvent::stepName:property#1",
+  "workflows::WorkflowInstanceEvent::stepName:property#10",
+  "workflows::WorkflowInstanceEvent::stepName:property#11",
+  "workflows::WorkflowInstanceEvent::stepName:property#12",
+  "workflows::WorkflowInstanceEvent::stepName:property#13",
+  "workflows::WorkflowInstanceEvent::stepName:property#14",
+  "workflows::WorkflowInstanceEvent::stepName:property#15",
+  "workflows::WorkflowInstanceEvent::stepName:property#16",
+  "workflows::WorkflowInstanceEvent::stepName:property#2",
+  "workflows::WorkflowInstanceEvent::stepName:property#3",
+  "workflows::WorkflowInstanceEvent::stepName:property#4",
+  "workflows::WorkflowInstanceEvent::stepName:property#5",
+  "workflows::WorkflowInstanceEvent::stepName:property#6",
+  "workflows::WorkflowInstanceEvent::stepName:property#7",
+  "workflows::WorkflowInstanceEvent::stepName:property#8",
+  "workflows::WorkflowInstanceEvent::stepName:property#9",
+  "workflows::WorkflowInstanceEvent::timestamp:property#0",
+  "workflows::WorkflowInstanceEvent::type:property#0",
+  "workflows::WorkflowInstanceEvent::type:property#1",
+  "workflows::WorkflowInstanceEvent::type:property#10",
+  "workflows::WorkflowInstanceEvent::type:property#11",
+  "workflows::WorkflowInstanceEvent::type:property#12",
+  "workflows::WorkflowInstanceEvent::type:property#13",
+  "workflows::WorkflowInstanceEvent::type:property#14",
+  "workflows::WorkflowInstanceEvent::type:property#15",
+  "workflows::WorkflowInstanceEvent::type:property#16",
+  "workflows::WorkflowInstanceEvent::type:property#17",
+  "workflows::WorkflowInstanceEvent::type:property#18",
+  "workflows::WorkflowInstanceEvent::type:property#19",
+  "workflows::WorkflowInstanceEvent::type:property#2",
+  "workflows::WorkflowInstanceEvent::type:property#20",
+  "workflows::WorkflowInstanceEvent::type:property#21",
+  "workflows::WorkflowInstanceEvent::type:property#22",
+  "workflows::WorkflowInstanceEvent::type:property#23",
+  "workflows::WorkflowInstanceEvent::type:property#24",
+  "workflows::WorkflowInstanceEvent::type:property#25",
+  "workflows::WorkflowInstanceEvent::type:property#26",
+  "workflows::WorkflowInstanceEvent::type:property#27",
+  "workflows::WorkflowInstanceEvent::type:property#28",
+  "workflows::WorkflowInstanceEvent::type:property#3",
+  "workflows::WorkflowInstanceEvent::type:property#4",
+  "workflows::WorkflowInstanceEvent::type:property#5",
+  "workflows::WorkflowInstanceEvent::type:property#6",
+  "workflows::WorkflowInstanceEvent::type:property#7",
+  "workflows::WorkflowInstanceEvent::type:property#8",
+  "workflows::WorkflowInstanceEvent::type:property#9",
+  "workflows::WorkflowInstanceSubscribeOptions::cursor:property#0",
+  "workflows::WorkflowInstanceSubscribeOptions::filter:property#0",
+  "workflows::WorkflowInstanceSubscription::next:method#0",
+];
 
 const reportPromise = generateInventoryTwice();
 
@@ -311,11 +437,42 @@ test("target member evidence is complete and raw TCP coverage is exact", async (
   const browser = inventory.products.browser_rendering;
   assert.equal(browser.kind, "target");
   assert.equal(browser.status, "blocked");
-  assert.equal(browser.members.length, 332);
+  assert.equal(browser.members.length, 417);
   assert.ok(browser.members.every((member) => member.status === "blocked"));
+  const containers = inventory.products.containers;
+  assert.equal(containers.kind, "target");
+  assert.equal(containers.status, "blocked");
+  assert.equal(containers.members.length, 65);
+  assert.ok(containers.members.every((member) => member.status === "blocked"));
+  assert.ok(
+    containers.members.some(
+      (member) =>
+        member.id === "containers::DurableObjectState::container:property#0",
+    ),
+  );
+  assert.equal(
+    inventory.products.durable_objects.members.some(
+      (member) =>
+        member.symbol === "DurableObjectState" && member.member === "container",
+    ),
+    false,
+  );
   assert.deepEqual(
     namesOf(inventory, "BrowserRun"),
-    new Set(["fetch", "quickAction"]),
+    new Set([
+      "acquire",
+      "closeSession",
+      "connectSession",
+      "devtools",
+      "fetch",
+      "getLiveView",
+      "getSession",
+      "history",
+      "launch",
+      "limits",
+      "listSessions",
+      "quickAction",
+    ]),
   );
   assert.equal(
     membersOf(inventory, "BrowserRun").filter(
@@ -327,6 +484,8 @@ test("target member evidence is complete and raw TCP coverage is exact", async (
     blocked,
     [
       ...browser.members.map((member) => member.id),
+      ...containers.members.map((member) => member.id),
+      ...NEW_PIN_BLOCKED_MEMBERS,
       "dynamic_workers::WorkerLoaderWorkerCode::allowExperimental:property#0",
       "dynamic_workers::WorkerLoaderWorkerCode::streamingTails:property#0",
     ].sort(),
@@ -341,11 +500,11 @@ test("target member evidence is complete and raw TCP coverage is exact", async (
   assert.equal(inventory.products.ai.kind, "target");
   assert.equal(inventory.products.ai.members.length, 54);
   assert.equal(inventory.products.artifacts.kind, "target");
-  assert.equal(inventory.products.artifacts.status, "supported_with_deviation");
+  assert.equal(inventory.products.artifacts.status, "blocked");
   assert.deepEqual(inventory.products.artifacts.deviations, [
     "OC-ARTIFACTS-001",
   ]);
-  assert.equal(inventory.products.artifacts.members.length, 53);
+  assert.equal(inventory.products.artifacts.members.length, 60);
   for (const id of [
     "ai::Ai::aiGatewayLogId:property#0",
     "ai::Ai::toMarkdown:method#0",

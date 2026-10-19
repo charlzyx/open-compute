@@ -228,6 +228,39 @@ impl WorkerdTransport {
         validate_alarm_repair_result(result)
     }
 
+    /// Start a rollout replacement through the generation-authenticated native host.
+    pub(crate) async fn start_container(
+        &self,
+        namespace_resource_id: open_compute_core::ResourceId,
+        object_id: open_compute_core::DurableObjectId,
+        object_generation: u64,
+    ) -> Result<(), PlatformError> {
+        let response: ContainerStartResult = tokio::time::timeout(
+            RESPONSE_HEADER_TIMEOUT,
+            self.alarm_request_unbounded(
+                "/internal/container-start",
+                &ContainerStartRequest {
+                    namespace_resource_id,
+                    object_id,
+                    object_generation,
+                },
+            ),
+        )
+        .await
+        .map_err(|_| {
+            PlatformError::new(
+                ErrorCode::DoDispatchTimeout,
+                "Container replacement start result is unknown",
+            )
+        })?
+        .map_err(|_| runtime_unavailable())?;
+        if response.started {
+            Ok(())
+        } else {
+            Err(runtime_unavailable())
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     async fn alarm_request<T: for<'de> Deserialize<'de>>(
         &self,
@@ -248,7 +281,7 @@ impl WorkerdTransport {
     async fn alarm_request_unbounded<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
-        body: &AlarmObjectRequest<'_>,
+        body: &impl Serialize,
     ) -> Result<T, PlatformError> {
         let endpoint = self.endpoint()?;
         let (port, credential) = (endpoint.port, endpoint.credential);
@@ -266,6 +299,33 @@ impl WorkerdTransport {
             .await
             .map_err(|_| runtime_unavailable())?;
         if !response.status().is_success() {
+            #[cfg(any(test, feature = "test-support"))]
+            {
+                let code = response
+                    .headers()
+                    .get(ERROR_HEADER)
+                    .and_then(|value| value.to_str().ok())
+                    .filter(|code| {
+                        matches!(
+                            *code,
+                            "DO_VERSION_STALE"
+                                | "DO_OBJECT_DELETING"
+                                | "DO_INTERNAL_PROTOCOL_ERROR"
+                                | "DO_STORAGE_UNAVAILABLE"
+                                | "DO_RUNTIME_EXCEPTION"
+                                | "CONTAINER_UNAVAILABLE"
+                                | "VERSION_INVARIANT_VIOLATION"
+                                | "SCHEDULER_INTERNAL_PROTOCOL_ERROR"
+                                | "DO_ID_INVALID"
+                        )
+                    })
+                    .unwrap_or("UNRECOGNIZED_CODE");
+                tracing::info!(
+                    status = response.status().as_u16(),
+                    code,
+                    "Controlled native DO dispatch rejection"
+                );
+            }
             return Err(PlatformError::new(
                 ErrorCode::DoStorageUnavailable,
                 "Durable Object alarm dispatch failed",
@@ -716,3 +776,21 @@ mod tests {
         accept.await.unwrap();
     }
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContainerStartRequest {
+    namespace_resource_id: open_compute_core::ResourceId,
+    object_id: open_compute_core::DurableObjectId,
+    object_generation: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContainerStartResult {
+    started: bool,
+}
+
+#[cfg(test)]
+#[path = "container_transport_tests.rs"]
+mod container_transport_tests;

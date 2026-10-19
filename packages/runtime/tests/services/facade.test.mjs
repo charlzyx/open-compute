@@ -85,6 +85,11 @@ const transferUrl = moduleUrl(
     "./deadline.js": deadlineUrl,
   }),
 );
+const privateRpc = moduleUrl(
+  `export const sources = [];
+   export function createRpcTransport(value) { sources.push(value); return value; }`,
+);
+const privateRpcModule = await import(privateRpc);
 const capabilitiesUrl = moduleUrl(
   await compileRuntime("services/capabilities.ts", {
     "../bindings/rpc-disposal.js": moduleUrl(
@@ -94,15 +99,20 @@ const capabilitiesUrl = moduleUrl(
     "./scope.js": scopeUrl,
     "./deadline.js": deadlineUrl,
     "./capability-transfer.js": transferUrl,
+    "../bindings/rpc-transport.js": privateRpc,
     "./rpc-member.js": moduleUrl(
       await compileRuntime("services/rpc-member.ts"),
     ),
   }),
 );
+const handoffUrl = moduleUrl(
+  await compileRuntime("services/websocket-handoff.ts"),
+);
 const facadeUrl = moduleUrl(
   await compileRuntime("services/facade.ts", {
     "./scope.js": scopeUrl,
     "./capabilities.js": capabilitiesUrl,
+    "./websocket-handoff.js": handoffUrl,
   }),
 );
 const cloudflareModule = await import(cloudflare);
@@ -112,16 +122,21 @@ const {
   serviceCapabilityController,
 } = await import(capabilitiesUrl);
 const {
-  SERVICE_WEBSOCKET_HANDOFF_HEADER,
   ServiceBinding: ServicePolicy,
-  appendServiceWebSocketHandoff,
   attachServiceWebSocketHandoffs,
   completeServiceScope,
   createServiceBinding: createPrivateServiceBinding,
   captureServiceWebSocketHandoffs,
   registerServiceBinding,
-  serviceWebSocketHandoffHandles,
+  serviceChannelCallbacks,
+  channelWebSocketHandoffs,
+  detachChannelWebSocketHandoffs,
 } = await import(facadeUrl);
+const {
+  SERVICE_WEBSOCKET_HANDOFF_HEADER,
+  appendServiceWebSocketHandoff,
+  serviceWebSocketHandoffHandles,
+} = await import(handoffUrl);
 const { rootServiceFrame, childServiceFrame, withServiceScope } = await import(
   scopeUrl
 );
@@ -177,15 +192,30 @@ test("remote capability authority keeps native construction local through duplic
     ["dispose", 1],
   ]);
 });
+const nativeApply = Reflect.apply;
+function publicTransport(raw) {
+  const fetch = raw.fetch;
+  const connect = raw.connect;
+  return {
+    fetch: (request) => nativeApply(fetch, raw, [request]),
+    connect: (address, options) =>
+      nativeApply(connect, raw, [address, options]),
+  };
+}
 function ServiceBinding(raw) {
-  return new ServicePolicy(raw, rootTransport(raw), createStub, () => {});
+  return new ServicePolicy(
+    rootTransport(raw),
+    createStub,
+    () => {},
+    publicTransport(raw),
+  );
 }
 function createServiceBinding(env) {
   return createPrivateServiceBinding(
-    { ...env, fetcher: rootTransport(env.fetcher) },
     createStub,
-    env.fetcher,
+    rootTransport(env.fetcher),
     () => {},
+    publicTransport(env.fetcher),
   );
 }
 function rootTransport(raw) {
@@ -230,7 +260,12 @@ test("public RPC admission charges siblings and child frames before dispatch whi
         throw new Error("unexpected socket transport use");
       },
     };
-    return new ServicePolicy(raw, rootTransport(control), createStub, admit);
+    return new ServicePolicy(
+      rootTransport(control),
+      createStub,
+      admit,
+      publicTransport(raw),
+    );
   }
   const left = binding("left");
   const right = binding("right");
@@ -279,9 +314,14 @@ test("HTTP and CONNECT retain original native dispatch without a second policy a
     },
     async completeRoot() {},
   });
-  const service = new ServicePolicy(raw, control, createStub, () => {
-    throw new Error("duplicate public admission");
-  });
+  const service = new ServicePolicy(
+    control,
+    createStub,
+    () => {
+      throw new Error("duplicate public admission");
+    },
+    publicTransport(raw),
+  );
   const frame = rootServiceFrame();
   await withServiceScope({ SERVICE: service }, frame, async () => {
     assert.equal(
@@ -335,7 +375,7 @@ test("root controllers are reused per binding, disposed on drain, and excluded f
         };
       },
     };
-    return new ServicePolicy(raw, raw, createStub, () => {});
+    return new ServicePolicy(raw, createStub, () => {}, publicTransport(raw));
   }
   const first = transport("first");
   const second = transport("second");
@@ -363,12 +403,10 @@ test("root controllers are reused per binding, disposed on drain, and excluded f
   assert.equal(calls.at(-1)[1], child);
   assert.throws(
     () =>
-      new ServicePolicy(
-        { rpc() {}, get() {}, fetch() {}, connect() {} },
-        { rpc() {}, get() {} },
-        createStub,
-        () => {},
-      ),
+      new ServicePolicy({ rpc() {}, get() {} }, createStub, () => {}, {
+        fetch() {},
+        connect() {},
+      }),
     /SERVICE_BINDING_DENIED/,
   );
 });
@@ -1381,6 +1419,7 @@ test("nested callbacks and returned targets retain both owners and preserve stru
     [callback],
   );
   sources.push(encoded.target.handle);
+  assert.equal(privateRpcModule.sources.includes(encoded.target.handle), false);
   assert.equal(encoded.value, 42);
   assert.deepEqual(
     events.map((event) => event[0]),
@@ -1598,12 +1637,27 @@ test("Service WebSocket handoffs reject invalid handles and preserve the trusted
       () => serviceWebSocketHandoffHandles(forged),
       /SERVICE_UNAVAILABLE/,
     );
+    assert.deepEqual(channelWebSocketHandoffs(chained), []);
     const captured = captureServiceWebSocketHandoffs(chained);
     assert.equal(captured.webSocket, socket);
     assert.equal(captured.headers.has(SERVICE_WEBSOCKET_HANDOFF_HEADER), false);
     assert.deepEqual(
       serviceWebSocketHandoffHandles(attachServiceWebSocketHandoffs(captured)),
       [first, second],
+    );
+    assert.deepEqual(channelWebSocketHandoffs(captured), [first, second]);
+    const transferred = detachChannelWebSocketHandoffs(
+      attachServiceWebSocketHandoffs(captured),
+    );
+    assert.equal(transferred.webSocket, socket);
+    assert.equal(
+      transferred.headers.has(SERVICE_WEBSOCKET_HANDOFF_HEADER),
+      false,
+    );
+    assert.deepEqual(channelWebSocketHandoffs(captured), []);
+    assert.deepEqual(
+      serviceWebSocketHandoffHandles(attachServiceWebSocketHandoffs(captured)),
+      [],
     );
     assert.deepEqual(serviceWebSocketHandoffHandles(response), []);
   } finally {
@@ -1767,4 +1821,154 @@ test("Service facade forwards arbitrary native method and getter property names"
       ]);
     }
   });
+});
+
+test("issued channel callbacks retain the canonical Service receiver and fresh caller authority", async () => {
+  const calls = [];
+  const raw = {
+    async fetch(request) {
+      calls.push(["fetch", request.url]);
+      return new Response("issued");
+    },
+    connect(address) {
+      calls.push(["connect", address]);
+      return { opened: Promise.resolve({}) };
+    },
+  };
+  const control = rootTransport({
+    rpc() {},
+    get() {},
+    async completeRoot() {},
+  });
+  const policy = new ServicePolicy(
+    control,
+    createStub,
+    () => {},
+    publicTransport(raw),
+  );
+  const callbacks = serviceChannelCallbacks(policy);
+  assert.ok(callbacks);
+  assert.equal(serviceChannelCallbacks({ fetch: raw.fetch }), null);
+  const originalFetch = ServicePolicy.prototype.fetch;
+  const originalConnect = ServicePolicy.prototype.connect;
+  try {
+    ServicePolicy.prototype.fetch = () => {
+      throw Error("poisoned public fetch");
+    };
+    ServicePolicy.prototype.connect = () => {
+      throw Error("poisoned public connect");
+    };
+    await withServiceScope(
+      { SERVICE: policy },
+      rootServiceFrame(),
+      async () => {
+        assert.equal(
+          await (
+            await callbacks.fetch(new Request("https://issued.test/"))
+          ).text(),
+          "issued",
+        );
+        await callbacks.connect("issued.test:443").opened;
+      },
+    );
+  } finally {
+    ServicePolicy.prototype.fetch = originalFetch;
+    ServicePolicy.prototype.connect = originalConnect;
+  }
+  assert.deepEqual(calls, [
+    ["fetch", "https://issued.test/"],
+    ["connect", "issued.test:443"],
+  ]);
+  await assert.rejects(
+    callbacks.fetch(new Request("https://issued.test/")),
+    /SERVICE_BINDING_DENIED/,
+  );
+});
+
+test("issued Service channels retain canonical raw fetch and connect receivers after prototype changes", async () => {
+  const calls = [];
+  const socket = { opened: Promise.resolve({}), closed: Promise.resolve() };
+  const prototype = {
+    async rpc(_frame, _method, args) {
+      return args;
+    },
+    async get() {
+      return 1;
+    },
+    async completeRoot() {},
+    async fetch(request) {
+      calls.push(["fetch", this, request]);
+      return new Response("canonical");
+    },
+    connect(address, options) {
+      calls.push(["connect", this, address, options]);
+      return socket;
+    },
+  };
+  const raw = Object.create(prototype);
+  const policy = createServiceBinding({ fetcher: raw });
+  prototype.fetch = () => {
+    throw Error("mutable prototype fetch must not dispatch");
+  };
+  prototype.connect = () => {
+    throw Error("mutable prototype connect must not dispatch");
+  };
+  const frame = rootServiceFrame();
+  try {
+    await withServiceScope({ SERVICE: policy }, frame, async () => {
+      const channel = serviceChannelCallbacks(policy);
+      assert.ok(channel);
+      assert.equal(
+        await (
+          await channel.fetch(new Request("https://service.test/"))
+        ).text(),
+        "canonical",
+      );
+      assert.equal(channel.connect("service.test:443"), socket);
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0][1], raw);
+    assert.equal(calls[1][1], raw);
+    assert.ok(calls[0][2].headers.has("x-open-compute-service-frame"));
+    assert.equal(calls[1][2], "service.test:443");
+  } finally {
+    await completeServiceScope({ SERVICE: policy }, frame);
+  }
+});
+
+test("private capability controller has no inherited optional authority getters", () => {
+  const prototype = Object.prototype;
+  const names = ["dup", Symbol.dispose];
+  const before = names.map((name) =>
+    Object.getOwnPropertyDescriptor(prototype, name),
+  );
+  let inherited = 0;
+  try {
+    for (const name of names)
+      Object.defineProperty(prototype, name, {
+        configurable: true,
+        get() {
+          inherited++;
+          throw Error("private controller must not inherit authority");
+        },
+      });
+    const transport = Object.create(null);
+    Object.assign(transport, {
+      beginCapability() {},
+      releaseRetention() {},
+      completeOperation() {},
+      retainCapability() {},
+    });
+    const controller = serviceCapabilityController(transport, createStub);
+    assert.equal(Object.getPrototypeOf(controller), null);
+    assert.equal(controller.dup, undefined);
+    assert.equal(controller[Symbol.dispose], undefined);
+    assert.equal(inherited, 0);
+  } finally {
+    for (let index = 0; index < names.length; index++) {
+      if (before[index])
+        Object.defineProperty(prototype, names[index], before[index]);
+      else delete prototype[names[index]];
+    }
+  }
 });

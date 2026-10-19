@@ -113,3 +113,87 @@ test("authenticated order cancellation remains available when tenant admission i
   await assert.rejects(router.cancelOrder(identity));
   assert.equal(cancelled, undefined);
 });
+
+test("container rollout wake resolves current DO authority and never dispatches a tenant method", async () => {
+  const { default: ControlRouter } = await importRuntime(
+    "durable-objects/router.ts",
+    {
+      ...imports,
+      "./admission.js": moduleUrl(
+        "export const admitted=async (_env, run)=>run({});",
+      ),
+    },
+  );
+  const authority = {
+    instanceId: "019c0000000070008000000000000001",
+    workerId: "019c0000-0000-7000-8000-000000000002",
+    versionId: "019c0000-0000-7000-8000-000000000003",
+    workerCodeSha256: "a".repeat(64),
+    namespaceResourceId: "019c0000-0000-7000-8000-000000000004",
+    objectId: "b".repeat(64),
+    className: "App",
+    hostKey: "host",
+    objectGeneration: 2,
+    routeGeneration: 3,
+  };
+  const requests = [];
+  let forwarded;
+  let authorized = true;
+  const router = new ControlRouter(
+    {},
+    {
+      INTERNAL_TOKEN: "generation",
+      BINDING_BACKEND_TOKEN: "binding",
+      BINDING_BACKEND: {
+        async fetch(url, options) {
+          requests.push({ url, body: JSON.parse(options.body) });
+          return authorized
+            ? Response.json(authority)
+            : new Response(null, { status: 403 });
+        },
+      },
+      DO_HOST: {
+        idFromName: (key) => key,
+        get: (key) => {
+          assert.equal(key, authority.hostKey);
+          return {
+            async fetch(request) {
+              forwarded = request;
+              return Response.json({ started: true });
+            },
+          };
+        },
+      },
+    },
+  );
+  const body = {
+    namespaceResourceId: authority.namespaceResourceId,
+    objectId: authority.objectId,
+    objectGeneration: 2,
+  };
+  const request = (value) =>
+    new Request("http://router/internal/container-start", {
+      method: "POST",
+      body: JSON.stringify(value),
+      headers: { "content-type": "application/json" },
+    });
+  assert.deepEqual(await (await router.fetch(request(body))).json(), {
+    started: true,
+  });
+  assert.deepEqual(requests[0].body, body);
+  assert.equal(
+    forwarded.headers.get("x-open-compute-do-operation"),
+    "container-start",
+  );
+  assert.equal(forwarded.headers.get("x-open-compute-route-generation"), "3");
+  assert.equal(forwarded.headers.get("x-open-compute-object-generation"), "2");
+  forwarded = undefined;
+  assert.equal(
+    (await router.fetch(request({ ...body, unexpected: true }))).ok,
+    false,
+  );
+  assert.equal(requests.length, 1);
+  authorized = false;
+  assert.equal((await router.fetch(request(body))).ok, false);
+  assert.equal(forwarded, undefined);
+});

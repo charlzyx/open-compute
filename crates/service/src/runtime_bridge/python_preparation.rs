@@ -150,6 +150,7 @@ impl PythonPreparation {
             binding_token: &tokens[1],
             observability_token: &tokens[2],
             durable_objects: self.durable_objects.clone(),
+            container_provider: None,
             deadline: remaining(deadline)?,
             redactor: &redactor,
         })

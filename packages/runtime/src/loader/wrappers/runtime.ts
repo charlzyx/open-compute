@@ -14,8 +14,13 @@ import {
   encodeServiceValue,
   serviceCapabilityController,
 } from "../../services/capabilities.js";
+import {
+  channelWebSocketHandoffs,
+  detachChannelWebSocketHandoffs,
+} from "../../services/facade.js";
 import { serviceRpcMember } from "../../services/rpc-member.js";
 import {
+  captureServiceEnvironment,
   childServiceFrame,
   rootServiceFrame,
   withServiceScope,
@@ -440,6 +445,81 @@ function invoke(
     }
   };
   return tracked?.runScope ? tracked.runScope(run) : run();
+}
+
+/** Give each delivered native policy callback a fresh root scope and normal completion. */
+export function createPolicyChannelCallbacks(callbacks: {
+  readonly fetch: (request: Request) => Promise<Response>;
+  readonly connect: (address: string) => Socket;
+  readonly hold: (
+    handles: readonly string[],
+  ) => Promise<ReadableStream<Uint8Array>>;
+}) {
+  const env = captureServiceEnvironment();
+  return {
+    fetch(request: Request): Promise<{
+      response: Response;
+      leaseBody: ReadableStream<Uint8Array> | null;
+      errorCode: "SERVICE_UNAVAILABLE" | null;
+    }> {
+      let leaseBody: ReadableStream<Uint8Array> | null = null;
+      let errorCode: "SERVICE_UNAVAILABLE" | null = null;
+      const result = invoke(
+        undefined,
+        async () => {
+          const response = await callbacks.fetch(request);
+          const handles = channelWebSocketHandoffs(response);
+          if (handles.length > 0) {
+            try {
+              const held = await callbacks.hold(handles);
+              if (!(held instanceof ReadableStream))
+                throw Error("SERVICE_UNAVAILABLE");
+              leaseBody = held;
+            } catch {
+              errorCode = "SERVICE_UNAVAILABLE";
+            }
+            // Activation has completed or failed; either packet retains resources for native cleanup.
+            return detachChannelWebSocketHandoffs(response);
+          }
+          return response;
+        },
+        [],
+        env,
+        trackExecutionContext({}),
+      );
+      return Promise.resolve(result).then((response: unknown) => {
+        if (!(response instanceof Response))
+          throw new TypeError("SERVICE_BINDING_DENIED");
+        return {
+          response: detachChannelWebSocketHandoffs(response),
+          leaseBody,
+          errorCode,
+        };
+      });
+    },
+    connect(address: string): Promise<Socket> {
+      const tracked = trackExecutionContext({});
+      const tasks = tracked.tasks;
+      let socket: Socket | undefined;
+      const result = invoke(
+        undefined,
+        async () => {
+          socket = callbacks.connect(address);
+          nativeApply(nativePush, tasks, [socket.closed]);
+          await socket.opened;
+          return socket;
+        },
+        [],
+        env,
+        tracked,
+      );
+      return Promise.resolve(result).then((value: unknown) => {
+        if (socket === undefined || value !== socket)
+          throw new TypeError("SERVICE_BINDING_DENIED");
+        return socket;
+      });
+    },
+  };
 }
 
 function serviceMethod(owner: object, method: string): Callable {

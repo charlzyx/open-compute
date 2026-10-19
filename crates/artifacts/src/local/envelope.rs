@@ -28,7 +28,7 @@ pub(super) fn seal_source(
                 .map_err(|_| BackendError::Unavailable)?;
             if !metadata_on_disk.file_type().is_file()
                 || metadata_on_disk.len() != length
-                || metadata_on_disk.nlink() != 1
+                || metadata_on_disk.nlink() > 1
                 || std::os::unix::fs::MetadataExt::mode(&metadata_on_disk) & 0o077 != 0
                 || std::os::unix::fs::MetadataExt::uid(&metadata_on_disk)
                     != rustix::process::getuid().as_raw()

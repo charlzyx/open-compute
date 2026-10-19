@@ -23,7 +23,8 @@ const INTERNAL_PATHS = new Set([
   "/internal/worker-loaders/revoke",
 ]);
 const DO_ADMIN_PATH = "/internal/do-delete";
-const DO_ALARM_PATHS = new Set([
+const DO_CONTROL_PATHS = new Set([
+  "/internal/container-start",
   "/internal/do-alarm",
   "/internal/do-alarm-repair",
 ]);
@@ -132,7 +133,7 @@ export default class Ingress extends WorkerEntrypoint<{
     ) {
       if (
         request.method === "POST" &&
-        DO_ALARM_PATHS.has(url.pathname) &&
+        DO_CONTROL_PATHS.has(url.pathname) &&
         url.search === ""
       ) {
         return env.DO_ROUTER.fetch(

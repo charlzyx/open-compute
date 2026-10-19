@@ -325,6 +325,8 @@ mod streaming_put_head_open_and_same_digest_concurrency;
 
 mod verified_file_upload_streams_and_rejects_post_parse_tamper;
 
+mod verified_open_file_publication;
+
 mod remote_corruption_and_orphan_gc;
 
 mod version_commit_reservation_fences_artifact_gc;

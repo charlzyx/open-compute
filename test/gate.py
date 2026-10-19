@@ -83,6 +83,7 @@ CARGO_TARGETS = {
     'p5-search': ('open-compute-service', 'p5_search_gate', True),
     'p6-cf-resources': ('open-compute-service', 'p6_cf_resource_gate', False),
     'p22-browser-run': ('open-compute-service', 'p22_browser_run', True),
+    'p23-containers': ('open-compute-service', 'p23_containers', True),
     'p6-cloudflare-sdk': ('open-compute-service', 'cloudflare_sdk_gate', False),
     'p20-cf-cli': ('open-compute-service', 'p20_cf_cli', False),
     # Python snapshots and several fresh daemon generations own one serial scenario.
@@ -492,13 +493,94 @@ def verify_inputs(*, probe_version=True):
     return result
 
 
+
+def container_inputs_identity():
+    """Freeze the explicit P23 OCI graphs, declared Broker contract and built Worker bytes."""
+    configured = os.environ.get('OPEN_COMPUTE_TEST_CONTAINERS_INPUT')
+    if not configured:
+        raise ValueError('p23-containers requires OPEN_COMPUTE_TEST_CONTAINERS_INPUT')
+    path = Path(configured)
+    if not path.is_absolute() or path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+        raise ValueError('P23 input JSON must be an absolute bounded regular file')
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict) or set(value) != {'containers', 'images'}:
+        raise ValueError('P23 input JSON has an invalid closed schema')
+    provider = value['containers']
+    if not isinstance(provider, dict) or set(provider) != {
+            'broker_socket', 'provider_contract_sha256', 'max_instances',
+            'max_snapshots', 'max_snapshot_bytes', 'resources'}:
+        raise ValueError('P23 Broker configuration has an invalid closed schema')
+    if (type(provider['max_snapshots']) is not int
+            or not 1 <= provider['max_snapshots'] <= 100_000
+            or type(provider['max_snapshot_bytes']) is not int
+            or not 1 <= provider['max_snapshot_bytes'] <= (1 << 63) - 1):
+        raise ValueError('P23 snapshot retention limits are invalid')
+    contract = provider['provider_contract_sha256']
+    if not isinstance(contract, str) or not re.fullmatch('[0-9a-f]{64}', contract):
+        raise ValueError('P23 Broker contract digest is invalid')
+    images = value['images']
+    if not isinstance(images, list) or len(images) != 2:
+        raise ValueError('P23 requires exactly two prepared OCI graphs')
+    files = []
+    def record_file(name, maximum):
+        if not isinstance(name, str):
+            raise ValueError('P23 OCI paths must be strings')
+        file = Path(name)
+        if not file.is_absolute() or file.is_symlink() or not file.is_file() or file.stat().st_size > maximum:
+            raise ValueError('P23 OCI input must be an absolute bounded regular file')
+        sha = digest(file)
+        files.append({'sha256': sha, 'size': file.stat().st_size})
+        return sha
+    for image in images:
+        if not isinstance(image, dict) or set(image) != {'manifest', 'blobs'}:
+            raise ValueError('P23 OCI image has an invalid closed schema')
+        graph_start = len(files)
+        record_file(image['manifest'], 1 << 20)
+        blobs = image['blobs']
+        if not isinstance(blobs, list) or not 1 <= len(blobs) <= 129:
+            raise ValueError('P23 OCI blob inventory is invalid')
+        for blob in blobs:
+            if not isinstance(blob, dict) or set(blob) != {'path', 'sha256'}:
+                raise ValueError('P23 OCI blob has an invalid closed schema')
+            if record_file(blob['path'], 1 << 30) != blob['sha256']:
+                raise ValueError('P23 OCI blob digest mismatch')
+        if sum(file['size'] for file in files[graph_start:]) > 1 << 30:
+            raise ValueError('P23 OCI graph exceeds the explicit 1 GiB budget')
+    bundle = ROOT / 'test/applications/containers/.cloudflare/output/v0/workers/default/bundle'
+    if not (bundle / 'index.js').is_file():
+        raise ValueError('P23 ordinary SDK Worker must be explicitly built')
+    built = []
+    for file in sorted(bundle.rglob('*')):
+        if file.is_symlink():
+            raise ValueError('P23 Worker bundle may not contain symlinks')
+        if file.is_file() and file.suffix != '.map' and '.vite' not in file.relative_to(bundle).parts:
+            if file.suffix not in {'.js', '.wasm'} or file.stat().st_size > 16 << 20:
+                raise ValueError('P23 Worker bundle contains an invalid module')
+            built.append({'module': str(file.relative_to(bundle)), 'sha256': digest(file)})
+    output = bundle.parents[2]
+    configurations = [bundle.parent / 'worker.config.json',
+                      *sorted((output / 'containers').glob('*/container.config.json'))]
+    if len(configurations) < 2:
+        raise ValueError('P23 Build Output requires Worker and Container configuration')
+    metadata = []
+    for file in configurations:
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > 1 << 20:
+            raise ValueError('P23 Build Output configuration must be a bounded regular file')
+        metadata.append({'path': str(file.relative_to(output)), 'sha256': digest(file)})
+    return {'input_sha256': digest(path), 'provider_contract_sha256': contract,
+            'oci_files': files, 'worker_modules': built, 'build_configurations': metadata}
+
+
 def verify_selected_inputs(targets, *, probe_version=True):
     """L0 typed checks need only frozen manifests; Cargo product Gates need runtime inputs."""
     if 'p0-1' in targets and not (shutil.which('/usr/sbin/lsof') or shutil.which('lsof')):
         raise ValueError('p0-1 requires lsof; install the process Gate tool before running')
     if (any(not isinstance(target, TypedTarget) for target in targets.values())
             or 'p5-ai-provider-qualification' in targets):
-        return verify_inputs(probe_version=probe_version)
+        result = verify_inputs(probe_version=probe_version)
+        if 'p23-containers' in targets:
+            result['containers'] = container_inputs_identity()
+        return result
     return {
         'baseline_sha256': digest(ROOT / 'test/conformance/baseline.json'),
         'catalog_sha256': digest(ROOT / 'test/conformance/catalog.json'),

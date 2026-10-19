@@ -18,6 +18,10 @@ const tunnel = moduleUrl(`
   export function socketAuthorityWire(value) { return { kind: "test", value }; }
 `);
 const privateControls = new WeakMap();
+const originalConnects = new WeakMap();
+globalThis.__openComputeFacetOriginalConnects = originalConnects;
+const issuedDomains = [];
+globalThis.__openComputeFacetIssuedDomains = issuedDomains;
 globalThis.__openComputeFacetPrivateControls = privateControls;
 globalThis.__openComputeFacetAdmission = () => {};
 const wrapped = moduleUrl(`
@@ -25,11 +29,23 @@ const wrapped = moduleUrl(`
     createPrivateTransport(raw) {
       return globalThis.__openComputeFacetPrivateControls.get(raw) ?? raw;
     },
+    validatePublicTransport() {},
+    connectPublicTransport(raw, address, options) {
+      const connect = globalThis.__openComputeFacetOriginalConnects.get(raw) ?? raw.connect.bind(raw);
+      return connect(address, options);
+    },
     admitSubrequest() { globalThis.__openComputeFacetAdmission(); }
   };
 `);
+const rpcTransport = moduleUrl(`
+  export function createRpcTransport(raw, domain) {
+    globalThis.__openComputeFacetIssuedDomains.push(domain);
+    return raw;
+  }
+`);
 const { TenantFacets } = await importRuntime("durable-objects/facets.ts", {
   "cloudflare-internal:wrapped-binding": wrapped,
+  "../bindings/rpc-transport.js": rpcTransport,
   "cloudflare:workers": cloudflare,
   "../loader/wrappers/runtime.js": runtime,
   "../sockets/tunnel.js": tunnel,
@@ -407,4 +423,51 @@ test("invalid dynamic facet ids fail before registration or native creation", as
     /DO_RUNTIME_EXCEPTION/,
   );
   assert.deepEqual(calls, []);
+});
+
+test("facet issuance retains private control and original native CONNECT when the raw prototype is poisoned", async () => {
+  const { calls, manager, nativeFacets } = fixture();
+  const control = { ...manager };
+  privateControls.set(manager, control);
+  originalConnects.set(manager, manager.connect.bind(manager));
+  let hits = 0;
+  const prototype = {};
+  for (const name of [
+    "connect",
+    "__openComputeFacetCall",
+    "__openComputeFacetFetch",
+    "__openComputePrepareFacetConnect",
+  ]) {
+    delete manager[name];
+    Object.defineProperty(prototype, name, {
+      get() {
+        hits++;
+        throw Error("private facet receiver reached a public getter");
+      },
+    });
+  }
+  Object.setPrototypeOf(manager, prototype);
+  const facets = new TenantFacets(
+    manager,
+    authority,
+    [],
+    "root-id",
+    nativeFacets,
+  );
+  const stub = facets.get("child", () => ({ class: loopback("Child") }));
+  assert.equal(await stub.increment(), 1);
+  assert.equal(
+    await (await stub.fetch("https://facet.invalid/path")).text(),
+    "facet-response",
+  );
+  const socket = stub.connect("example.com:443", { allowHalfOpen: true });
+  await socket.opened;
+  await Promise.all(background.splice(0));
+  assert.equal(issuedDomains.at(-1), "facet");
+  assert.equal(hits, 0);
+  assert.deepEqual(
+    calls.filter((call) => call.kind === "call").map((call) => call.path),
+    [["child"]],
+  );
+  assert.equal(calls.filter((call) => call.kind === "connect").length, 1);
 });

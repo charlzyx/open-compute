@@ -413,7 +413,7 @@ async fn handle_special_routes(
                 key.clone(),
                 StoredObject {
                     sha256,
-                    body: assembled,
+                    body: assembled.into(),
                     etag: etag.clone(),
                     metadata: metadata.clone(),
                     response_headers: upload.response_headers.clone(),
@@ -429,7 +429,7 @@ async fn handle_special_routes(
             key.clone(),
             StoredObject {
                 sha256,
-                body: assembled,
+                body: assembled.into(),
                 etag: etag.clone(),
                 metadata,
                 response_headers: upload.response_headers,
@@ -522,6 +522,19 @@ async fn handle_object_route(
                 return Ok(());
             };
             let storage_class = storage_class_from(&headers);
+            let late_put = if fault == Fault::LatePutResponseLoss {
+                let control = Arc::clone(&state.lock().expect("lock").late_put);
+                let mut release = control.release.subscribe();
+                stream.shutdown().await?;
+                control.entered.notify_one();
+                release
+                    .wait_for(|released| *released)
+                    .await
+                    .map_err(|_| std::io::Error::other("late PUT fixture release was lost"))?;
+                Some(control)
+            } else {
+                None
+            };
             let conflict = {
                 let mut g = state.lock().expect("lock");
                 if headers
@@ -551,7 +564,7 @@ async fn handle_object_route(
                         key.clone(),
                         StoredObject {
                             sha256: hex::encode(raced_checksums.sha256),
-                            body: raced_body,
+                            body: raced_body.into(),
                             etag: raced_etag,
                             metadata: raced_metadata,
                             response_headers: response_headers.clone(),
@@ -575,7 +588,7 @@ async fn handle_object_route(
                     g.objects.insert(
                         key.clone(),
                         StoredObject {
-                            body,
+                            body: body.into(),
                             sha256: sha,
                             etag: etag.clone(),
                             metadata,
@@ -588,6 +601,12 @@ async fn handle_object_route(
                     false
                 }
             };
+            if let Some(control) = late_put {
+                if !conflict {
+                    control.committed.notify_one();
+                }
+                return Ok(());
+            }
             if conflict {
                 write_status(stream, 412, "Precondition Failed", b"").await?;
                 return Ok(());
@@ -653,10 +672,7 @@ async fn handle_object_route(
             let (found, chunk_size, chunk_delay) = {
                 let g = state.lock().expect("lock");
                 let found = g.objects.get(&key).map(|obj| {
-                    let mut body = obj.body.clone();
-                    if fault == Fault::CorruptBody {
-                        body.push(0x01);
-                    }
+                    let body = obj.body_for_get(fault);
                     let mut metadata = obj.metadata.clone();
                     metadata
                         .entry("sha256".to_owned())
@@ -703,7 +719,7 @@ async fn handle_object_route(
                         Some((start, end)) => (
                             206,
                             Some(format!("bytes {start}-{end}/{full_length}")),
-                            body[start..=end].to_vec(),
+                            body.slice(start..=end),
                         ),
                         None => (200, None, body),
                     };

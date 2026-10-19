@@ -160,11 +160,13 @@ pub(super) async fn run(platform: BoundPlatform) -> Result<(), PlatformError> {
     )?;
     let mut shutdown_source = shutdown_rx.clone();
     let source_auth = generation_auth.clone();
+    let source_containers = state.container_service().cloned();
     let runtime_source_task = tokio::spawn(async move {
         serve_runtime_source(
             runtime_source_listener,
             runtime_source,
             source_auth,
+            source_containers,
             async move {
                 let _ = shutdown_source.changed().await;
             },

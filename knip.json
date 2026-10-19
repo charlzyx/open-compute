@@ -15,7 +15,11 @@
     ".": {
       "entry": ["scripts/*.ts"],
       "project": ["scripts/**/*.ts"],
-      "ignoreDependencies": ["@cloudflare/vite-plugin", "vite"]
+      "ignoreDependencies": [
+        "@cloudflare/vite-plugin",
+        "vite",
+        "@cloudflare/workers-utils"
+      ]
     },
     "apps/website": {
       "entry": [

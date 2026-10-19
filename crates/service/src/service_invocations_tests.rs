@@ -690,6 +690,286 @@ async fn active_websocket_handoff_survives_deadline_and_releases_pins_on_drop() 
     assert_eq!(pins.count(fixture.target_version), 0);
 }
 
+#[tokio::test]
+async fn private_websocket_handoff_body_keeps_pins_until_caller_disconnects() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode, header};
+    use http_body_util::BodyExt as _;
+    use open_compute_core::SecretString;
+    use open_compute_runtime::GenerationAuthRegistry;
+
+    let fixture = fixture();
+    let pins = VersionPins::new();
+    let registry = ServiceInvocationRegistry::with_deadline(
+        fixture.storage,
+        pins.clone(),
+        Duration::from_millis(50),
+    );
+    let auth = GenerationAuthRegistry::new();
+    let token = "ab".repeat(32);
+    auth.activate_for_test(SecretString::new(&token));
+    assert!(auth.authorize(&token, "generation"));
+    registry.activate_generation("generation");
+    let admission = registry
+        .resolve(&fetch_request(
+            fixture.caller_version,
+            "TARGET",
+            fixture.caller_digest,
+        ))
+        .unwrap();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/internal/services/v1/websocket/handoff")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({ "handles": [admission.handle] })).unwrap(),
+        ))
+        .unwrap();
+    let response = crate::binding_backend::handle_service_invocation(
+        &registry,
+        &auth,
+        &token,
+        "generation",
+        None,
+        request,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "application/octet-stream"
+    );
+    registry
+        .complete_root(&ServiceRootCompleteRequest {
+            frame: admission.caller_frame,
+        })
+        .unwrap();
+    let mut body = response.into_body();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), body.frame())
+            .await
+            .is_err()
+    );
+    registry.reap_expired();
+    assert_eq!(registry.counts(), (1, 1, 0));
+    assert_eq!(pins.count(fixture.caller_version), 1);
+    assert_eq!(pins.count(fixture.target_version), 1);
+
+    drop(body);
+    assert_eq!(registry.counts(), (0, 0, 0));
+    assert_eq!(pins.count(fixture.caller_version), 0);
+    assert_eq!(pins.count(fixture.target_version), 0);
+}
+
+#[tokio::test]
+async fn private_websocket_handoff_peer_disconnect_drops_the_pending_http_body() {
+    use axum::body::Body;
+    use axum::http::Request;
+    use axum::{Router, routing::post};
+    use open_compute_core::SecretString;
+    use open_compute_runtime::GenerationAuthRegistry;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let fixture = fixture();
+    let pins = VersionPins::new();
+    let registry = ServiceInvocationRegistry::with_deadline(
+        fixture.storage,
+        pins.clone(),
+        Duration::from_secs(1),
+    );
+    let auth = GenerationAuthRegistry::new();
+    let token = "ab".repeat(32);
+    auth.activate_for_test(SecretString::new(&token));
+    assert!(auth.authorize(&token, "generation"));
+    registry.activate_generation("generation");
+    let admission = registry
+        .resolve(&fetch_request(
+            fixture.caller_version,
+            "TARGET",
+            fixture.caller_digest,
+        ))
+        .unwrap();
+    let listener = crate::binding_backend::bind_binding_backend()
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let server_registry = registry.clone();
+    let app = Router::new().route(
+        "/internal/services/v1/websocket/handoff",
+        post(move |request: Request<Body>| {
+            let registry = server_registry.clone();
+            let auth = auth.clone();
+            let token = token.clone();
+            async move {
+                crate::binding_backend::handle_service_invocation(
+                    &registry,
+                    &auth,
+                    &token,
+                    "generation",
+                    None,
+                    request,
+                )
+                .await
+            }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut peer = tokio::net::TcpStream::connect(address).await.unwrap();
+    let payload =
+        serde_json::to_string(&serde_json::json!({ "handles": [admission.handle] })).unwrap();
+    peer.write_all(
+        format!(
+            "POST /internal/services/v1/websocket/handoff HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{payload}",
+            payload.len(),
+        )
+        .as_bytes(),
+    )
+    .await
+    .unwrap();
+    let headers = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut headers = Vec::new();
+        while !headers.ends_with(b"\r\n\r\n") {
+            assert!(headers.len() < 8 * 1024);
+            headers.push(peer.read_u8().await.unwrap());
+        }
+        String::from_utf8(headers).unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(headers.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(headers.contains("content-type: application/octet-stream\r\n"));
+    registry
+        .complete_root(&ServiceRootCompleteRequest {
+            frame: admission.caller_frame,
+        })
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1100), peer.read_u8())
+            .await
+            .is_err()
+    );
+    registry.reap_expired();
+    assert_eq!(registry.counts(), (1, 1, 0));
+    assert_eq!(pins.count(fixture.caller_version), 1);
+    assert_eq!(pins.count(fixture.target_version), 1);
+    drop(peer);
+    let released = tokio::time::timeout(Duration::from_secs(2), async {
+        while registry.counts() != (0, 0, 0) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    server.abort();
+    assert!(server.await.unwrap_err().is_cancelled());
+    released.unwrap();
+    assert_eq!(pins.count(fixture.caller_version), 0);
+    assert_eq!(pins.count(fixture.target_version), 0);
+}
+
+#[tokio::test]
+async fn private_websocket_handoff_rejects_stale_auth_and_bad_handles_without_mutation() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use open_compute_core::SecretString;
+    use open_compute_runtime::GenerationAuthRegistry;
+
+    let fixture = fixture();
+    let registry = ServiceInvocationRegistry::new(fixture.storage, VersionPins::new());
+    let auth = GenerationAuthRegistry::new();
+    let token = "ab".repeat(32);
+    auth.activate_for_test(SecretString::new(&token));
+    assert!(auth.authorize(&token, "generation"));
+    registry.activate_generation("generation");
+    let fetch = registry
+        .resolve(&fetch_request(
+            fixture.caller_version,
+            "TARGET",
+            fixture.caller_digest,
+        ))
+        .unwrap();
+    let rpc = registry
+        .resolve(&resolve_request(
+            fixture.caller_version,
+            "TARGET",
+            fixture.caller_digest,
+            None,
+        ))
+        .unwrap();
+    let make_request = |bytes| {
+        Request::builder()
+            .method("POST")
+            .uri("/internal/services/v1/websocket/handoff")
+            .body(Body::from(bytes))
+            .unwrap()
+    };
+    for (bad_token, generation) in [("wrong-token", "generation"), (token.as_str(), "stale")] {
+        let request = make_request(
+            serde_json::to_vec(&serde_json::json!({ "handles": [fetch.handle] })).unwrap(),
+        );
+        let response = crate::binding_backend::handle_service_invocation(
+            &registry, &auth, bad_token, generation, None, request,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(registry.counts(), (2, 2, 0));
+    }
+    for (payload, status) in [
+        (serde_json::json!({}), StatusCode::BAD_REQUEST),
+        (
+            serde_json::json!({ "handles": [fetch.handle], "extra": true }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (serde_json::json!({ "handles": [] }), StatusCode::FORBIDDEN),
+        (
+            serde_json::json!({ "handles": ["not-a-uuid"] }),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            serde_json::json!({ "handles": [fetch.handle, fetch.handle] }),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            serde_json::json!({ "handles": [fetch.handle, rpc.handle] }),
+            StatusCode::FORBIDDEN,
+        ),
+    ] {
+        let response = crate::binding_backend::handle_service_invocation(
+            &registry,
+            &auth,
+            &token,
+            "generation",
+            None,
+            make_request(serde_json::to_vec(&payload).unwrap()),
+        )
+        .await;
+        assert_eq!(response.status(), status);
+        assert_eq!(registry.counts(), (2, 2, 0));
+    }
+    let oversized = crate::binding_backend::handle_service_invocation(
+        &registry,
+        &auth,
+        &token,
+        "generation",
+        None,
+        make_request(vec![b'x'; 16 * 1024 + 1]),
+    )
+    .await;
+    assert_eq!(oversized.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(registry.counts(), (2, 2, 0));
+    for admission in [fetch, rpc] {
+        registry
+            .complete(&ServiceReleaseRequest {
+                handle: admission.handle,
+            })
+            .unwrap();
+        registry
+            .complete_root(&ServiceRootCompleteRequest {
+                frame: admission.caller_frame,
+            })
+            .unwrap();
+    }
+    assert_eq!(registry.counts(), (0, 0, 0));
+}
+
 #[test]
 fn websocket_handoff_rejects_duplicates_and_non_fetch_operations_atomically() {
     let fixture = fixture();

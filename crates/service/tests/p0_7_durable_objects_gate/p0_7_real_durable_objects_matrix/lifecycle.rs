@@ -46,6 +46,82 @@ pub(super) async fn reject_missing_class(case: &MatrixCase<'_>) {
             .code(),
         open_compute_core::ErrorCode::DoClassNotFound
     );
+    for (key, source, expected) in [
+        (
+            "container-missing-class",
+            b"export default {};".as_slice(),
+            open_compute_core::ErrorCode::DoClassNotFound,
+        ),
+        (
+            "container-wrong-class-type",
+            b"export const Counter = {}; export default {};".as_slice(),
+            open_compute_core::ErrorCode::DoClassNotFound,
+        ),
+        (
+            "container-malformed-export",
+            b"export const Counter = 42; export default {};".as_slice(),
+            open_compute_core::ErrorCode::BundleRuntimeInvalid,
+        ),
+    ] {
+        let mut request = version_request(
+            account,
+            worker_id,
+            counter,
+            other,
+            output_queue_resource,
+            key,
+            "invalid",
+            29,
+            false,
+        );
+        request.bindings.clear();
+        request.runtime_features.containers = vec![
+            open_compute_storage::containers::VersionContainerDeclaration::new(
+                counter,
+                "class-probe-only".into(),
+            )
+            .unwrap(),
+        ];
+        request.content = VersionContent::Worker {
+            bundle: CanonicalBundle::build(
+                "index.js",
+                vec![ModuleInput {
+                    name: "index.js".into(),
+                    module_type: ModuleType::EsModule,
+                    bytes: source.to_vec(),
+                }],
+                BundleLimits::default(),
+            )
+            .unwrap()
+            .into_bytes()
+            .into(),
+            assets: None,
+        };
+        let error = versions.create_version(request).await.unwrap_err();
+        assert_eq!(
+            error.code(),
+            expected,
+            "Container admission rejected: case={}, code={}, message={}, supervisor_state={:?}",
+            key,
+            error.code().as_str(),
+            error.message(),
+            case.supervisor.snapshot().state,
+        );
+        let repository = WorkerRepository::new(case.storage.db());
+        assert_eq!(
+            repository
+                .get_worker(account, worker_id)
+                .unwrap()
+                .active_version_id,
+            Some(case.version_a.id),
+        );
+        assert!(
+            open_compute_storage::containers::ContainerAuthority::new(case.storage.db())
+                .applications(account)
+                .unwrap()
+                .is_empty()
+        );
+    }
 }
 
 pub(super) async fn promote(case: &MatrixCase<'_>) -> (VersionRecord, u64) {

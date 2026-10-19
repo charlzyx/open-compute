@@ -334,7 +334,7 @@ pub(super) fn handle(
     })
 }
 
-pub(super) async fn handle_service_invocation(
+pub(crate) async fn handle_service_invocation(
     registry: &crate::service_invocations::ServiceInvocationRegistry,
     auth: &GenerationAuthRegistry,
     token: &str,
@@ -415,6 +415,9 @@ pub(super) async fn handle_service_invocation(
                     .map_err(|_| protocol_error())
                     .and_then(|value| registry.finalize_connect(&value))
                     .and_then(|()| json_response(&serde_json::json!({ "ok": true })))
+            }
+            "/internal/services/v1/websocket/handoff" => {
+                websocket_handoff::response(registry, &bytes)
             }
             _ => Ok(StatusCode::NOT_FOUND.into_response()),
         }

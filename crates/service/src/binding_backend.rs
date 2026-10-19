@@ -131,10 +131,13 @@ struct BackendState {
 mod artifacts;
 mod handlers;
 mod server;
+mod websocket_handoff;
 
+#[cfg(test)]
+use handlers::DoResolveRequest;
 use handlers::handle;
 #[cfg(test)]
-use handlers::{DoResolveRequest, handle_service_invocation};
+pub(crate) use handlers::handle_service_invocation;
 pub use server::*;
 
 fn parse_do_resolve_path(path: &str) -> Option<BindingId> {

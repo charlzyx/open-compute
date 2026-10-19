@@ -74,7 +74,7 @@ async fn p21_python_main_upload_prepare_dispatch_restart_rollback() {
         UploadFault::DuplicateModule,
         UploadFault::ReservedModule,
     ] {
-        let (status, _, body) = fixture
+        let (status, _, body, version) = fixture
             .upload_version(
                 SCRIPT,
                 &Capture::content_type(),
@@ -82,6 +82,7 @@ async fn p21_python_main_upload_prepare_dispatch_restart_rollback() {
             )
             .await;
         assert_eq!(status, 400, "{fault:?} must fail admission");
+        assert!(version.is_none());
         let response: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(response["success"], false);
         let prepared: i64 = fixture
@@ -234,7 +235,7 @@ async fn p21_python_main_upload_prepare_dispatch_restart_rollback() {
         UploadFault::PackageDataCorrupt,
     ];
     for fault in faults {
-        let (status, _, body) = fixture
+        let (status, _, body, version) = fixture
             .upload_version(
                 SCRIPT,
                 &Capture::content_type(),
@@ -242,6 +243,7 @@ async fn p21_python_main_upload_prepare_dispatch_restart_rollback() {
             )
             .await;
         assert_eq!(status, 400, "{fault:?} must fail Python prepare");
+        assert!(version.is_none());
         let rejection: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(rejection["success"], false);
         assert_eq!(rejection["errors"][0]["code"], 10021);
@@ -395,7 +397,7 @@ async fn p21_python_main_upload_prepare_dispatch_restart_rollback() {
 }
 
 async fn upload(fixture: &Fixture, bytes: Vec<u8>) -> String {
-    let (status, _, bytes) = fixture
+    let (status, _, bytes, version) = fixture
         .upload_version(SCRIPT, &Capture::content_type(), bytes)
         .await;
     let value: Value = serde_json::from_slice(&bytes).unwrap();
@@ -404,7 +406,7 @@ async fn upload(fixture: &Fixture, bytes: Vec<u8>) -> String {
         "ordinary Python Version upload/prepare failed: {value}"
     );
     assert_eq!(value["success"], true);
-    value["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }
 
 async fn assert_state(fixture: &Fixture, revision: &str, stored: &str) {

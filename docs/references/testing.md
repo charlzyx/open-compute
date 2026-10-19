@@ -1,28 +1,41 @@
 # Gate 验证节奏
 
-开发、审查、修复和最终验收都只跑所选目标一轮。源码冻结后先完成静态检查与 coverage，
-最后执行一次完整 workspace Gate。每个选定 case 的顶层测试进程只执行一次；场景内部定义的
-多次重启、崩溃点和恢复步骤继续完整执行。默认失败停止；开发 `--keep-going` 收集全部所选目标的失败，不自动重试；coverage 不代替未插桩的进程验收。
+先按改动范围选择验证。每轮所选目标执行一次；场景内部的重启、崩溃点和恢复步骤继续完整执行。
+需要完整验收的改动在实现、审查、修复、静态检查与 coverage 完成后冻结源码，最后运行一次未插桩 workspace Gate。
+历史 PASS 不证明新输入，coverage 不替代最终 Gate。
 
-该入口默认验收本地平台 contract/product，不以第三方框架测试定义支持面。P3.4 的 typed target
-与 Cargo target 使用同一 discovery、精确 case、环境 allowlist、超时、清理和报告协议。
-应用 qualification 和真实 Cloudflare differential 必须显式选择、独立报告，不能暗中加入普通
-`--workspace`。
-`bun run test:js` 包含 [Vinext 离线输入校验](vinext-input-validation.md)，通过该检查不代表重新完成云端应用资格测试。
+## 按输入选择测试
+
+| 改动 | 验证范围 |
+| --- | --- |
+| 文档、release notes、指令策略 | `git diff --check`、`bun scripts/check-docs.ts`，核对变动的链接、命令和声明；不运行 Rust Gate |
+| SDK、Dashboard、Website 或 JS tooling | 所属 typecheck/test/build；SDK 生成面还需 pack 检查；只读脚本也检查其变动行为 |
+| Rust 生产代码 | 开发时受影响 crate/Gate；完成后执行下文静态检查、coverage 和最终 workspace 验收 |
+| 正式 workerd/Caddy lock、对应 submodule、runtime loader、Cap'n Proto、compatibility baseline | 重建 runtime，执行 `p3-contract`、受影响的 P0/P1/P2/Workflow/P3 targets、coverage、最终 Gate 与三平台 package 资格；下载/打包需授权 |
+| 混合改动 | 取受影响范围的并集；正式 tag 仍执行发布流程的完整矩阵 |
+
+SDK 消费者读取 `packages/sdk/dist/`。生成面变化或缺少产物时先运行
+`bun run --filter @open-compute/sdk build`，再检查消费者；SDK typecheck 不刷新产物。
+
+根 `AGENTS.md`、`docs/references/**` 属于 `sourceIdentity()` 的输入。修改后使用
+`test/conformance/checks/context.ts` 的该函数计算当前摘要，只同步 `test/conformance/baseline.json` 的
+`sourceDigest`；这只是输入身份更新，不产生新的 PASS。可直接调用 `test/conformance/checks/catalog.ts` 的 `baselineIdentity()` 做无构建的摘要/合同检查。
+普通 `docs/` 规划和 `implemented/` 历史记录不在摘要范围。CI 路径分类由 `test/ci_scope.py` 拥有，
+本地文档检查不承诺改变 CI 调度。
+
+本地 Gate 验收平台 contract/product。第三方应用 qualification、真实 Cloudflare differential 和 live provider
+必须显式选择并独立报告，不暗中加入 `--workspace`。`bun run test:js` 包含
+[Vinext 离线输入校验](vinext-input-validation.md)，其通过不代表重新完成云端应用资格。
 
 ## 显式准备输入
 
 P0.1 进程验证需要 `lsof`（Linux 镜像安装同名包；macOS 使用系统版本）。
 调度器在编译和 runtime 校验前检查该工具，缺失即失败。
 
+按[单二进制构建](single-binary.md#构建与打包)准备已验证的 workerd、Caddy、LFS 和生成资产；复用身份一致的现有输入。
+缺失或校验失败直接报错，下载必须显式授权。额外测试环境如下：
+
 ```sh
-git lfs pull --include="share/pyodide/**,share/tessdata/**,share/xberg-tesseract-cache/**"
-bun install --frozen-lockfile --ignore-scripts
-runtime_inputs=$(mktemp -d "$PWD/.temp/runtime-inputs.XXXXXX")
-eval "$(bun scripts/prepare-workerd.ts --dest "$runtime_inputs/workerd" --download)"
-eval "$(bun scripts/prepare-caddy.ts --dest "$runtime_inputs/caddy" --download)"
-bun run build
-bun run check:generated
 bun run test:js
 export RUSTFLAGS='-D warnings'
 # 仅 p5-search：本机 OpenAI-compatible embedding fixture
@@ -30,18 +43,14 @@ export OPEN_COMPUTE_TEST_EMBEDDING_API_KEY=fixture-secret
 export OPEN_COMPUTE_TEST_EMBEDDING_BASE_URL=http://127.0.0.1:8080/v1
 ```
 
-唯一正式 pin 是 `packages/runtime/workerd.lock.json`。`packages/runtime/dist/` 不提交 Git；
-每个 CI job 及干净检出都必须先构建。Rust 校验 archive、binary、生成模块、完整清单及
-源码/工具配置摘要，拒绝过期资产。生产启动离线，不依赖 JS 工具链。
-准备工具只有显式 `--download` 才读取 lock 指定的 GitHub Release，也可用 `--archive /abs/pinned.gz` 提供同一 pin；
-目标目录必须不存在。workerd 与 Caddy 均在 Cargo 前验证摘要和身份，生产启动仍离线。
 P22 的 CDP 和 managed fixture 都使用显式准备的完整 `chrome-headless-shell` 安装：
 
 macOS coverage 和最终 workspace CI 显式启用 setup action 的 `browser-fixture` 输入，
 从 `test/browser-fixture.lock.json` 固定的官方 Chrome for Testing URL 下载 headless-shell，
 先校验 archive SHA-256，再调用同一 preparation 工具。此步骤不调用 Playwright install。
-同一 setup action 也支持已固定的 Linux x64 archive；ARM64 宿主 Docker 若缺少 x64 execution support，
-会在 native shell 阶段失败，不能以解压或摘要校验代替 Linux x64 runtime 验收。
+同一 setup action 按宿主架构选择固定的 Linux x64 或 Linux ARM64 archive。
+Linux ARM64 使用同版本的原生浏览器，不依赖 x64 解释器。
+ARM64 宿主上的翻译执行不构成 Linux x64 宿主资格。
 
 ```sh
 bun scripts/prepare-browser.ts --source /abs/installed/chrome-headless-shell --dest /abs/new/browser-fixture
@@ -73,6 +82,39 @@ W3 Provider fixture 不属于发行物；它是本仓库 `test-support` feature 
 `crates/service/src/bin/host_extension_test_provider/`（schema 拷贝、Cap'n Proto 绑定与 `OCP2` attach 循环），
 随测试目标一起由 cargo 构建，`p3-services-product` 通过 `CARGO_BIN_EXE` 直接定位，无需外部 fixture、环境变量或 Bazel。
 
+P23 的 `p23-containers` 使用正式 workerd、原版 `@cloudflare/containers`、真实 SQLite、SigV4 fixture 和
+已通过资格检查的独立 Docker Broker。Linux 本地验收使用同一宿主的约定网络。
+release 工作流为 macOS coverage 和最终 workspace Gate 配置 `macos-15-intel` 与独立 Colima Engine。
+Colima 的 SSH port forwarder 将 published loopback port 转发到 macOS；其他远程 Engine 不继承此资格。
+OrbStack 接受磁盘配置但未执行上限，不能替代配额资格。
+`OPEN_COMPUTE_TEST_CONTAINERS_INPUT` 指向显式准备的绝对 JSON 路径，包含 `containers` 实例配置与两个
+不可变 OCI 镜像输入；每个镜像列出 `manifest` 路径及 `blobs` 的 `path`、`sha256`。配置、镜像、正式
+原生协议或资源证明缺失时直接失败，不下载、不跳过，也不使用协议 mock 作为产品资格。
+CI 先核对当前 run 的原生架构镜像 artifact，再构建普通 Broker。
+`test/containers-fixture/with-ci-macos-engine.py` 拥有本轮 Colima profile，并调用 `with-ci-broker.py`。
+Engine 使用 XFS project quota、`overlay2`、cgroup v2 和 `cgroupfs`。
+profile 使用 2 CPU、4 GiB 内存、8 GiB 系统盘和 16 GiB 数据盘；XFS backing file 上限为 12 GiB。
+入口要求宿主至少有 44 GiB 空闲空间，不挂载宿主 HOME，不转发 SSH agent，不切换默认 Docker context。
+Broker 入口载入两个已验证的 bootstrap archive，安装 helper，再核对真实 Broker 的输入握手。
+命令结束后，入口回收本轮 helper、Broker 和 Colima profile；失败仍保留宿主报告。
+准备入口的成功只证明准备链，不替代命令自身的 coverage 或最终 Gate 结果。
+当前 P23 验收范围包含完整 stable Container API 与 snapshot capture/restore。
+固定 types 的清单包含 65 个成员；成员资格仍为 `blocked`，见 [Containers 运维](containers.md)。
+P23 产品场景包含跨对象快照恢复、重启后恢复，以及 exec PID、晚输出、helper 意外退出和无 shell 回归。
+PTY 场景用 stdin 与 `SIGWINCH` 握手，核对 resize 前后的尺寸、合并后的 stderr 和真实退出码。
+命名镜像场景核对两个镜像、独立 getter 副本、省略规格时的 Lite，以及自定义 CPU 限额。
+信号场景核对主进程退出、monitor 拒绝和 exec kill；exec 场景核对 stdin EOF、输出忽略和合并。
+HTTP 拦截场景使用两个回调，分别返回不同标记。
+场景先登记指定主机，再登记兜底规则。
+场景核对指定主机仍进入原规则，未匹配主机进入兜底回调。
+HTTPS 场景验证注入 CA、主机名、请求和响应；WebSocket 场景验证升级、正文和关闭握手。
+原生 DO 场景不调用 SDK monitor，静默 90 秒后比较 1 秒和 120 秒 timeout。
+快照场景读取持久化 artifact，核对实际字节数和 SHA-256，并在 daemon 重启后再次核对。
+对象存储 fixture 的正常 GET 与 range 共享不可变正文，避免读取大快照时复制完整对象。
+损坏注入使用独立正文，保留已打开 reader 的原始字节。
+这些场景已写入测试；正式 runtime、真实 Provider 和最终 Gate 的成功结果才证明验收通过。
+主进程日志采集仍为后续范围。
+
 ## 一个调度入口
 
 调度器仅依赖 Python 3.11+ 标准库；CI 显式选择 Python 3.12。
@@ -100,17 +142,14 @@ OPEN_COMPUTE_TEST_R2_S3_MUTATION_ACK=s3-provider-qualification \
 ./test/gate.py --workspace --final --jobs 2
 ```
 
-开发验证按受影响目标运行 `./test/gate.py <targets> --keep-going`，一次收集全部目标的失败；
-调度仍遵守独占屏障，每个目标只执行一次，失败目标不自动重试，最终退出码保持失败。
-批量修复后只重跑失败及直接受影响目标，不能因小修改重新启动 workspace。
-完整未插桩 workspace 执行必须显式带 `--final`；coverage.sh 的插桩执行与 `--list` 不受此限制。
-`--final` 只接受未插桩单轮，并拒绝与保留报告中相同 source digest、verified inputs 的重复完整验收，
-无论上次通过还是失败。生产源字节与覆盖率规则未变时复用已核对的 coverage 证据。
+先用 `--list` 核对所选目标、case 和计划进程数，再执行 `./test/gate.py <targets> --keep-going`。
+它收集全部目标失败，保持独占屏障和失败退出码，不自动重试。批量修复后只重跑失败及直接受影响目标。
+默认调度在失败后停止；未执行目标不能算通过。完整 workspace 执行要求 `--final`，仅 coverage 插桩与 `--list` 除外。
+`--final` 拒绝与保留报告有相同 source digest 和 verified inputs 的重复完整验收，无论上次是否通过；失败先诊断、修复并做 scoped 验证。
 
-仓库验收使用默认单轮，不设置 `OPEN_COMPUTE_GATE_ROUNDS`。runner 为读取历史报告和显式重复诊断仍识别
-`1` 或 `3`，但三轮不再是开发、最终或发行验收要求；只有用户明确要求单独的重复诊断时才可设置为 `3`。
-`--list` 输出本轮目标、注册用例及计划进程数，不构建、不执行；workspace 中未列入产品 Gate 的宿主用例会在构建后发现，
-计划中的 `null` 不代表跳过。`inventory_verified` 只有核对原生 discovery 后才为真。
+不设置 `OPEN_COMPUTE_GATE_ROUNDS`。runner 仍识别 `1` 或 `3`，`3` 仅用于用户单独要求的重复诊断，不替代单轮验收。
+`--list` 不构建或执行；workspace 的未登记宿主用例在构建后发现，计划中的 `null` 不表示跳过；
+只有核对原生 discovery 后 `inventory_verified` 才为真。
 workspace 的 service library 仍只构建一个 test binary；调度器对同一原生 inventory 做互斥分区：普通 case
 进入现有并行槽，`test/gate_cases.py` 登记的真实进程/lifecycle case 保持独占。两个逻辑目标的 discovery
 必须完全相同，分区必须无遗漏、无重叠，且每个 case 仍只执行一次，否则在任何产品 case 启动前失败。
@@ -202,12 +241,7 @@ service library 的 `fresh_native_preparation_publishes_once_and_reaps_after_imp
 
 ## 单轮覆盖原则
 
-`runtime` 另外拥有 `isolated_python_preparation_owner_lifecycle` 与
-`isolated_python_preparation_owner_rejection_matrix` 两个进程组件场景：它们验证 prepare child 的共享 owner、双重 readiness、
-取消/退出/lease recovery、输入拒绝及主进程隔离，使用既有 verified supervisor fixture，不替代正式 Python deployment Gate。
-两个场景只在 runtime 目标登记一次。
-
-P0.5 的 `uploads::concurrent_large_upload_keeps_runtime_responsive` 使用真实 HTTP、stock workerd、
+P0.5 的 `uploads::concurrent_large_upload_keeps_runtime_responsive` 使用真实 HTTP、正式 pin 的 workerd、
 SQLite/D1 和 SigV4 S3 fixture，上传 241,910,375 bytes（8 MiB 分片、4 并发），核对分片 authority、
 D1 记录、complete 前不可见、流式读回 SHA-256 和并发轻量请求延迟。它属于普通 Gate 的固定回归，
 不是吞吐 SLA 或重复压测。单元测试另覆盖 staging 取消/超时和 blocking checksum 的资源生命周期。
@@ -258,9 +292,9 @@ single-binary 与 `workflow-product` 使用独占屏障。该目标同时覆盖 
 串行冷编译与并行热缓存混算提速。基准对比是明确的测量活动，不冒充最终验收。
 并发结果仍受 CPU/内存、磁盘和系统负载影响，不承诺固定提速比例。
 
-开发/test profile 仅对 `sha2` 和 `miniz_oxide` 依赖使用 `opt-level=3`，降低每个独立数据目录
-首次物化时的完整解压/摘要校验成本。workspace 源码仍未优化，debug 断言、溢出检查和 release
-配置不变；不缓存或绕过完整性检查。实测及其测量口径见 [Runtime 与测试布局](../implemented/p2-7-runtime-and-test-layout.md)。
+开发/test profile 对 `sha2`、`miniz_oxide` 和 `zlib-rs` 依赖使用 `opt-level=3`，降低摘要校验和压缩成本。
+workspace 源码、debug 断言、溢出检查和 release 配置不变；不缓存或绕过完整性检查。
+早期 runtime archive 验证的测量口径见 [Runtime 与测试布局](../implemented/p2-7-runtime-and-test-layout.md)。
 
 `--workspace` 通过 Cargo metadata 枚举全部启用的 test harness，使用
 `mbx test --workspace --all-targets --all-features --no-run` 一次构建，再逐一执行；
@@ -274,17 +308,17 @@ core/storage/artifacts/workers/service 五个库的故障钩子均
 加载不与定时 runtime probe 重叠；随后立即独占验证 single-binary，在长并行区前暴露正式单文件启动失败。
 新增未审查目标保守独占。无需安装额外 Rust 测试运行器。
 
+## 验证磁盘预算
+
+- 长构建/Gate 前和每个验证阶段后检查宿主空闲空间、`docker system df -v` 及本任务目录，计入 volumes、快照、可执行文件副本和 profiles。
+- 任务可丢弃数据默认不超过 32 GiB，另有共享 mbx 的 8 GiB 总预算。必需输入超过预算时先报告实测需求；每种构建配置复用一个 target，只保留当前源码快照及仍需比较的旧快照。
+- 阶段边界用 `./scripts/clean-mbx-cache.sh` / native mbx GC 并检查实际余量；受保护的活跃/最近状态可能使共享缓存超过预算。普通 target 不自动回收，只清理本任务已失去用途的内容。
+- Docker 使用 `--rm` 容器和明确归属的卷；准备、运行期间保持卷被引用，结束后移除本任务不用的容器/卷和 holder。禁止全局 Docker prune 或中断其他任务回收空间。
+- 日志、fixture、objects/profiles 的保留与清理统一见[日志与保留证据](#日志与保留证据)。
+
 ## 完整检查与最终验收
 
-验证磁盘预算与证据生命周期见 `AGENTS.md` 的 Validation Disk Budget：任务可丢弃数据默认
-不超过 32 GiB，共享 mbx 使用既有 8 GiB 总预算。长构建前和每个阶段结束后检查宿主空闲空间、
-Docker volumes/images 与任务目录；复用构建目录和当前源码快照，禁止每次修复复制整套输入。
-失败应及时查看，记录结论后删除不再需要的运行目录、fixture 数据、可执行文件副本与 profiles；
-未定位问题只保留仍用于诊断的必要文件。成功验收保留输入标识、命令、计数、结论和 coverage
-摘要，不永久保存全部成功/失败运行目录。coverage 原始对象在报告验证及 LLVM 差异调查完成前
-保留，结束后清理；全局 Docker prune 会伤及其他任务，禁止使用。
-阶段结束使用现有 `./scripts/clean-mbx-cache.sh` 回收共享 Rust 缓存；活跃 Docker volumes
-在准备与运行期间保持引用，结束后删除本任务不再需要的容器/卷。
+以下用于上表要求完整验收的改动，不是纯文档或独立前端任务的前置步骤。
 
 Rust 构建直接调用全局安装的 `mbx`，工具缺失即失败；仓库不保留逐项目版本文件、包装入口或缓存配置。项目和 worktree 共用 mbx 的全局用户缓存（macOS 默认 `~/Library/Caches/mbx/`），`mbx cache dir` 显示实际对象目录。CI 和容器安装 mbx 1.22.0。
 
@@ -321,11 +355,17 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test -p 'test_gate.py'
 ./test/gate.py --workspace --final
 ```
 
+Clippy 使用上述 canonical 入口，一次收集完整可达诊断，批量修复后验证一次；只有编译阻塞解除后暴露新诊断才开始下一批。
+复用 coverage 前核对全部被测生产源字节和 coverage 配置未变；fixture/报错文本变化不重复不受影响的静态配置或 coverage。
+缺少 cargo-llvm-cov 时显式安装：macOS 用 `brew install cargo-llvm-cov`，其他宿主用 `cargo install cargo-llvm-cov --locked`。
+标准报告位于 `target/llvm-cov/{html/index.html,lcov.info,summary.json}`。
+
 production 检查只构建无 test-support 的普通开发二进制并扫描测试标记，不调用发行包装。
 coverage 为当前诊断和验收保留独立输入；报告验证及 LLVM 差异调查完成后，删除已复盘的
 profile、object 和旧报告副本，只保留有效摘要。Rust 行覆盖率门槛仍为 **90.00%**。
 第三方 Cargo registry/git 依赖按实际 `CARGO_HOME` 排除，包含其绝对路径和 symlink 解析路径；
-Docker 自定义依赖目录不应计入 workspace 分母。生产源码的排除规则不变。
+Docker 自定义依赖目录不应计入 workspace 分母。测试/fixture 排除包括 `tests/**`、`src/tests.rs`、`src/**/*_tests.rs`、`src/mock_s3.rs` 和 supervisor fixture；
+不得排除生产源、把生产逻辑移入排除路径或增加 coverage-only 分支。
 APFS 使用 clone，Linux 使用可用的 filesystem reflink 保存独立 object；不支持 clone 时复制字节。
 缓存替换不能改变留存 object，现有留存目录不能被覆盖。
 coverage 只运行一轮；调度器拒绝把已知 coverage 插桩环境用于最终未插桩 Gate。
@@ -350,23 +390,6 @@ production Rust 行覆盖率；不得把生产模块移入 `examples/` 规避门
 可用 `OPEN_COMPUTE_DEV_PORT` 和独立的 `OPEN_COMPUTE_DEV_OCD_ROOT` 选择新的测试作用域，
 不覆盖已有清单。`./scripts/dev.sh` 复用该流程，但将持久开发状态放在 `.data/`。
 
-### 按输入选择测试
-
-SDK 消费者通过 package exports 解析 `packages/sdk/dist/` 的声明与代码。修改 SDK 生成面、
-合入 SDK authority 更新或从没有 `dist/` 的 checkout 开始时，先运行
-`bun run --filter @open-compute/sdk build`，再执行消费者的 typecheck/build。
-SDK 的 `typecheck` 验证生成源码与严格类型，不刷新 `dist/`；旧构建产物不能证明当前 API。
-
-修改文档、release notes 或只读脚本时不需要 Rust Gate；CI 对纯文档变更只运行 `docs-checks`。纯 SDK
-、dashboard、website 或 toolchain 变更只运行对应的 JavaScript typecheck/test/build/pack 检查；混合
-变更按更宽的 scope 处理。修改 SDK 生成面时运行 SDK typecheck/test/pack；普通 Rust 代码按受影响
-crate 与 Gate 做一次 focused check，源码冻结后再做一次完整 workspace。修改
-`packages/runtime/workerd.lock.json`、`packages/runtime/caddy.lock.json`、对应 submodule、runtime loader、
-Cap'n Proto 或 Cloudflare compatibility baseline 时，真实 workerd 行为可能变化，必须重建 runtime
-并至少执行 `p3-contract`、受影响的 P0/P1/P2/Workflow/P3 targets、coverage 和三平台 package；
-正式 tag 仍由 release workflow 执行完整矩阵。只更新 fixture 或文档不能把旧 workerd 结果冒充新 pin
-的资格。
-
 ## 日志与保留证据
 
 调度报告位于 `.temp/gate-run/<run-id>/report.json`，包括源码/输入/测试可执行文件摘要、
@@ -384,8 +407,11 @@ revision、工具链、目标集合、轮数、并发度、一次构建耗时、
 失败整次保留在 `failed/<run-id>/`；已运行、失败和未运行目标不混淆。终端不回显失败测试的
 原始输出；日志供本地诊断，生成报告不包含 secret 或环境变量转储。
 
-所有仓库内临时文件及失败现场留在 `.temp/<purpose>/`；Rust 产物仍在 `target/`，依赖在
-`node_modules/`，业务持久状态在 `.data/`。不删除历史 `.temp/` 证据。
+失败现场留在 `.temp/<purpose>/`，先检查再重试。记录诊断后删除本任务不再需要的 fixture 数据、runtime/可执行文件副本、
+profiles 和详细日志；未定位的失败仅保留仍必需的文件，不删除未复盘证据、operator 数据或明确要求的归档。
+保留最终 `report.json` 的 source/input identity、purpose、workspace flag、命令、计数和结果，供拒绝重复 final 使用。
+coverage 报告验证及 LLVM 差异调查结束前保留原始对象，之后保留有效摘要；不要永久积累完整 run 目录。
+检查退出后没有遗留 workerd、listener、临时文件或 secret；生成报告须脱敏。
 
 POC 一次性上游探测已退役；删除分类与保留回归见 [迁移记录](../implemented/p2-7-runtime-and-test-layout.md)。
 `docs/implemented/g0-results.md` 保留原始字节，`D-abort` 仍是已接受限制：不能把客户端断开

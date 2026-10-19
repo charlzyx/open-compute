@@ -49,9 +49,16 @@ jobs:
           bun test/conformance/check.ts --case baseline-identity
           node --test test/stress.test.mjs
 
+  fixture-images:
+    needs: failfast
+    if: needs.failfast.outputs.scope == 'full' || (github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push'))
+    uses: ./.github/workflows/container-images.yml
+    with:
+      arm64: false
+
   checks:
     # Fast development checks. Full acceptance is owned by the release workflow.
-    needs: failfast
+    needs: [failfast, fixture-images]
     if: needs.failfast.outputs.scope == 'full'
     strategy:
       fail-fast: false
@@ -71,6 +78,7 @@ jobs:
       - uses: ./.github/actions/setup-open-compute
         with:
           rust-components: ${{ matrix.rust_components }}
+      - uses: ./.github/actions/prepare-container-fixture-images
       - name: Build and typecheck current runtime and tooling assets
         run: bun run build
       - name: Fast JavaScript and Gate tooling tests
@@ -78,6 +86,7 @@ jobs:
         run: |
           bun run test:js:ci
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test -p 'test_gate.py'
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test/containers-fixture -p 'test_*.py'
       - name: Service installation permissions and umask regression
         if: matrix.suite == 'core'
         run: mbx test --locked -p open-compute-service --lib service_manager::tests -- --test-threads=1
@@ -231,6 +240,7 @@ jobs:
           bun scripts/check-docs.ts
 
   ai-search-qualification:
+    needs: fixture-images
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     environment: ai-search-qualification
@@ -239,6 +249,7 @@ jobs:
         with:
           lfs: true
       - uses: ./.github/actions/setup-open-compute
+      - uses: ./.github/actions/prepare-container-fixture-images
       - name: Build current runtime and application assets
         run: bun run build
       - name: Fetch locked Rust dependencies
@@ -292,6 +303,7 @@ jobs:
           retention-days: 14
 
   s3-provider-qualification:
+    needs: fixture-images
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     environment: s3-provider-qualification
@@ -300,9 +312,9 @@ jobs:
         with:
           lfs: true
       - uses: ./.github/actions/setup-open-compute
-        with:
-          python: "false"
-          node: "false"
+      - uses: ./.github/actions/prepare-container-fixture-images
+      - name: Build current runtime and application assets
+        run: bun run build
       - name: Fetch locked Rust dependencies
         run: mbx fetch --locked
       - name: Run production S3 preflight against hosted R2
@@ -332,6 +344,7 @@ jobs:
     needs:
       [
         failfast,
+        fixture-images,
         checks,
         frontend-checks,
         docs-checks,
@@ -349,11 +362,13 @@ jobs:
           set -euo pipefail
           test "${{ needs.failfast.result }}" = success
           if [ "${{ github.event_name }}" != pull_request ]; then
+            test "${{ needs.fixture-images.result }}" = success
             test "${{ needs.ai-search-qualification.result }}" = success
             test "${{ needs.s3-provider-qualification.result }}" = success
           fi
           case "$SCOPE" in
             full)
+              test "${{ needs.fixture-images.result }}" = success
               test "${{ needs.checks.result }}" = success
               test "${{ needs.gateway-caddy-module.result }}" = success
               ;;

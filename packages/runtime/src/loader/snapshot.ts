@@ -62,6 +62,7 @@ export function assertSnapshot(
     value.limits.subRequests > 10000000 ||
     !Array.isArray(value.bindings) ||
     !Array.isArray(value.services) ||
+    !Array.isArray(value.containerClasses) ||
     !record(value.cachePolicy) ||
     typeof value.cachePolicy.enabled !== "boolean" ||
     typeof value.cachePolicy.failOpen !== "boolean" ||
@@ -69,6 +70,40 @@ export function assertSnapshot(
     !record(value.cachePolicy.entrypoints)
   )
     invalid();
+  const containerClasses = new Set<string>();
+  const containerNamespaces = new Set<string>();
+  if (value.containerClasses.length > 100) invalid();
+  for (const declaration of value.containerClasses) {
+    if (
+      !record(declaration) ||
+      typeof declaration.className !== "string" ||
+      !/^[A-Za-z_$][A-Za-z0-9_$]{0,255}$/.test(declaration.className) ||
+      typeof declaration.namespaceResourceId !== "string" ||
+      declaration.namespaceResourceId.length > 128 ||
+      declaration.namespaceResourceId.length === 0 ||
+      typeof declaration.applicationName !== "string" ||
+      !/^[A-Za-z0-9-]{1,63}$/.test(declaration.applicationName) ||
+      typeof declaration.descriptorSha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(declaration.descriptorSha256) ||
+      !record(declaration.images) ||
+      Object.keys(declaration.images).length > 100 ||
+      Object.keys(declaration.images).some(
+        (name) => name.length === 0 || [...name].length > 128,
+      ) ||
+      Object.values(declaration.images).some(
+        (image) =>
+          typeof image !== "string" ||
+          !/^[\x21-\x7e]{1,512}@sha256:[0-9a-f]{64}$/.test(image),
+      ) ||
+      new TextEncoder().encode(JSON.stringify(declaration.images)).byteLength >
+        16 * 1024 ||
+      containerClasses.has(declaration.className) ||
+      containerNamespaces.has(declaration.namespaceResourceId)
+    )
+      invalid();
+    containerClasses.add(declaration.className);
+    containerNamespaces.add(declaration.namespaceResourceId);
+  }
   for (const policy of Object.values(
     value.cachePolicy.entrypoints as Record<string, unknown>,
   )) {

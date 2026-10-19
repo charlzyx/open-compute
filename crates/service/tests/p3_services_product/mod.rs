@@ -80,16 +80,38 @@ export default class Caller extends WorkerEntrypoint {
       catch (error) { return new Response(String(error?.message)); }
     }
     if (path === "/capability") {
-      const target = await this.env.TARGET.capability("cap");
-      const duplicate = target.dup();
-      target[Symbol.dispose]();
-      const first = await duplicate.ping("one");
-      const callback = await duplicate.callback(value => `callback:${value}`, "ok");
-      const nested = await duplicate.nested();
-      const second = await nested.label;
-      nested[Symbol.dispose]();
-      duplicate[Symbol.dispose]();
-      return Response.json({ first, callback, second });
+      let phase = "acquire";
+      try {
+        const target = await this.env.TARGET.capability("cap");
+        phase = "duplicate";
+        const duplicate = target.dup();
+        phase = "dispose-original";
+        target[Symbol.dispose]();
+        phase = "ping";
+        const first = await duplicate.ping("one");
+        phase = "callback";
+        const callback = await duplicate.callback(value => `callback:${value}`, "ok");
+        phase = "nested";
+        const nested = await duplicate.nested();
+        phase = "nested-label";
+        const second = await nested.label;
+        phase = "dispose-nested";
+        nested[Symbol.dispose]();
+        phase = "dispose-duplicate";
+        duplicate[Symbol.dispose]();
+        return Response.json({ first, callback, second });
+      } catch (error) {
+        const code = error instanceof Error ? error.message : undefined;
+        const nativeErrorCode = ["SERVICE_BINDING_DENIED", "SERVICE_UNAVAILABLE", "SERVICE_TIMEOUT", "SERVICE_ENTRYPOINT_NOT_FOUND"].includes(code) ? code : "UNCLASSIFIED";
+        const nativeFailureCategory = code === "RPC stub used after being disposed." ? "RPC_STUB_DISPOSED"
+          : code === "RPC promise used after being disposed." ? "RPC_PROMISE_DISPOSED"
+          : code === "RPC target is not callable." ? "RPC_NOT_CALLABLE"
+          : code === "Couldn't complete operation because the execution context has ended." ? "IO_CONTEXT_ENDED"
+          : typeof code === "string" && code.startsWith("Cannot perform I/O on behalf of a different request.") ? "IO_DIFFERENT_REQUEST"
+          : typeof code === "string" && code.startsWith("Cannot perform I/O on behalf of a different Durable Object.") ? "IO_DIFFERENT_ACTOR"
+          : error instanceof TypeError ? "TYPE_ERROR" : "UNCLASSIFIED";
+        return Response.json({ controlledFixturePhase: phase, nativeErrorCode, nativeFailureCategory });
+      }
     }
     if (path === "/hold") {
       const target = this.env.TARGET;

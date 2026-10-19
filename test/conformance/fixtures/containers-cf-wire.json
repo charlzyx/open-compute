@@ -1,0 +1,116 @@
+{
+  "cfVersion": "1.0.0-beta.12",
+  "deployModuleSha256": "23e9f03824f33155e17976fc9cca66c8c14a4ffa85d05d5042c93bb6c15b8ac3",
+  "application": {
+    "name": "container-app",
+    "scheduling_policy": "default",
+    "observability": {
+      "logs": {
+        "enabled": true
+      }
+    },
+    "configuration": {
+      "image": "registry.example/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "instance_type": "lite"
+    },
+    "instances": 0,
+    "max_instances": 4,
+    "constraints": {
+      "tiers": [1, 2]
+    },
+    "durable_objects": {
+      "namespace_id": "00000000000000000000000000000002"
+    },
+    "rollout_active_grace_period": 0,
+    "id": "application-id"
+  },
+  "create": [
+    {
+      "method": "GET",
+      "path": "/accounts/00000000000000000000000000000001/workers/scripts/container-worker/versions/worker-version"
+    },
+    {
+      "method": "GET",
+      "path": "/client/v4/accounts/00000000000000000000000000000001/containers/applications"
+    },
+    {
+      "method": "POST",
+      "path": "/client/v4/accounts/00000000000000000000000000000001/containers/applications",
+      "body": {
+        "name": "container-app",
+        "scheduling_policy": "default",
+        "observability": {
+          "logs": {
+            "enabled": true
+          }
+        },
+        "configuration": {
+          "image": "registry.example/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "instance_type": "lite"
+        },
+        "instances": 0,
+        "max_instances": 4,
+        "constraints": {
+          "tiers": [1, 2]
+        },
+        "durable_objects": {
+          "namespace_id": "00000000000000000000000000000002"
+        },
+        "rollout_active_grace_period": 0
+      }
+    }
+  ],
+  "update": [
+    {
+      "method": "GET",
+      "path": "/accounts/00000000000000000000000000000001/workers/scripts/container-worker/versions/worker-version"
+    },
+    {
+      "method": "GET",
+      "path": "/client/v4/accounts/00000000000000000000000000000001/containers/applications"
+    },
+    {
+      "method": "PATCH",
+      "path": "/client/v4/accounts/00000000000000000000000000000001/containers/applications/application-id",
+      "body": {
+        "configuration": {
+          "image": "registry.example/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_type": "lite"
+        },
+        "max_instances": 4,
+        "constraints": {
+          "tiers": [1, 2]
+        },
+        "scheduling_policy": "default",
+        "rollout_active_grace_period": 0
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/client/v4/accounts/00000000000000000000000000000001/containers/applications/application-id/rollouts",
+      "body": {
+        "description": "Progressive update",
+        "strategy": "rolling",
+        "target_configuration": {
+          "image": "registry.example/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "instance_type": "lite"
+        },
+        "steps": [
+          {
+            "step_size": {
+              "percentage": 10
+            },
+            "description": "Step 1 of 2 - rollout at 10% of instances"
+          },
+          {
+            "step_size": {
+              "percentage": 100
+            },
+            "description": "Step 2 of 2 - rollout at 100% of instances"
+          }
+        ],
+        "kind": "full_auto"
+      }
+    }
+  ]
+}

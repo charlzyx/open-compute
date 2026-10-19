@@ -1,9 +1,7 @@
 use super::*;
 use crate::process::{clear_signal_log, take_signal_log};
 use sha2::Digest as _;
-#[cfg(target_os = "macos")]
 use std::ffi::OsString;
-#[cfg(target_os = "macos")]
 use std::os::unix::ffi::OsStringExt as _;
 use std::os::unix::process::CommandExt;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -469,4 +467,57 @@ fn terminate_cleanup(pid: i32, child: &mut std::process::Child) {
         let _ = kill_process_group(raw, Signal::KILL);
     }
     let _ = child.wait();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn non_utf8_kernel_comm_preserves_process_identity_and_child_cleanup() {
+    let dir = TempDir::new().unwrap();
+    let executable = dir.path().join(OsString::from_vec(b"owned) \xff".to_vec()));
+    std::fs::copy("/bin/sleep", &executable).unwrap();
+    let child = Command::new(&executable)
+        .arg("30")
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = child.id() as i32;
+    let mut owned = crate::process::OwnedChild::new(child, pid);
+    let stat = std::fs::read(format!("/proc/{pid}/stat")).unwrap();
+    assert!(std::str::from_utf8(&stat).is_err());
+    let digest = digest_of(pid);
+    let path = dir.path().join("child.lease");
+    let lease = capture_lease(pid, pid, &digest, &path)
+        .expect("non-UTF-8 comm must not invalidate kernel start identity");
+    assert_eq!(Some(lease.start_key.clone()), linux_start_key(pid));
+    write_lease(&path, &lease).unwrap();
+    let recovered = recover_recorded_orphan(&path);
+    if recovered.as_ref().is_ok_and(|value| *value == Some(pid)) {
+        owned.disarm();
+    }
+    assert_eq!(recovered.unwrap(), Some(pid));
+    assert!(!path.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_start_identity_rejects_malformed_suffixes() {
+    let fields = "S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 4321";
+    let valid = format!("1 (owned) name) {fields}");
+    assert_eq!(linux_start_ticks(valid.as_bytes()), Some("4321"));
+    let non_utf8_comm = [b"1 (owned) \xff name) ".as_slice(), fields.as_bytes()].concat();
+    assert_eq!(linux_start_ticks(&non_utf8_comm), Some("4321"));
+    for stat in [
+        b"missing comm delimiter".to_vec(),
+        b"1 (owned) S 1 2".to_vec(),
+        valid.replace(") S", ")S").into_bytes(),
+        valid.replace("4321", "unknown").into_bytes(),
+        valid.replace("4321", "-1").into_bytes(),
+        [valid.as_bytes(), b" \xff"].concat(),
+    ] {
+        assert!(linux_start_ticks(&stat).is_none());
+    }
 }

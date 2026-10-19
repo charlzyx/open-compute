@@ -31,6 +31,23 @@ export interface NativeHostExtensionPort {
 export interface NativeWorkerLoaderFactory {
   readonly hostPolicyVersion: 1;
   getFacets(facets: DurableObjectFacets): NativeHostFacets;
+  getContainer(
+    facets: DurableObjectFacets,
+    className: string,
+    resolve: (
+      start: boolean,
+      stop: boolean,
+      completed: boolean,
+      startup: string,
+      expectedLeaseKey: string,
+      monitor: boolean,
+    ) => Promise<NativeContainerLease | undefined>,
+    capture: (
+      expectedLeaseKey: string,
+      name: string | undefined,
+    ) => Promise<NativeContainerSnapshot>,
+    images: Readonly<Record<string, string>>,
+  ): NativeHostContainer;
   get(namespaceKey: string): WorkerLoader;
   getPrivate(namespaceKey: string): NativePrivateWorkerLoader;
   revoke(namespaceKey: string): void;
@@ -52,6 +69,39 @@ export interface NativePrivateWorkerLoader extends WorkerLoader {
 export interface NativeHostFacets {
   create(name: string, depth: number, id: string, actorClass: unknown): void;
   revoke(): void;
+}
+
+/** Process-local attachment grant; it cannot enter tenant env or cross RPC. */
+export interface NativeHostContainer {
+  start(): Promise<void>;
+  revoke(): void;
+}
+/** Qualified execution identity consumed only by the native engine client. */
+export interface NativeContainerLease {
+  leaseKey: string;
+  imageRef: string;
+  providerContractSha256: string;
+  controlToken: string;
+  callbackToken: string;
+  nativeStartupJson: string;
+  inspection: {
+    image: string;
+    labels: Array<{ name: string; value: string }>;
+  };
+}
+
+/** Verified public metadata returned by the private snapshot authority. */
+export interface NativeContainerSnapshot {
+  id: string;
+  size: number;
+  name?: string;
+}
+export interface RuntimeContainerClass {
+  className: string;
+  namespaceResourceId: string;
+  applicationName: string;
+  descriptorSha256: string;
+  images: Readonly<Record<string, string>>;
 }
 
 export interface RuntimeObservabilityIdentity {
@@ -158,6 +208,7 @@ export interface RuntimeSnapshot {
   bindings: RuntimeBinding[];
   scheduledTargets: RuntimeScheduledTarget[];
   services: RuntimeServiceBinding[];
+  containerClasses: RuntimeContainerClass[];
   cachePolicy: {
     enabled: boolean;
     crossVersionCache: boolean;

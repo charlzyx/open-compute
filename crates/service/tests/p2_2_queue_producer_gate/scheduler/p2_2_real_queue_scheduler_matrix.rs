@@ -62,7 +62,7 @@ pub(super) async fn run() {
         .unwrap();
         let auth = source_auth.clone();
         async move {
-            serve_runtime_source(source_listener, source, auth, async move {
+            serve_runtime_source(source_listener, source, auth, None, async move {
                 let _ = source_shutdown.changed().await;
             })
             .await
@@ -298,7 +298,7 @@ pub(super) async fn run() {
                 worker_version_id: version.id,
                 worker_code_sha256: version.worker_code_sha256,
                 class_name: "Flow".to_owned(),
-                loader_schema_version: 1,
+                loader_schema_version: i64::from(version.loader_schema_version),
                 capability_version: 1,
                 descriptor_sha256: [7; 32],
             },

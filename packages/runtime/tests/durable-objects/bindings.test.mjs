@@ -37,7 +37,8 @@ const { createDurableObjectNamespace } = await importRuntime(
   },
 );
 const cloudflareModule = await import(cloudflare);
-const { createDurableObjectStubPolicy } = await import(stub);
+const { createDurableObjectStubPolicy, durableObjectChannelCallbacks } =
+  await import(stub);
 
 // Explicit Node-only stand-in. The native workerd test owns prototype/receiver validation.
 function createId(value, name, jurisdiction) {
@@ -63,6 +64,19 @@ const nativeFactories = {
   },
   isRpcStub: (value) => nativeRpcStubs.has(value),
   createPrivateTransport: (raw) => raw,
+  createRpcTransport: (raw) => raw,
+  createUserRpcTransport: (raw) => raw,
+  disposeRpcResult: (value) =>
+    Object.getOwnPropertyDescriptor(value, Symbol.dispose)?.value?.call(value),
+  createPublicTransport: (raw) => {
+    const fetch = raw.fetch;
+    const connect = raw.connect;
+    return {
+      fetch: (request) => Reflect.apply(fetch, raw, [request]),
+      connect: (address, options) =>
+        Reflect.apply(connect, raw, [address, options]),
+    };
+  },
   createStub: (id, _transport, policy) =>
     new Proxy(
       { id, name: id.name },
@@ -1246,4 +1260,80 @@ test("reserved Durable Object handlers never become RPC methods", () => {
   ]) {
     assert.throws(() => stub[method], /DO_RPC_UNSUPPORTED/);
   }
+});
+
+test("issued channel callbacks preserve transferred DO identity and canonical dispatch", async () => {
+  const { ns, transport } = namespace();
+  const id = ns.idFromName("channel-owner").toString();
+  const policy = createDurableObjectStubPolicy(
+    { fetcher: transport, id },
+    nativeFactories,
+  );
+  const callbacks = durableObjectChannelCallbacks(policy);
+  assert.ok(callbacks);
+  assert.equal(durableObjectChannelCallbacks({ fetch: transport.fetch }), null);
+  const prototype = Object.getPrototypeOf(policy);
+  const originalFetch = prototype.fetch;
+  const originalConnect = prototype.connect;
+  try {
+    prototype.fetch = () => {
+      throw Error("poisoned public fetch");
+    };
+    prototype.connect = () => {
+      throw Error("poisoned public connect");
+    };
+    assert.equal(
+      await (await callbacks.fetch(new Request("https://object.test/"))).text(),
+      "ok",
+    );
+    const socket = callbacks.connect("object.test:443");
+    await socket.opened;
+    assert.equal(cloudflareModule.connectCalls.at(-1).objectId, id);
+    await socket.closed;
+  } finally {
+    prototype.fetch = originalFetch;
+    prototype.connect = originalConnect;
+  }
+});
+
+test("issued DO channels retain canonical raw dispatch after prototype changes with identity and ordering", async () => {
+  const { transport } = namespace();
+  const socket = { opened: Promise.resolve({}), closed: Promise.resolve() };
+  const received = [];
+  // Issue a fresh stub from a receiver with inherited native stand-ins.
+  const prototype = {
+    ...transport,
+    async fetch(request) {
+      received.push(["fetch", this, request]);
+      return new Response("canonical");
+    },
+    connect(address, options) {
+      received.push(["connect", this, address, options]);
+      return socket;
+    },
+  };
+  const raw = Object.create(prototype);
+  const policy = createDurableObjectStubPolicy(
+    { fetcher: raw, id: "b".repeat(64) },
+    nativeFactories,
+  );
+  const channel = durableObjectChannelCallbacks(policy);
+  prototype.fetch = () => {
+    throw Error("mutable prototype fetch must not dispatch");
+  };
+  prototype.connect = () => {
+    throw Error("mutable prototype connect must not dispatch");
+  };
+  assert.equal(
+    await (await channel.fetch(new Request("https://public.test/"))).text(),
+    "canonical",
+  );
+  assert.equal(channel.connect("public.test:443"), socket);
+  await Promise.allSettled(cloudflareModule.background);
+  assert.equal(received.length, 2);
+  assert.equal(received[0][1], raw);
+  assert.equal(received[1][1], raw);
+  assert.match(received[0][2].url, /^https:\/\/do-transport\.invalid\/bbbb/);
+  assert.ok(received[0][2].headers.has("x-open-compute-object-identity"));
+  assert.match(received[1][2], /^[0-9a-f]{32}\.do-transport\.invalid:1$/);
 });

@@ -28,10 +28,16 @@ Playwright 内置 Chromium 元数据及 runner case registry，不构建、不�
 仍由 `vinext.json` 与离线检查拥有；上节只记录 2026-09-06 的修复，不再描述当前 fixture 差异。
 P20 的严格构建通过没有更新历史 P4 hosted Go，也不证明当前工具链的云端 differential。
 
+2026-10-12，四包构建声明补丁改变根 lock。
+当前 manifest 更新 lock 与 fixture 摘要，并记录全部直接依赖的精确版本。
+离线检查将 `catalog:` 解析为根 catalog 的精确版本，再核对 manifest 与安装版本。
+检查也拒绝依赖清单增删和 catalog 版本漂移。
+历史 `p4Status` 保持不变；本次离线回归不是新的 hosted 资格。
+
 ## 后续更新
 
 修改共享 lock、fixture 或 case matrix 后，应审查具体差异，再更新对应当前摘要；检查继续拒绝
-未审查的字节漂移。直接依赖必须使用精确版本，安装状态也必须匹配。不得自动接受摘要漂移，
+未审查的字节漂移。直接依赖应使用精确版本或根 catalog 中的精确版本。安装状态也应匹配。不得自动接受摘要漂移，
 或者只为获得绿色结果改写历史证据。新的应用资格结论需要针对同一冻结产物重新执行两端
 HTTP/Chromium、导入、部署与精确清理，独立保存报告。
 

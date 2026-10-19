@@ -1,3 +1,4 @@
+import type { PublicTransport } from "cloudflare-internal:wrapped-binding";
 import { privateWeakMap } from "../private-weak-map.js";
 import {
   encodeServiceValue,
@@ -5,8 +6,16 @@ import {
   serviceMember,
 } from "./capabilities.js";
 import { currentServiceFrame, type ServiceFrame } from "./scope.js";
+import {
+  parseServiceWebSocketHandoffs,
+  responseWithHeaders,
+  SERVICE_WEBSOCKET_HANDOFF_HEADER,
+} from "./websocket-handoff.js";
 
 interface NativeServiceTransport {
+  holdWebSocketHandoff(
+    handles: readonly string[],
+  ): Promise<ReadableStream<Uint8Array>>;
   root(scopeId: string): NativeServiceRoot;
   rpc(frame: ServiceFrame, method: string, args: unknown[]): unknown;
   get(frame: ServiceFrame, property: string): unknown;
@@ -62,12 +71,6 @@ function rootController(
   return lease;
 }
 
-/** Private response header carrying Service fetch handles to the native socket bridge. */
-export const SERVICE_WEBSOCKET_HANDOFF_HEADER =
-  "x-open-compute-service-websocket-handoffs";
-const SERVICE_WEBSOCKET_HANDLE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const MAX_SERVICE_WEBSOCKET_HANDOFFS = 16;
 const serviceWebSocketHandoffs = privateWeakMap<object, readonly string[]>();
 const RESERVED = new Set([
   "constructor",
@@ -92,27 +95,6 @@ function failure(code: string): Error {
   const error = Object.assign(new Error(code), { stableCode: code });
   error.stack = `Error: ${code}`;
   return error;
-}
-
-function parseServiceWebSocketHandoffs(raw: string): string[] {
-  const handles = raw.split(",");
-  if (
-    handles.length < 1 ||
-    handles.length > MAX_SERVICE_WEBSOCKET_HANDOFFS ||
-    handles.some((handle) => !SERVICE_WEBSOCKET_HANDLE.test(handle)) ||
-    new Set(handles).size !== handles.length
-  ) {
-    throw failure("SERVICE_UNAVAILABLE");
-  }
-  return handles;
-}
-
-function responseWithHeaders(response: Response, headers: Headers): Response {
-  const result = new Response(response.body, response);
-  const value = headers.get(SERVICE_WEBSOCKET_HANDOFF_HEADER);
-  if (value === null) result.headers.delete(SERVICE_WEBSOCKET_HANDOFF_HEADER);
-  else result.headers.set(SERVICE_WEBSOCKET_HANDOFF_HEADER, value);
-  return result;
 }
 
 /** Hide trusted Service handoff handles while preserving their native WebSocket identity. */
@@ -146,64 +128,51 @@ export function attachServiceWebSocketHandoffs(response: Response): Response {
   return responseWithHeaders(response, headers);
 }
 
-/** Add the current trusted Service fetch operation to a native WebSocket response. */
-export function appendServiceWebSocketHandoff(
-  response: Response,
-  handle: string,
-): Response {
-  if (!response.webSocket || !SERVICE_WEBSOCKET_HANDLE.test(handle)) {
-    throw failure("SERVICE_UNAVAILABLE");
-  }
-  const raw = response.headers.get(SERVICE_WEBSOCKET_HANDOFF_HEADER);
-  const handles = raw === null ? [] : parseServiceWebSocketHandoffs(raw);
-  if (
-    handles.includes(handle) ||
-    handles.length >= MAX_SERVICE_WEBSOCKET_HANDOFFS
-  ) {
-    throw failure("SERVICE_UNAVAILABLE");
-  }
-  const headers = new Headers(response.headers);
-  headers.set(SERVICE_WEBSOCKET_HANDOFF_HEADER, [...handles, handle].join(","));
-  return responseWithHeaders(response, headers);
-}
-
-/** Read strict trusted handoff handles at the final loader-host boundary. */
-export function serviceWebSocketHandoffHandles(
+/** Read only the handoff association captured from a trusted Service response. */
+export function channelWebSocketHandoffs(
   response: Response,
 ): readonly string[] {
-  const raw = response.headers.get(SERVICE_WEBSOCKET_HANDOFF_HEADER);
-  if (raw === null) return [];
-  if (!response.webSocket) throw failure("SERVICE_UNAVAILABLE");
-  return parseServiceWebSocketHandoffs(raw);
+  return response.webSocket
+    ? (serviceWebSocketHandoffs.get(response.webSocket) ?? [])
+    : [];
+}
+
+/** Consume the association when a private channel takes ownership and hide its header. */
+export function detachChannelWebSocketHandoffs(response: Response): Response {
+  if (response.webSocket) serviceWebSocketHandoffs.delete(response.webSocket);
+  if (!response.headers.has(SERVICE_WEBSOCKET_HANDOFF_HEADER)) return response;
+  const headers = new Headers(response.headers);
+  headers.delete(SERVICE_WEBSOCKET_HANDOFF_HEADER);
+  return responseWithHeaders(response, headers);
 }
 
 /** Private Service policy shared by the native Fetcher and root lifecycle. */
 export class ServiceBinding {
   readonly #transport: NativeServiceTransport;
-  readonly #httpTransport: Fetcher;
+  readonly #httpTransport: PublicTransport;
   readonly #createStub: (policy: object) => object;
   readonly #admitOperation: () => void;
 
   constructor(
-    raw: unknown,
     control: unknown,
     createStub: (policy: object) => object,
     admitOperation: () => void,
+    httpTransport: PublicTransport,
   ) {
     if (
-      !object(raw) ||
-      !callable(nativeGet(raw, "fetch")) ||
-      !callable(nativeGet(raw, "connect")) ||
       !object(control) ||
       !callable(nativeGet(control, "rpc")) ||
       !callable(nativeGet(control, "get")) ||
       !callable(nativeGet(control, "root")) ||
-      !callable(admitOperation)
+      !callable(admitOperation) ||
+      !object(httpTransport) ||
+      !callable(nativeGet(httpTransport, "fetch")) ||
+      !callable(nativeGet(httpTransport, "connect"))
     ) {
       throw failure("SERVICE_BINDING_DENIED");
     }
     this.#transport = control as NativeServiceTransport;
-    this.#httpTransport = raw as Fetcher;
+    this.#httpTransport = httpTransport;
     this.#createStub = createStub;
     this.#admitOperation = admitOperation;
     const proxy = new NativeProxy(this, {
@@ -237,6 +206,16 @@ export class ServiceBinding {
     });
     transports.set(this, this.#transport);
     transports.set(proxy, this.#transport);
+    const callbacks = {
+      fetch: (request: Request) =>
+        nativeApply(nativeServiceFetch, this, [request]),
+      connect: (address: string) =>
+        nativeApply(nativeServiceConnect, this, [address]),
+      hold: (handles: readonly string[]) =>
+        this.#transport.holdWebSocketHandoff(handles),
+    };
+    channelCallbacks.set(this, callbacks);
+    channelCallbacks.set(proxy, callbacks);
     return proxy;
   }
 
@@ -258,15 +237,32 @@ export class ServiceBinding {
 }
 
 const transports = privateWeakMap<object, NativeServiceTransport>();
+const nativeServiceFetch = ServiceBinding.prototype.fetch;
+const nativeServiceConnect = ServiceBinding.prototype.connect;
+const channelCallbacks = privateWeakMap<
+  object,
+  {
+    readonly fetch: (request: Request) => Promise<Response>;
+    readonly connect: (address: string) => Socket;
+    readonly hold: (
+      handles: readonly string[],
+    ) => Promise<ReadableStream<Uint8Array>>;
+  }
+>();
+
+/** Return HTTP and TCP dispatch only for a policy issued by this Service authority. */
+export function serviceChannelCallbacks(policy: object) {
+  return channelCallbacks.get(policy) ?? null;
+}
 
 /** Construct the private Service policy for a native Fetcher. */
 export function createServiceBinding(
-  env: { fetcher: unknown },
   createStub: (policy: object) => object,
   control: unknown,
   admitOperation: () => void,
+  httpTransport: PublicTransport,
 ): ServiceBinding {
-  return new ServiceBinding(env.fetcher, control, createStub, admitOperation);
+  return new ServiceBinding(control, createStub, admitOperation, httpTransport);
 }
 
 /** Associate the native public identity with its existing root lifecycle owner. */

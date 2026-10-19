@@ -20,6 +20,7 @@ function snapshot(props) {
     moduleBindings: [],
     workerLoaders: [],
     browserBindings: [],
+    containerClasses: [],
     env: {},
     bindings: [],
     scheduledTargets: [],
@@ -187,4 +188,89 @@ test("tenant modules cannot replace a private config-owned extension", () => {
       }),
     /VERSION_INVARIANT_VIOLATION/,
   );
+});
+
+test("Container declarations are immutable class-scoped metadata with unique namespace authority", () => {
+  const declaration = {
+    className: "App",
+    namespaceResourceId: "namespace",
+    applicationName: "app",
+    descriptorSha256: "a".repeat(64),
+    images: {
+      api: `registry/app@sha256:${"b".repeat(64)}`,
+      base: `r@sha256:${"c".repeat(64)}`,
+    },
+  };
+  assert.doesNotThrow(() =>
+    assertSnapshot({ ...snapshot({}), containerClasses: [declaration] }),
+  );
+  for (const containerClasses of [
+    undefined,
+    {},
+    [null],
+    [declaration, declaration],
+    [declaration, { ...declaration, className: "Other" }],
+    [declaration, { ...declaration, namespaceResourceId: "other" }],
+    ...[
+      { className: "a-b" },
+      { namespaceResourceId: "" },
+      { applicationName: "app/name" },
+      { descriptorSha256: "A".repeat(64) },
+      { images: undefined },
+      { images: [] },
+      { images: { api: "registry/app:latest" } },
+      { images: { api: `registry/app@sha256:${"B".repeat(64)}` } },
+      { images: { api: `registry/ app@sha256:${"b".repeat(64)}` } },
+      { images: { api: `registry/app@sha256:${"b".repeat(64)}`, other: 1 } },
+      { images: { ["x".repeat(16384)]: `r@sha256:${"b".repeat(64)}` } },
+    ].map((patch) => [{ ...declaration, ...patch }]),
+    Array.from({ length: 101 }, (_, index) => ({
+      ...declaration,
+      className: `App${index}`,
+      namespaceResourceId: `${index}`,
+    })),
+  ])
+    assert.throws(
+      () => assertSnapshot({ ...snapshot({}), containerClasses }),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
+});
+
+test("named images enforce the documented count and Unicode character bounds", () => {
+  const reference = `r@sha256:${"b".repeat(64)}`;
+  const declaration = {
+    className: "App",
+    namespaceResourceId: "namespace",
+    applicationName: "app",
+    descriptorSha256: "a".repeat(64),
+  };
+  const images = Object.fromEntries(
+    Array.from({ length: 100 }, (_, index) => [`image${index}`, reference]),
+  );
+  for (const valid of [
+    {},
+    images,
+    { ["x".repeat(128)]: reference },
+    { ["😀".repeat(128)]: reference },
+  ])
+    assert.doesNotThrow(() =>
+      assertSnapshot({
+        ...snapshot({}),
+        containerClasses: [{ ...declaration, images: valid }],
+      }),
+    );
+  for (const invalid of [
+    { ...images, extra: reference },
+    { "": reference },
+    { ["x".repeat(129)]: reference },
+    { ["😀".repeat(129)]: reference },
+  ])
+    assert.throws(
+      () =>
+        assertSnapshot({
+          ...snapshot({}),
+          containerClasses: [{ ...declaration, images: invalid }],
+        }),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
 });

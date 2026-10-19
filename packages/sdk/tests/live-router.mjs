@@ -195,7 +195,8 @@ async function workersContract() {
       }),
     ],
   });
-  assert.match(upload.id, /^[0-9a-f-]{36}$/);
+  assert.equal(upload.id, uploadedWorkerName);
+  assert.match(upload.deployment_id, /^[0-9a-f-]{36}$/);
   const uploadedVersions = await client.workers.scripts.versions.list(
     uploadedWorkerName,
     {
@@ -205,6 +206,7 @@ async function workersContract() {
     },
   );
   assert.equal(uploadedVersions.result.items.length, 1);
+  assert.equal(uploadedVersions.result.items[0].id, upload.deployment_id);
   const uploadedVersion = await client.workers.scripts.versions.get(
     uploadedVersions.result.items[0].id,
     { account_id: accountID, script_name: uploadedWorkerName },

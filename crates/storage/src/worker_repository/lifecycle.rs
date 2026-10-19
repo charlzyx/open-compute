@@ -95,7 +95,8 @@ impl<'a> WorkerRepository<'a> {
             }
             crate::durable_objects::publish_worker_migration_tx(
                 tx, worker_id, version_id, plan, now_ms,
-            )
+            )?;
+            crate::containers::require_ready_container_namespaces(tx, version_id)
         })
     }
 
@@ -150,6 +151,9 @@ impl<'a> WorkerRepository<'a> {
                     ErrorCode::VersionNotReady,
                     "version state transition precondition failed",
                 ));
+            }
+            if target == VersionState::Ready {
+                crate::containers::require_ready_container_namespaces(tx, version_id)?;
             }
             Ok(())
         })
@@ -284,6 +288,7 @@ impl<'a> WorkerRepository<'a> {
                     "Deployment target is not a ready Version of this Worker",
                 ));
             }
+            crate::containers::require_container_policy_associations(tx, target)?;
             let quarantined: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM worker_deployments d
@@ -454,19 +459,27 @@ impl<'a> WorkerRepository<'a> {
             };
             let previous = tx
                 .query_row(
-                    "SELECT d.id FROM worker_deployments d
+                    "SELECT d.id,d.version_id FROM worker_deployments d
                      JOIN deployment_runtime_assessments a ON a.deployment_id=d.id
                      JOIN worker_versions v ON v.id=d.version_id
                      WHERE d.worker_id=?1 AND d.id!=?2 AND d.deleted_at_ms IS NULL
                        AND a.state='dispatchable' AND v.state='ready'
                      ORDER BY d.created_at_ms DESC, d.id DESC LIMIT 1",
                     params![worker_id_text, deployment_id.to_string()],
-                    |row| row.get::<_, String>(0),
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
                 )
                 .optional()
-                .map_err(|_| db_error())?
-                .map(|value| value.parse().map_err(|_| invariant()))
-                .transpose()?;
+                .map_err(|_| db_error())?;
+            let previous = if let Some((deployment, version)) = previous {
+                let version = version.parse().map_err(|_| invariant())?;
+                match crate::containers::require_container_policy_associations(tx, version) {
+                    Ok(()) => Some(deployment.parse::<DeploymentId>().map_err(|_| invariant())?),
+                    Err(error) if error.code() == ErrorCode::ConfigInvalid => None,
+                    Err(error) => return Err(error),
+                }
+            } else {
+                None
+            };
             let updated = tx
                 .execute(
                     "UPDATE deployment_runtime_assessments

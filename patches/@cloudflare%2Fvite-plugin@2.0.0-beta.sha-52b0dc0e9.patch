@@ -1,0 +1,14 @@
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index 27228adda62dabd3533a2b57f425e59eb68885a6..4cd1c7726bf7ea8bd340e4f440ff89daeba73cd8 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -1,6 +1,7 @@
+ import * as vite from "vite";
+-import { InputWorkerConfig, ParsedInputWorkerConfig, WorkerConfig } from "@cloudflare/config";
+-import { CompatDate } from "@cloudflare/workers-utils";
++import { InputWorkerConfig, ParsedInputWorkerConfig } from "@cloudflare/config/schema";
++import { WorkerConfig } from "@cloudflare/config/public";
++import { CompatDate } from "@cloudflare/workers-utils/compatibility-date";
+ 
+ //#region src/plugin-config.d.ts
+ 

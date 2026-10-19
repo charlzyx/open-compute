@@ -650,3 +650,184 @@ fn worker_descriptor_rejects_invalid_or_conflicting_environment_authority() {
 fn target_worker() -> WorkerId {
     WorkerId::generate()
 }
+
+fn container_descriptor(worker: bool) -> WorkerCodeDescriptorV1 {
+    let bundle = crate::CanonicalBundle::build(
+        "index.js",
+        vec![crate::ModuleInput {
+            name: "index.js".into(),
+            module_type: crate::ModuleType::EsModule,
+            bytes: b"export default {}".to_vec(),
+        }],
+        crate::BundleLimits::default(),
+    )
+    .unwrap();
+    let manifest = AssetManifestV1 {
+        schema_version: 1,
+        entries: vec![crate::assets::AssetEntryV1 {
+            path: "/index.html".into(),
+            sha256: hex::encode([1; 32]),
+            size: 1,
+            content_type: "text/html".into(),
+        }],
+    };
+    let routing: AssetRoutingConfigV1 =
+        serde_json::from_value(json!({"schemaVersion": 1})).unwrap();
+    WorkerCodeDescriptorV1::new(
+        InstanceId::generate(),
+        WorkerId::generate(),
+        VersionId::generate(),
+        0,
+        "2026-09-08".into(),
+        Vec::new(),
+        open_compute_storage::worker_repository::EffectiveResourceLimits::standard_defaults(),
+        worker.then_some((bundle.sha256(), bundle.manifest())),
+        Some((&manifest, &routing)),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        CachePolicyDescriptorV1::default(),
+        Vec::new(),
+        1,
+    )
+    .unwrap()
+}
+
+#[test]
+fn container_associations_are_canonical_and_change_immutable_source_identity() {
+    use open_compute_storage::containers::VersionContainerDeclaration;
+
+    let descriptor = container_descriptor(true);
+    let original = descriptor.sha256().unwrap();
+    assert_eq!(
+        descriptor
+            .clone()
+            .with_containers(Vec::new())
+            .unwrap()
+            .sha256()
+            .unwrap(),
+        original
+    );
+    let first = VersionContainerDeclaration::new(ResourceId::generate(), "first".into()).unwrap();
+    let second = VersionContainerDeclaration::new(ResourceId::generate(), "second".into()).unwrap();
+    let assigned = descriptor
+        .clone()
+        .with_containers(vec![first.clone(), second.clone()])
+        .unwrap();
+    assert_ne!(assigned.sha256().unwrap(), original);
+    assert_eq!(
+        assigned,
+        descriptor
+            .clone()
+            .with_containers(vec![second, first.clone()])
+            .unwrap()
+    );
+    let changed =
+        VersionContainerDeclaration::new(first.namespace_resource_id, "replacement".into())
+            .unwrap();
+    assert_ne!(
+        descriptor
+            .clone()
+            .with_containers(vec![first.clone()])
+            .unwrap()
+            .sha256()
+            .unwrap(),
+        descriptor
+            .with_containers(vec![changed])
+            .unwrap()
+            .sha256()
+            .unwrap()
+    );
+    let named = VersionContainerDeclaration::with_images(
+        first.namespace_resource_id,
+        first.application_name.clone(),
+        BTreeMap::from([
+            (
+                "blue".into(),
+                format!("registry/app@sha256:{}", "1".repeat(64)),
+            ),
+            (
+                "green".into(),
+                format!("registry/app@sha256:{}", "2".repeat(64)),
+            ),
+        ]),
+    )
+    .unwrap();
+    assert_ne!(
+        container_descriptor(true)
+            .with_containers(vec![first.clone()])
+            .unwrap()
+            .sha256()
+            .unwrap(),
+        container_descriptor(true)
+            .with_containers(vec![named.clone()])
+            .unwrap()
+            .sha256()
+            .unwrap()
+    );
+    let mut tampered = named;
+    tampered.images.insert(
+        "blue".into(),
+        format!("registry/app@sha256:{}", "3".repeat(64)),
+    );
+    assert!(
+        container_descriptor(true)
+            .with_containers(vec![tampered])
+            .is_err()
+    );
+    let assets = container_descriptor(false);
+    assert_eq!(assets.clone().with_containers(Vec::new()).unwrap(), assets);
+    assert_eq!(
+        assets.with_containers(vec![first]).unwrap_err().code(),
+        ErrorCode::VersionInvariantViolation
+    );
+}
+
+#[test]
+fn conflicting_or_corrupted_container_authority_never_produces_a_descriptor() {
+    use open_compute_storage::containers::VersionContainerDeclaration;
+
+    let descriptor = container_descriptor(true);
+    let original = descriptor.sha256().unwrap();
+    let first = VersionContainerDeclaration::new(ResourceId::generate(), "first".into()).unwrap();
+    let same_name =
+        VersionContainerDeclaration::new(ResourceId::generate(), "first".into()).unwrap();
+    let same_namespace =
+        VersionContainerDeclaration::new(first.namespace_resource_id, "second".into()).unwrap();
+    for declarations in [
+        vec![first.clone(), first.clone()],
+        vec![first.clone(), same_name],
+        vec![first.clone(), same_namespace],
+    ] {
+        assert_eq!(
+            descriptor
+                .clone()
+                .with_containers(declarations)
+                .unwrap_err()
+                .code(),
+            ErrorCode::VersionInvariantViolation
+        );
+    }
+    let mut wrong_namespace = first.clone();
+    wrong_namespace.namespace_resource_id = ResourceId::generate();
+    let mut wrong_digest = first.clone();
+    wrong_digest.descriptor_sha256[0] ^= 1;
+    let mut invalid_name = first;
+    invalid_name.application_name = "private-declaration-secret/invalid".into();
+    for (declaration, expected_code) in [
+        (wrong_namespace, ErrorCode::ResourceInvariantViolation),
+        (wrong_digest, ErrorCode::ResourceInvariantViolation),
+        (invalid_name, ErrorCode::ResourceInvariantViolation),
+    ] {
+        let error = descriptor
+            .clone()
+            .with_containers(vec![declaration])
+            .unwrap_err();
+        assert_eq!(error.code(), expected_code);
+        assert!(!format!("{error:?}").contains("private-declaration-secret"));
+    }
+    assert_eq!(descriptor.sha256().unwrap(), original);
+}

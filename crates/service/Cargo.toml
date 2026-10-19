@@ -65,6 +65,7 @@ serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
 tempfile.workspace = true
+tar.workspace = true
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["compat"] }
 tower = { workspace = true, features = ["util"] }
@@ -83,6 +84,7 @@ hex.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 tokio-tungstenite.workspace = true
 base64.workspace = true
 futures.workspace = true
@@ -164,6 +166,11 @@ required-features = ["test-support"]
 [[test]]
 name = "p6_cf_resource_gate"
 path = "tests/p6_cf_resource_gate/mod.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "p23_containers"
+path = "tests/p23_containers/mod.rs"
 required-features = ["test-support"]
 
 [[test]]

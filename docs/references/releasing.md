@@ -1,9 +1,10 @@
 # 版本与发布流程
 
-macOS 的文档解析功能完整保留，但解析子进程尚无可强制执行的内存硬上限。
-0.1.0 接受该限制；CPU、输入/输出、并发和超时约束继续生效。
-该进程复用同一个 `ocd`，不属于 workerd Worker isolate 的额度，也不增加 sidecar 分发文件。
-宿主内存压力仍可能影响主服务；这是当前明确接受的支持边界。
+本页定义正式发布和恢复流程；构建输入、单文件布局与平台限制见[单二进制分发](single-binary.md)。
+执行授权遵循根 [Operating Contract](../../AGENTS.md#operating-contract)：先完成已授权的本地准备，
+尚未授权的打包、上传、发布或部署再请求确认。说明 source revision、目标平台、精确 workerd pin、
+目标位置、网络/权限影响和排除的无关改动；同一范围的已有授权不重复询问。
+发布前按 [Day1 迁移规则](../../AGENTS.md#day1-architecture)核对已发布 SQL 的文件名、顺序与字节，资格检查拒绝漂移。
 
 open-compute 只发布标准稳定版本和三个正式平台的原生单文件 `ocd`。版本使用不带预发布或构建后缀的
 SemVer：Cargo 版本写作 `X.Y.Z`，Git tag 写作 `vX.Y.Z`。不使用 `alpha`、`beta`、`rc`、
@@ -92,9 +93,7 @@ E2E 依赖专用多实例与可选产品 fixture，不在干净的 production pa
 该已复现的历史问题不能通过修改旧二进制掩盖，候选版本的原始 installer 首装仍必须无 workaround 通过。
 
 `publish` 明确依赖 main 静态资格、coverage、macOS 最终 Gate、Linux egress 和三个正式平台 assemble；
-任何一项未通过均不得公开发布。构建保存编译耗时和标明未验收的二进制；所有 Rust 构建统一使用
-全局 mbx 对象缓存，不上传 Cargo target。缓存只用于编译加速，不作为测试通过证据或可信发行物。
-缓存和任务依赖设计见 [CI 构建性能](ci-build-performance.md)。
+任何一项未通过均不得公开发布。构建保留编译耗时和必要失败证据；当前 mbx/Cargo target 缓存策略见 [CI 构建性能](ci-build-performance.md#缓存与证据)。
 
 npm 发布以 `npm publish` 成功退出为完成信号，成功后不轮询 registry，也不等待 eventual-consistency read-back。
 只有 `npm publish` 返回失败时才做一次只读身份查询：若同版本已经存在且 tarball shasum/integrity 与已验证
@@ -138,7 +137,7 @@ vinext/Next.js 端到端或 hosted Cloudflare differential。其冻结摘要和�
    `packages/sdk/package.json` 的 `version` 改为同一 `X.Y.Z`（`@open-compute/sdk` 与 `ocd` 共享同一
    stable 版本，没有独立 SDK tag；release workflow 的 `failfast` job 会拒绝 SDK 与 workspace 版本不一致
    的 tag）；
-2. 运行 Cargo，让它更新 `Cargo.lock` 中所有 workspace package 的版本，不手改 lockfile；
+2. 通过全局 `mbx` 调用 Rust 工具更新 `Cargo.lock` 的 workspace package 版本，不手改 lockfile；
 3. 检查并上传 Git LFS 实体，不能只把 pointer 推到 Git：
 
    ```sh
@@ -146,18 +145,10 @@ vinext/Next.js 端到端或 hosted Cloudflare differential。其冻结摘要和�
    git lfs push origin --all
    ```
 
-4. 在版本候选源码冻结后，先刷新 `test/conformance/baseline.json` 的 `sourceDigest`：用
-   `bun -e 'import { sourceIdentity } from "./test/conformance/checks/context.ts"; console.log(sourceIdentity())'`
-   计算当前值并写回 baseline，然后执行一次 `./test/gate.py p3-contract` 确认匹配。它是源码内容摘要，
-   不是 Git commit ID；凡影响摘要范围的源码、测试、工具链、manifest 或 `docs/references/**` 变更，都要一起更新。
-   随后在本地干净 checkout 完成最终验收。若当前冻结源码尚未完成最终验收，必须显式准备正式 workerd，
-   先运行 `bun run build` 和静态检查，再用宿主对应的 `OPEN_COMPUTE_TEST_WORKERD` 依次执行一次
-   `./test/coverage.sh --jobs 2` 与一次 `./test/gate.py --workspace --final --jobs 2`。coverage 的插桩 Gate 和最终
-   未插桩 Gate 各有不同验收职责；冻结源码已经有这两项成功证据时直接复用，不再为了发布重复执行不变
-   输入。除此之外不运行重复 aggregate。90% Rust 行覆盖率和最终 Gate
-   必须通过后才能 push/tag。需要隔离验证正式 Linux ARM64 package 路径时，再从干净的冻结 `HEAD` 运行一次
-   `./scripts/release-dry-run.sh`；保存失败证据，不自动重试。该本地诊断用于尽早拦截，不替代 tag workflow
-   的独立 runner 资格。
+4. 按[测试说明](testing.md#按输入选择测试)刷新 baseline 的 `sourceDigest` 并核对身份。完成
+   [完整静态检查、coverage 和最终单轮 Gate](testing.md#完整检查与最终验收)后才能 push/tag；
+   冻结源码已有同输入成功证据时直接复用。需要额外验证 Linux ARM64 package 路径时，经授权运行一次
+   `./scripts/release-dry-run.sh`；本地诊断不替代 tag workflow 的独立 runner 资格。
 5. 新建 `docs/releases/X.Y.Z.md` 并加入 `docs/releases/README.md`。该文件是 GitHub Release 的正文片段，
    不写 `# open-compute X.Y.Z` 或其他一级标题；workflow 的 `--title "open-compute X.Y.Z"` 是唯一页面标题。
    写法参考成熟自托管项目的 operator-first release notes：开头用一段话说明这版解决什么问题、适合谁；随后按 What's new 和 Fixed 归纳用户可感知的变化；
@@ -200,12 +191,8 @@ git tag -a vX.Y.Z -m "open-compute vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-每个 Gate job 都先显式执行 `bun run build` 和 `mbx fetch --locked`；打包脚本独立从源码构建。
-最终 Gate 不设置三轮诊断变量，遵循[单轮测试政策](testing.md)。
-共享 setup 将 Cargo registry/git 下载与编译产物分开缓存：下载缓存允许 `Cargo.lock` 变化时按 OS 回退，
-coverage 与 package 保留各自的本地 target 目录，统一通过 mbx 按实际编译输入复用对象；CI 直接保存可写 Cargo target，不导出第二份 mbx 对象 bundle，也不使用 sccache。共享缓存仅由成功的 main push 写入，PR 和 tag 只恢复。
-release 的 coverage、最终 Gate、Linux egress 与 package 只依赖身份校验并同时启动，发布墙钟由最慢路径
-决定，不再把这些长任务串行相加。
+Gate job 显式构建资产并准备锁定依赖，package 独立从源码构建。qualification 与 package 在身份校验后并行，
+publish 等待完整成功证据。缓存与任务依赖见 [CI 构建性能](ci-build-performance.md#当前执行分工)。
 
 push tag 是唯一发布触发器。随后在 GitHub Actions 的 `release` workflow 中确认所有 qualification、
 三个正式目标 package 和 `publish` job 成功，并在 GitHub Release 页面核对七个 assets。仓库已配置以下设置（2026-09-06 按用户要求迁移）：
@@ -253,8 +240,8 @@ macOS 使用 `shasum -a 256 -c` 校验筛选后的对应行。校验后仍应按
   tag 或删除旧版本来伪装相同版本。
 - 本地与远端存在同名 tag 但指向不同对象时，先保留远端正式 tag，不要 force push 或替换远端 tag；
   只删除/重建本地副本，确认当前版本输入后使用新的 patch 版本继续发布。
-- 某个平台没有成功产物：整个版本不发布，不能先公开其余三个平台。
+- 某个平台没有成功产物：整个版本不发布，不能先公开其余平台。
 
 workflow 配置存在只说明流程已定义；只有某个 tag 的 workflow 实际成功且 GitHub Release 已公开，
 才能声称该版本完成跨平台发行资格。长时 soak、签名、公证或其他尚未接入 workflow 的资格继续按
-active acceptance 文档记录，不能由 tag 发布成功替代。
+所属活动方案记录，不能由 tag 发布成功替代。

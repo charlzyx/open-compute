@@ -272,7 +272,7 @@ async fn p3_service_calls_from_queue_cron_do_and_workflow_event_sources() {
         worker_version_id: event_version.id,
         worker_code_sha256: event_version.worker_code_sha256,
         class_name: "Flow".to_owned(),
-        loader_schema_version: 1,
+        loader_schema_version: i64::from(event_version.loader_schema_version),
         capability_version: 1,
         descriptor_sha256: [7; 32],
     };

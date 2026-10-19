@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 
 mod ai;
 mod browser;
+mod containers;
 mod extensions;
 mod public_gateway;
 mod scheduler;
@@ -22,6 +23,7 @@ pub use ai::{
     ResolvedTokenizerContract, ResolvedVlmModelContract,
 };
 pub use browser::{BrowserBackendConfig, BrowserConfig, validate_cdp_url};
+pub use containers::{ContainersConfig, validate_container_socket};
 pub use extensions::{
     LocalExtensionConfig, PrivateHttpGrant, PrivateHttpServiceConfig, validate_local_extension_name,
 };
@@ -133,6 +135,9 @@ pub struct PlatformConfig {
     /// Optional instance-owned Browser Run backend and explicit limits.
     #[serde(default)]
     pub browser: Option<BrowserConfig>,
+    /// Optional independently operated Container Broker and admission policy.
+    #[serde(default)]
+    pub containers: Option<ContainersConfig>,
     /// Bounded metrics export.
     #[serde(default)]
     pub metrics: MetricsConfig,
@@ -230,6 +235,9 @@ impl PlatformConfig {
         if let Some(browser) = &self.browser {
             browser.validate()?;
         }
+        if let Some(containers) = &self.containers {
+            containers.validate()?;
+        }
         self.metrics.validate()?;
         self.observability.validate()?;
         self.hardening.validate()?;
@@ -319,6 +327,7 @@ impl PlatformConfig {
             document_parser: DocumentParserConfig::default(),
             ai: AiConfig::default(),
             browser: None,
+            containers: None,
             metrics: MetricsConfig::default(),
             observability: ObservabilityConfig::default(),
             hardening: HardeningConfig::default(),

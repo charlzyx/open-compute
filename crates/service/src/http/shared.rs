@@ -9,6 +9,7 @@ use axum::extract::Request;
 use axum::http::{Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use base64::Engine as _;
 use open_compute_core::{ErrorCode, InstanceId, PlatformError, RequestId, SecretString, StartupId};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -270,6 +271,22 @@ impl SharedRoutes {
             .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
         }
         let local = host.ends_with(".localhost");
+        if !local
+            && matches!(request.uri().path(), "/v2" | "/v2/")
+            && registry_basic_instance(&request).is_none()
+        {
+            return (
+                StatusCode::UNAUTHORIZED,
+                [
+                    (
+                        header::WWW_AUTHENTICATE,
+                        "Basic realm=\"Container Registry\"",
+                    ),
+                    (header::CACHE_CONTROL, "no-store"),
+                ],
+            )
+                .into_response();
+        }
         let shared_session = matches!(
             request.uri().path(),
             "/operator/session" | "/operator/session/exchange"
@@ -305,6 +322,8 @@ impl SharedRoutes {
                 .map(|(id, _)| (*id, false))
         } else {
             account_path_instance(request.uri().path())
+                .or_else(|| registry_path_instance(request.uri().path()))
+                .or_else(|| registry_basic_instance(&request))
                 .or_else(|| git_path_instance(request.uri().path()))
                 .or_else(|| signed_tail_path_instance(request.uri().path()))
                 .map(|id| (id, false))
@@ -537,6 +556,30 @@ fn account_path_instance(path: &str) -> Option<InstanceId> {
 fn git_path_instance(path: &str) -> Option<InstanceId> {
     let mut segments = path.strip_prefix("/git/")?.split('/');
     InstanceId::from_str(segments.next()?).ok()
+}
+
+fn registry_path_instance(path: &str) -> Option<InstanceId> {
+    InstanceId::from_str(path.strip_prefix("/v2/")?.split('/').next()?).ok()
+}
+
+fn registry_basic_instance(request: &Request) -> Option<InstanceId> {
+    if !matches!(request.uri().path(), "/v2" | "/v2/") {
+        return None;
+    }
+    let encoded = request
+        .headers()
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Basic ")?;
+    if encoded.len() > 4096 {
+        return None;
+    }
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let (account, _) = std::str::from_utf8(&decoded).ok()?.split_once(':')?;
+    InstanceId::from_str(account).ok()
 }
 
 fn signed_tail_path_instance(path: &str) -> Option<InstanceId> {

@@ -78,6 +78,7 @@ async fn materialization_is_reused_verified_and_never_repairs_corruption() {
         binding_token: &binding_token,
         observability_token: &observability_token,
         durable_objects: open_compute_core::DurableObjectsConfig::default(),
+        container_provider: None,
         deadline: Duration::from_secs(20),
         redactor: &Redactor::new(),
     })

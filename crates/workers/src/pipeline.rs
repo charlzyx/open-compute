@@ -223,6 +223,9 @@ pub struct VersionRuntimeFeatures {
     /// Browser Run binding names frozen with this version.
     #[serde(default)]
     pub browsers: Vec<String>,
+    /// Immutable Container namespace declarations.
+    #[serde(default)]
+    pub containers: Vec<open_compute_storage::containers::VersionContainerDeclaration>,
     /// Optional Workers AI binding exposing the Markdown Conversion subset.
     #[serde(default)]
     pub ai: Option<VersionAiInput>,
@@ -247,6 +250,7 @@ impl Default for VersionRuntimeFeatures {
             cache: VersionCacheInput::default(),
             worker_loaders: Vec::new(),
             browsers: Vec::new(),
+            containers: Vec::new(),
             ai: None,
             images: None,
             version_metadata: None,

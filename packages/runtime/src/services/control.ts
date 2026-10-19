@@ -56,6 +56,34 @@ export async function serviceControl<T>(
   return value as T;
 }
 
+/** Hold the canonical native WebSocket lease on one private streaming HTTP response. */
+export async function holdServiceWebSocketHandoff(
+  env: BindingEnv,
+  handles: readonly string[],
+): Promise<ReadableStream<Uint8Array>> {
+  const response = await env.BINDING_BACKEND.fetch(
+    "http://binding-backend/internal/services/v1/websocket/handoff",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [BINDING_TOKEN_HEADER]: env.BINDING_BACKEND_TOKEN,
+        "x-open-compute-startup-generation": currentStartupGeneration(),
+      },
+      body: JSON.stringify({ handles }),
+    },
+  );
+  if (
+    response.status !== 200 ||
+    response.body === null ||
+    response.headers.get("content-type") !== "application/octet-stream"
+  ) {
+    await response.body?.cancel();
+    throw bindingError("SERVICE_UNAVAILABLE");
+  }
+  return response.body;
+}
+
 /** Retry one idempotent lifecycle mutation across a transient private-hop failure. */
 export async function retryServiceControl<T>(
   env: BindingEnv,
@@ -246,5 +274,6 @@ export async function activateCapabilities(
         deadlineAt,
       ),
     deadlineAt,
+    (source) => source,
   );
 }

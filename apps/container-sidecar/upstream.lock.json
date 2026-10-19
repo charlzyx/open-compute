@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/cloudflare/proxy-everything",
+  "revision": "510e5cea4b175aa399dce28aada7b32ac34d607f",
+  "files": {
+    "main.go": "e87ac67b534ebe5c5ede0bb9a37a5b507df4be5ec47e4b00cf26c1a57b25a8a7",
+    "dns.go": "2c87d47de126e1d139cf95c8e2c34f73557029abbd8fd64630153e1f5c63dc51",
+    "sni.go": "6b405d28c4cf61454510fd8731c033516454bbd912b42d400a44d586e4ae782f",
+    "tls.go": "ccb780ad357bd3dd38ae59555424f5c068b94d7716fd0f4ca89bda66ede75198",
+    "dummyserver.go": "6851b50bd55c42671d1c350ff1548d8efec5bc26d9ed52a69ca8a641c5c32218",
+    "go.mod": "a5b2483bf2bd175499936e7d60ffdd8a2d4c2abe4b477fd29e18062eebd9d99b",
+    "go.sum": "fc847a0a4ce5884cff3eb2a82a0a36ee427e80685325da62fe13386684efb968",
+    "Dockerfile": "1a62a92708a4a5c723f0be19c3e934d2c06c97ab88755103f8d3fe82fe43d3f3"
+  }
+}

@@ -4,6 +4,9 @@ pub(crate) mod accounts;
 mod ai_search;
 mod artifacts;
 mod browser;
+mod container_instances;
+mod container_registry;
+mod containers;
 mod d1;
 mod d1_transfer;
 mod kv;
@@ -33,11 +36,16 @@ pub(crate) fn storage_router() -> Router<HttpState> {
         .merge(workflows::router())
         .merge(artifacts::router())
         .merge(browser::router())
+        .merge(containers::router())
 }
 
 use crate::http::HttpState;
 use axum::Router;
 use axum::middleware;
+
+pub(crate) fn container_registry_router() -> Router<HttpState> {
+    container_registry::router()
+}
 
 /// Compose the common/account/vendor v4 surface with independently owned product routes.
 pub(crate) fn router(

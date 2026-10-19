@@ -1,17 +1,30 @@
 import { registerForwarding } from "cloudflare-internal:open-compute-forwarding";
-import wrapped from "cloudflare-internal:wrapped-binding";
+import wrapped, {
+  type PublicTransport,
+} from "cloudflare-internal:wrapped-binding";
+import {
+  createRpcTransport,
+  disposeRpcResult,
+} from "../bindings/rpc-transport.js";
 import { createCacheRuntime } from "../cache/facade.js";
 import { createDurableObjectNamespace } from "../durable-objects/namespace.js";
 import { registerOutputPublisher } from "../durable-objects/output-gate.js";
-import { createDurableObjectStubPolicy as doStubPolicy } from "../durable-objects/stub.js";
+import {
+  createDurableObjectStubPolicy as doStubPolicy,
+  durableObjectChannelCallbacks,
+} from "../durable-objects/stub.js";
 import { QueuePublisher } from "../queues/publisher.js";
-import { createServiceBinding as servicePolicy } from "../services/facade.js";
+import {
+  serviceChannelCallbacks,
+  createServiceBinding as servicePolicy,
+} from "../services/facade.js";
 import { triggerWorkflowSchedule, WorkflowImpl } from "../workflows/facade.js";
 import { runWorkflow, validateWorkflowClass } from "../workflows/runner.js";
 import { PRIVATE_POLICY, type WorkerPolicy } from "./policy.js";
 import { wrapDurableObject } from "./wrappers/durable-object.js";
 import { createLoopbackEntrypoint } from "./wrappers/loopback.js";
 import {
+  createPolicyChannelCallbacks,
   validationHandler,
   wrapDefault,
   wrapDefaultService,
@@ -23,8 +36,23 @@ import { createWorkflowEntrypoint } from "./wrappers/workflow.js";
 export { registerServiceBinding } from "../services/facade.js";
 
 const createNativeServiceStub = wrapped.createServiceRpcStub.bind(wrapped);
-const createPrivateTransport = wrapped.createPrivateTransport.bind(wrapped);
+const copyPrivateTransport = wrapped.createPrivateTransport.bind(wrapped);
+const createPrivateTransport = (transport: unknown): object =>
+  createRpcTransport(copyPrivateTransport(transport), "transport");
+const nativeFreeze = Object.freeze;
+const validatePublicTransport = wrapped.validatePublicTransport.bind(wrapped);
+const fetchPublicTransport = wrapped.fetchPublicTransport.bind(wrapped);
+const connectPublicTransport = wrapped.connectPublicTransport.bind(wrapped);
 const admitSubrequest = wrapped.admitSubrequest.bind(wrapped);
+
+function createPublicTransport(transport: unknown): PublicTransport {
+  validatePublicTransport(transport);
+  return nativeFreeze({
+    fetch: (request: Request) => fetchPublicTransport(transport, request),
+    connect: (address: SocketAddress | string, options?: SocketOptions) =>
+      connectPublicTransport(transport, address, options),
+  });
+}
 const createNativeId = wrapped.createDurableObjectId.bind(wrapped);
 const doFactories = {
   createId: createNativeId,
@@ -33,6 +61,12 @@ const doFactories = {
   createRpcStub: createNativeServiceStub,
   isRpcStub: wrapped.isRpcStub.bind(wrapped),
   createPrivateTransport,
+  createPublicTransport,
+  createRpcTransport: (transport: object) =>
+    createRpcTransport(transport, "transport"),
+  createUserRpcTransport: (transport: object) =>
+    createRpcTransport(transport, "user"),
+  disposeRpcResult,
 };
 const installQueuePolicy = wrapped.installQueuePolicy.bind(wrapped);
 const queueCodec = { decodeV8: wrapped.decodeQueueV8.bind(wrapped) };
@@ -40,11 +74,19 @@ const queueCodec = { decodeV8: wrapped.decodeQueueV8.bind(wrapped) };
 /** Give the private Service policy the native factory from this INTERNAL closure. */
 export function createServiceBinding(env: { fetcher: unknown }): object {
   return servicePolicy(
-    env,
     createNativeServiceStub,
     createPrivateTransport(env.fetcher),
     admitSubrequest,
+    createPublicTransport(env.fetcher),
   );
+}
+
+/** Native channel extraction can only dispatch through an issued private binding policy. */
+export function createBindingChannelCallbacks(policy: object) {
+  const callbacks =
+    serviceChannelCallbacks(policy) ?? durableObjectChannelCallbacks(policy);
+  if (callbacks === null) throw new TypeError("SERVICE_BINDING_DENIED");
+  return createPolicyChannelCallbacks(callbacks);
 }
 
 /** Native DO transfer retains immutable raw authority and the authenticated object identity. */

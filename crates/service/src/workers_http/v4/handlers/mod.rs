@@ -302,6 +302,7 @@ struct VersionScript {
 
 #[derive(Serialize)]
 struct VersionScriptRuntime {
+    containers: Vec<serde_json::Value>,
     compatibility_date: String,
     compatibility_flags: Vec<String>,
     limits: VersionCpuLimits,
@@ -339,6 +340,8 @@ impl VersionItem {
                     last_deployed_from: "open-compute",
                 },
                 script_runtime: VersionScriptRuntime {
+                    containers: super::projection::public_containers(api, snapshot)
+                        .map_err(|error| V4Error::from(&error))?,
                     compatibility_date: version.compatibility_date.clone(),
                     compatibility_flags: version.compatibility_flags.clone(),
                     limits: VersionCpuLimits {

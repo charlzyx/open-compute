@@ -224,3 +224,17 @@ fn invariant() -> PlatformError {
 #[cfg(test)]
 #[path = "projection_tests.rs"]
 mod tests;
+
+/// Project persisted declarations used by the official cf durable-object scheduler.
+pub(super) fn public_containers(
+    api: &WorkerApiState,
+    snapshot: &VersionSnapshot,
+) -> Result<Vec<serde_json::Value>, PlatformError> {
+    let declarations = open_compute_storage::containers::ContainerAuthority::new(api.storage.db())
+        .version_declarations(snapshot.instance_id, snapshot.version.id)?;
+    let namespaces = DurableObjectRepository::new(&api.storage);
+    declarations.into_iter().map(|declaration| {
+        let namespace = namespaces.get_namespace(snapshot.instance_id, declaration.namespace_resource_id)?;
+        Ok(serde_json::json!({"name":declaration.application_name,"class_name":namespace.class_name,"images":declaration.images}))
+    }).collect()
+}

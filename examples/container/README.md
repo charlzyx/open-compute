@@ -5,6 +5,12 @@ Ubuntu 24.04 base matches the Linux release's glibc baseline. The one-shot init
 container uses `instance setup` to create the database and master key, then starts
 and stops the configured instance before marking the volume initialized.
 
+Worker Containers require an independently managed Docker Broker and qualified
+provider. See the [Containers operator guide](../../docs/references/containers.md).
+This Compose stack deploys `ocd`; its Docker socket is not a tenant binding.
+P23's new Container capability remains blocked until the formal runtime and
+provider checks pass.
+
 ## Published images
 
 After the first container publication, use matching version tags for both images:

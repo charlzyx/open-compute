@@ -26,6 +26,10 @@ pub struct NewVersionProducts<'a> {
     pub cache_policies: &'a [crate::runtime_features::VersionCachePolicyRecord],
     /// Platform-provided Images and Version Metadata bindings.
     pub builtin_bindings: &'a [crate::runtime_features::VersionBuiltinBindingRecord],
+    /// Immutable Container class declarations.
+    pub containers: &'a [crate::containers::VersionContainerDeclaration],
+    /// Current prepared Durable Object migration authorizing pending Container namespaces.
+    pub durable_object_migration: Option<&'a crate::durable_objects::DurableObjectMigrationPlan>,
     /// Queue push-consumer declarations.
     pub queue_consumers: &'a [crate::queue_consumers::NewQueueConsumerDeclaration],
     /// Optional immutable Cron declaration set.
@@ -49,6 +53,9 @@ impl WorkerRepository<'_> {
         validate_version_shape(input, products)?;
         self.db.with_immediate(|tx| {
             require_live_worker(tx, input.instance_id, input.worker_id)?;
+            if let Some(plan) = products.durable_object_migration {
+                crate::durable_objects::validate_worker_migration_version_conn(tx, input.worker_id, input.id, plan)?;
+            }
             let retained_count: i64 = tx
                 .query_row(
                     "SELECT COUNT(*) FROM worker_versions
@@ -193,6 +200,7 @@ impl WorkerRepository<'_> {
                 products.cache_policies,
                 products.builtin_bindings,
             )?;
+            crate::containers::insert_version_declarations(tx, input.id, products.containers, products.durable_object_migration)?;
             audit(
                 tx,
                 "version.create",
@@ -261,6 +269,7 @@ fn validate_version_shape(
                 || !products.services.is_empty()
                 || !products.cache_policies.is_empty()
                 || !products.builtin_bindings.is_empty()
+                || !products.containers.is_empty()
                 || !products.queue_consumers.is_empty()
                 || products.cron.is_some() =>
         {

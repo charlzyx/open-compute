@@ -61,6 +61,8 @@ const wrapped = moduleUrl(`
 `);
 const serviceFacade = moduleUrl(`
   export const completions = [];
+  export const channelWebSocketHandoffs = () => [];
+  export const detachChannelWebSocketHandoffs = response => response;
   export const completeServiceScope = async (_env, frame) => { completions.push(frame.scopeId); };
   export const decodeServiceValue = value => value;
   export const encodeServiceValue = value => value;
@@ -74,7 +76,7 @@ const actualServiceScope = moduleUrl(
 );
 const serviceScope = moduleUrl(`
   import * as actual from ${JSON.stringify(actualServiceScope)};
-  export { rootServiceFrame, childServiceFrame, currentServiceFrame } from ${JSON.stringify(actualServiceScope)};
+  export { captureServiceEnvironment, rootServiceFrame, childServiceFrame, currentServiceFrame } from ${JSON.stringify(actualServiceScope)};
   export let scopeRuns = 0;
   export const withServiceScope = (env, frame, action) => {
     scopeRuns += 1;
@@ -106,6 +108,7 @@ const runtimeUrl = moduleUrl(
     "./completion.js": completionUrl,
     "./loopback.js": loopbackUrl,
     "../../services/capabilities.js": serviceFacade,
+    "../../services/facade.js": serviceFacade,
     "../../services/rpc-member.js": moduleUrl(
       await compileRuntime("services/rpc-member.ts"),
     ),
@@ -1338,7 +1341,12 @@ test("Durable Object methods share the root Service scope and tracked waitUntil 
     },
     exports: cloudflareModule.workerExports,
   };
-  const index = { upsert() {}, delete() {}, clear() {} };
+  const alarmMethods = { upsert() {}, delete() {}, clear() {} };
+  const index = new Proxy(() => undefined, {
+    get: (_target, name) => alarmMethods[name],
+  });
+  assert.equal(typeof index, "function");
+  assert.equal("upsert" in index, false);
   const facetManager = {
     __openComputeFacetCall() {},
     __openComputeFacetClone() {},
@@ -1391,6 +1399,7 @@ test("Durable Object methods share the root Service scope and tracked waitUntil 
     "alarm-fired",
   );
   await instance.__openComputeAlarmRepair();
+  assert.equal(await instance.__openComputeInitialize(), undefined);
   assert.equal(alarmShimState.alarmCalls.length, priorAlarms + 2);
   assert.deepEqual(alarmShimState.alarmCalls[priorAlarms].payload, {
     scheduledTimeMs: 1,
@@ -1419,6 +1428,15 @@ test("Durable Object methods share the root Service scope and tracked waitUntil 
     instance.__openComputeInvokeRpc(
       "call",
       "__openComputeAlarm",
+      [],
+      async () => {},
+    ),
+    /DO_RPC_UNSUPPORTED/,
+  );
+  await assert.rejects(
+    instance.__openComputeInvokeRpc(
+      "call",
+      "__openComputeInitialize",
       [],
       async () => {},
     ),

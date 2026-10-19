@@ -101,10 +101,18 @@ function sameStrings(
 function validatePackages(manifest: JsonRecord): void {
   const expected = record(manifest.packages, "manifest.packages");
   const fixture = json(`${APPLICATION}/package.json`);
-  const declared = {
-    ...record(fixture.dependencies, "fixture.dependencies"),
-    ...record(fixture.devDependencies, "fixture.devDependencies"),
-  };
+  const catalog = record(json("package.json").catalog, "root.catalog");
+  const declared = Object.fromEntries(
+    Object.entries({
+      ...record(fixture.dependencies, "fixture.dependencies"),
+      ...record(fixture.devDependencies, "fixture.devDependencies"),
+    }).map(([name, version]) => [
+      name,
+      version === "catalog:" ? catalog[name] : version,
+    ]),
+  );
+  if (!sameStrings(Object.keys(expected), Object.keys(declared)))
+    throw new Error("fixture package inventory drift");
   for (const [name, version] of Object.entries(expected)) {
     if (
       declared[name] !== version ||

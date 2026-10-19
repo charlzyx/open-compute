@@ -120,6 +120,8 @@ pub struct CompileRequest<'a> {
     pub observability_token: &'a SecretString,
     /// Validated Durable Object policy rendered into private system-Worker bindings.
     pub durable_objects: DurableObjectsConfig,
+    /// Qualified native Container provider, scoped to the runtime `DoHost` Worker.
+    pub container_provider: Option<&'a crate::ContainerProviderConfig>,
     /// Compile deadline.
     pub deadline: Duration,
     /// Redactor that already includes the token.
@@ -261,6 +263,7 @@ pub async fn compile_static_config(
         request.binding_token,
         request.observability_token,
         &request.durable_objects,
+        request.container_provider,
         request.role,
     )?;
 

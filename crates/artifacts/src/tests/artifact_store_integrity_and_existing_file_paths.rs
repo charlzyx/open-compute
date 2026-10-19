@@ -14,6 +14,9 @@ async fn artifact_store_integrity_and_existing_file_paths() {
         )
         .await
         .unwrap();
+    assert!(!store.is_absent(&artifact).await.unwrap());
+    let missing = ArtifactRef::new(1, &"33".repeat(32), payload.len() as u64).unwrap();
+    assert!(store.is_absent(&missing).await.unwrap());
 
     let temp = TempDir::new().unwrap();
     let staged = temp.path().join("staged");
@@ -60,6 +63,8 @@ async fn artifact_store_integrity_and_existing_file_paths() {
         ErrorCode::ArtifactIntegrityError
     );
     mock.set_fault(Fault::ServerError);
+    assert!(store.is_absent(&artifact).await.is_err());
+    assert!(store.is_absent(&missing).await.is_err());
     assert_eq!(
         store
             .put_verified(
@@ -82,6 +87,8 @@ async fn artifact_store_integrity_and_existing_file_paths() {
     );
 
     mock.set_fault(Fault::None);
+    store.delete_unreferenced(&artifact).await.unwrap();
+    assert!(store.is_absent(&artifact).await.unwrap());
     let maximum = 64 * 1024_u64;
     let large_digest = "22".repeat(32);
     let large = ArtifactRef::new(1, &large_digest, maximum).unwrap();

@@ -15,7 +15,7 @@ members = [
 exclude = ["third_party/gitserver"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 homepage = "https://open-compute.dev"
@@ -41,6 +41,7 @@ capnp-rpc = "0.27.0"
 chacha20poly1305 = "0.10.1"
 cfb = "0.14.0"
 flate2 = "1.1.2"
+tar = { version = "=0.4.46", default-features = false }
 fallible-iterator = "0.3.0"
 futures = "0.3.31"
 gitserver-core = { path = "third_party/gitserver/crates/gitserver-core" }
@@ -67,7 +68,7 @@ rustix = { version = "1.1.2", features = ["alloc", "fs"] }
 nix = { version = "0.31.3", default-features = false, features = ["socket"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["raw_value"] }
-sha2 = "0.10.9"
+sha2 = { version = "0.10.9", features = ["asm"] }
 thiserror = "2.0.17"
 time = { version = "0.3.55", features = ["parsing"] }
 # `unstable_wasm` selects tokenizers' pure-Rust fancy-regex backend. Keep
@@ -136,8 +137,27 @@ large_stack_arrays = "deny"
 large_stack_frames = "deny"
 
 # Keep verified archive expansion and hashing fast in development and tests.
-# Workspace code and debug/overflow checks retain the standard dev settings.
+# Debug assertions and overflow checks retain the standard dev settings.
+# Optimize the artifact owner too: its generic streaming code is instantiated locally.
+[profile.dev.package.open-compute-artifacts]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.crc32fast]
+opt-level = 3
+
+[profile.dev.package."md-5:0.10.6"]
+opt-level = 3
+
 [profile.dev.package.miniz_oxide]
+opt-level = 3
+
+[profile.dev.package.tar]
+opt-level = 3
+
+[profile.dev.package.zlib-rs]
 opt-level = 3
 
 [profile.dev.package.sha2]

@@ -72,7 +72,7 @@ impl ObjectKey {
 pub enum ObjectSource {
     /// In-memory bytes.
     Bytes(Bytes),
-    /// An already-opened regular file and its exact expected length.
+    /// An already-opened private regular file, possibly anonymous, and its exact length.
     File {
         /// Already-opened regular file.
         file: File,
@@ -106,7 +106,7 @@ impl ObjectSource {
         }
     }
 
-    fn validate(&self) -> Result<(), BackendError> {
+    pub(crate) fn validate(&self) -> Result<(), BackendError> {
         let Self::File { file, length } = self else {
             return Ok(());
         };
@@ -125,7 +125,7 @@ pub(crate) fn open_private_source(path: &Path, expected_length: u64) -> Result<F
         .open(path)
         .map_err(|_| BackendError::Unavailable)?;
     let metadata = file.metadata().map_err(|_| BackendError::Unavailable)?;
-    if !private_source_metadata(&metadata, expected_length) {
+    if !private_source_metadata(&metadata, expected_length) || metadata.nlink() != 1 {
         return Err(BackendError::Corrupt);
     }
     Ok(file)
@@ -134,7 +134,7 @@ pub(crate) fn open_private_source(path: &Path, expected_length: u64) -> Result<F
 fn private_source_metadata(metadata: &std::fs::Metadata, expected_length: u64) -> bool {
     metadata.file_type().is_file()
         && metadata.len() == expected_length
-        && metadata.nlink() == 1
+        && metadata.nlink() <= 1
         && metadata.uid() == rustix::process::getuid().as_raw()
         && metadata.mode() & 0o077 == 0
 }

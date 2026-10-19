@@ -22,6 +22,7 @@ export const PUBLIC_PRODUCTS = [
   "analytics_engine",
   "ai",
   "browser_rendering",
+  "containers",
   "vectorize",
   "hyperdrive",
   "mtls",
@@ -110,6 +111,9 @@ export const CLASSIFICATION_RULES: readonly ClassificationRule[] = [
       "ArtifactsCreateTokenResult",
       "ArtifactsTokenInfo",
       "ArtifactsTokenListResult",
+      "ArtifactsTreeEntryType",
+      "ArtifactsTreeEntry",
+      "ArtifactsCommitMetadata",
       "ArtifactsError",
       "ArtifactsErrorCode",
     ],
@@ -360,7 +364,7 @@ export const CLASSIFICATION_RULES: readonly ClassificationRule[] = [
   { product: "pubsub", class: "non_target", prefixes: ["PubSub"] },
   {
     product: "containers",
-    class: "non_target",
+    class: "target",
     prefixes: ["Container", "ExecOutput", "ExecProcess"],
   },
   { product: "access", class: "non_target", prefixes: ["CloudflareAccess"] },
@@ -469,6 +473,7 @@ export const CLASSIFICATION_RULES: readonly ClassificationRule[] = [
 ];
 
 export const MEMBER_PRODUCT_OVERRIDES: ReadonlyMap<string, string> = new Map([
+  ["DurableObjectState.container", "containers"],
   ["ExecutionContext.access", "workers_for_platforms"],
   ["ExportedHandler.email", "workers_for_platforms"],
   ["ExportedHandler.tail", "workers_for_platforms"],

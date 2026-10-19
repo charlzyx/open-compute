@@ -457,7 +457,24 @@ impl<'a> WorkerRepository<'a> {
                      SELECT DISTINCT o.sha256, o.size
                      FROM version_upload_objects o
                      JOIN version_uploads u ON u.id = o.session_id
-                     WHERE o.verified = 1 AND u.status IN ('open', 'finalizing')",
+                     WHERE o.verified = 1 AND u.status IN ('open', 'finalizing')
+                     UNION
+                     SELECT i.artifact_sha256, i.artifact_size FROM container_images i
+                     WHERE i.snapshot_only=0 OR EXISTS (
+                       SELECT 1 FROM container_instance_leases l
+                       WHERE l.effective_image_sha256=i.manifest_sha256 AND l.state!='stopped')
+                     UNION
+                     SELECT artifact_sha256,artifact_size FROM container_snapshots
+                     WHERE artifact_sha256 IS NOT NULL AND (state IN ('pending','ready') OR
+                       (state='retiring' AND captured_at_ms IS NULL AND EXISTS (
+                         SELECT 1 FROM container_instance_leases l
+                         WHERE l.namespace_resource_id=container_snapshots.namespace_resource_id
+                           AND l.object_id=container_snapshots.object_id
+                           AND l.object_generation=container_snapshots.object_generation
+                           AND l.lease_generation=container_snapshots.lease_generation
+                           AND l.state!='stopped')))
+                     UNION
+                     SELECT artifact_sha256, artifact_size FROM container_registry_blobs",
                 )
                 .map_err(|_| db_error())?;
             let rows = stmt
@@ -492,6 +509,7 @@ fn delete_version_products(tx: &Transaction<'_>, version: VersionId) -> Result<(
         "DELETE FROM version_vars WHERE version_id=?1",
         "DELETE FROM version_secrets WHERE version_id=?1",
         "DELETE FROM version_python_prepared WHERE version_id=?1",
+        "DELETE FROM version_containers WHERE version_id=?1",
     ] {
         tx.execute(statement, [version.to_string()])
             .map_err(|_| db_error())?;

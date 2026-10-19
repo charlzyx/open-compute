@@ -340,7 +340,7 @@ async fn python_version(fixture: &Fixture, capture: &Capture, bindings: &Binding
         json!({"name":"DIRECT_SEARCH","type":"ai_search","instance_name":ai_search::INSTANCE}),
     );
     values.push(json!({"name":"ISOLATED_SEARCH","type":"ai_search_namespace","namespace":ai_search::ISOLATED}));
-    let (status, _, bytes) = fixture
+    let (status, _, bytes, version) = fixture
         .upload_version(
             PYTHON,
             &Capture::content_type(),
@@ -354,5 +354,5 @@ async fn python_version(fixture: &Fixture, capture: &Capture, bindings: &Binding
         response["errors"]
     );
     assert_eq!(response["success"], true);
-    response["result"]["id"].as_str().unwrap().to_owned()
+    version.unwrap().to_string()
 }

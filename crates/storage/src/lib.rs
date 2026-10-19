@@ -9,6 +9,7 @@ pub mod browser;
 pub mod cache;
 pub mod catalog_page;
 pub mod cloudflare_artifacts;
+pub mod containers;
 pub mod control_db;
 pub mod cron;
 pub mod crypto;

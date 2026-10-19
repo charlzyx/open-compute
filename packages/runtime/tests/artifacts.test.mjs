@@ -25,7 +25,6 @@ const created = {
   defaultBranch: "main",
   remote: info.remote,
   token: "once",
-  tokenExpiresAt: "2026-09-11T00:00:00Z",
 };
 
 test("Artifacts facade exposes the pinned namespace and repository methods", async () => {
@@ -69,9 +68,10 @@ test("Artifacts facade exposes the pinned namespace and repository methods", asy
   const repository = await binding.get("source");
   assert.deepEqual(Object.keys(binding), []);
   assert.deepEqual(Object.getOwnPropertySymbols(binding), []);
-  assert.deepEqual(Object.keys(repository).sort(), Object.keys(info).sort());
+  assert.deepEqual(Object.keys(repository), []);
   assert.deepEqual(Object.getOwnPropertySymbols(repository), []);
-  assert.equal(repository.remote, info.remote);
+  assert.deepEqual(await repository.info(), info);
+  assert.deepEqual(await repository.info(), info);
   assert.equal((await repository.createToken("read", 60)).scope, "read");
   assert.equal((await repository.listTokens()).total, 1);
   assert.equal(await repository.revokeToken("token-id"), true);
@@ -94,6 +94,8 @@ test("Artifacts facade exposes the pinned namespace and repository methods", asy
     calls.map(({ operation }) => operation),
     [
       "create",
+      "get",
+      "get",
       "get",
       "create-token",
       "list-tokens",
@@ -143,6 +145,31 @@ test("Artifacts calls keep the transport private under tenant prototype edits", 
     Reflect.get = originalGet;
     Array.isArray = originalIsArray;
   }
+});
+
+test("Artifacts repository info performs a fresh lookup and preserves deletion errors", async () => {
+  let current = { ...info };
+  const binding = new ArtifactsBinding({
+    async call(operation, input) {
+      assert.equal(operation, "get");
+      assert.deepEqual(input, { name: "source" });
+      if (current === null) throw new ArtifactError("NOT_FOUND", 10200);
+      return current;
+    },
+  });
+  const repository = await binding.get("source");
+  current = {
+    ...info,
+    description: "updated",
+    updatedAt: "2026-09-11T00:00:00Z",
+  };
+  assert.deepEqual(await repository.info(), current);
+  assert.equal(repository.description, undefined);
+  current = null;
+  await assert.rejects(repository.info(), {
+    name: "ArtifactsError",
+    code: "NOT_FOUND",
+  });
 });
 
 test("Artifacts facade preserves stable errors and rejects malformed success", async () => {
