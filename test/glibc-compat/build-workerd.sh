@@ -2,14 +2,28 @@
 set -euo pipefail
 
 root="$PWD"
-evidence="$root/.temp/glibc-compat/evidence"
+allocator="${1:-tcmalloc}"
+allocator_options=()
+case "$allocator" in
+  tcmalloc) evidence="$root/.temp/glibc-compat/evidence" ;;
+  system)
+    evidence="$root/.temp/glibc-compat-system-malloc/evidence"
+    allocator_options=(--//src/workerd/server:use_tcmalloc=false)
+    ;;
+  *) echo 'Unsupported diagnostic allocator selection' >&2; exit 2 ;;
+esac
 mkdir -p "$evidence"
+printf '%s\n' "$allocator" > "$evidence/allocator.txt"
+printf '%s\n' "${allocator_options[@]}" > "$evidence/allocator-bazel-option.txt"
+uname -sr > "$evidence/build-kernel.txt"
+sha256sum test/glibc-compat/Dockerfile > "$evidence/builder.sha256"
 test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.28'
 getconf GNU_LIBC_VERSION > "$evidence/build-glibc.txt"
 clang --version > "$evidence/clang.txt"
 bazel --version > "$evidence/bazel.txt"
 git config --global --add safe.directory "$root"
 git config --global --add safe.directory "$root/third_party/workerd"
+git rev-parse HEAD > "$evidence/producer-commit.txt"
 revision="$(python -c 'import json; print(json.load(open("packages/runtime/workerd.lock.json"))["revision"])')"
 test "$(git -C third_party/workerd rev-parse HEAD)" = "$revision"
 test -z "$(git -C third_party/workerd status --porcelain)"
@@ -29,6 +43,20 @@ build:linux --linkopt=--ld-path=/opt/llvm/bin/ld.lld
 build:linux --host_linkopt=--ld-path=/opt/llvm/bin/ld.lld
 CONFIG
 cp .local/bazelrc "$evidence/compat.bazelrc"
+if [ "$allocator" = system ]; then
+  bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel cquery \
+    'deps(//src/workerd/server:workerd)' --config=release_linux --strip=always \
+    --incompatible_enable_proto_toolchain_resolution=false \
+    --@rules_rust//:extra_exec_rustc_flags=-Cstrip=none \
+    "${allocator_options[@]}" --output=label > "$evidence/configured-dependencies.txt"
+  python - "$evidence/configured-dependencies.txt" <<'PYQUERY'
+from pathlib import Path
+import sys
+labels = [line.split()[0] for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+if any(label.partition('//')[2] == 'tcmalloc:tcmalloc' for label in labels):
+    raise SystemExit('System malloc diagnostic must not depend on the tcmalloc allocator target')
+PYQUERY
+fi
 bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel build \
   //src/workerd/server:workerd --config=release_linux --strip=always \
   --disk_cache=/var/tmp/open-compute-glibc228/action-cache \
@@ -36,10 +64,14 @@ bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel build \
   --experimental_disk_cache_gc_max_size=6G \
   --incompatible_enable_proto_toolchain_resolution=false \
   --@rules_rust//:extra_exec_rustc_flags=-Cstrip=none \
+  "${allocator_options[@]}" \
   --jobs=4 --local_resources=memory=10240 2>&1 | tee "$evidence/build.log"
 cp bazel-bin/src/workerd/server/workerd "$evidence/workerd"
 cd "$root"
 python test/glibc-compat/check-elf.py "$evidence/workerd" > "$evidence/elf.json"
+if [ "$allocator" = system ]; then
+  python test/glibc-compat/check-allocator.py "$evidence/workerd" > "$evidence/allocator-symbols.json"
+fi
 "$evidence/workerd" --version > "$evidence/version.txt"
 test "$(cat "$evidence/version.txt")" = 'workerd 2026-09-30'
 "$evidence/workerd" container-protocol-version > "$evidence/protocol.txt"

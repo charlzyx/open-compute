@@ -1,4 +1,5 @@
 """Run the rebuilt runtime and a real Worker in original CentOS 8.2 userspace."""
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -9,7 +10,10 @@ import uuid
 
 IMAGE = 'centos@sha256:fd84102fc72960dd1b8da0ee3b4c13e3b0c1d2a085de118bc4c97821cd986e02'
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / '.temp/glibc-compat/evidence'
+arguments = argparse.ArgumentParser()
+arguments.add_argument('--allocator', choices=['tcmalloc', 'system'], default='tcmalloc')
+allocator = arguments.parse_args().allocator
+EVIDENCE = ROOT / ('.temp/glibc-compat-system-malloc/evidence' if allocator == 'system' else '.temp/glibc-compat/evidence')
 
 
 def docker(*args, check=True):
@@ -23,6 +27,7 @@ def main():
                          'getconf', 'GNU_LIBC_VERSION').stdout.strip()
     if environment != 'glibc 2.28':
         raise AssertionError('CentOS smoke requires the exact glibc 2.28 baseline')
+    kernel = docker('run', '--rm', '--network', 'none', IMAGE, 'uname', '-sr').stdout.strip()
     binary = EVIDENCE / 'workerd'
     if binary.stat().st_mode & 0o111 == 0:
         raise AssertionError('The rebuilt workerd must be executable')
@@ -50,6 +55,7 @@ def main():
                     if response.status != 200 or body != b'glibc228-worker-ok':
                         raise AssertionError('CentOS Worker response did not match')
                     report = {'image': IMAGE, 'glibc': environment, 'workerd': version,
+                              'allocator': allocator, 'hostSharedKernel': kernel,
                               'httpStatus': response.status, 'response': body.decode(),
                               'passed': True}
                     (EVIDENCE / 'centos82-smoke.json').write_text(json.dumps(report, indent=2) + '\n')
