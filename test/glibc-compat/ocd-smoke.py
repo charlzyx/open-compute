@@ -19,11 +19,12 @@ def docker(*args, check=True):
                           timeout=120, check=check)
 
 
-def exercise(image):
+def exercise(image, volume):
     identity = docker('run', '--rm', '--network', 'none', image, 'sh', '-c',
                       'printf "%s\\n" "$(id -u)" "$(id -g)" "$HOME" "$(getent passwd "$(id -u)" | cut -d: -f6)" "$(stat -c %u "$HOME")" "$(stat -c %a "$HOME")"').stdout.splitlines()
     assert identity == ['10001', '10001', '/home/occompat', '/home/occompat', '10001', '700'], 'UID, passwd home and ownership must agree'
-    mounts = ['--mount', f'type=bind,source={BINARY},target=/ocd,readonly']
+    mounts = ['--mount', f'type=bind,source={BINARY},target=/ocd,readonly',
+              '--mount', f'type=volume,source={volume},target=/home/occompat/.open-compute']
     glibc = docker('run', '--rm', '--network', 'none', image, 'getconf', 'GNU_LIBC_VERSION').stdout.strip()
     assert glibc == 'glibc 2.28'
     version = docker('run', '--rm', '--network', 'none', *mounts, image, '/ocd', '--no-update-check', '--version').stdout.strip()
@@ -38,7 +39,10 @@ def exercise(image):
                           ('Status', 'Running', 'ExitCode', 'OOMKilled', 'Error')},
                 'ports': raw['NetworkSettings']['Ports'],
                 'configuredPorts': raw['HostConfig']['PortBindings'],
-                'configuredUser': raw['Config']['User']}
+                'configuredUser': raw['Config']['User'],
+                'tmpfs': raw['HostConfig'].get('Tmpfs'),
+                'mounts': [{'type': item['Type'], 'destination': item['Destination'],
+                            'name': item.get('Name'), 'rw': item['RW']} for item in raw['Mounts']]}
 
     def endpoint():
         deadline = time.monotonic() + 20
@@ -79,19 +83,36 @@ def exercise(image):
         assert value['success']
         return value['result']
 
-    def ready():
+    def ready(expected_instance=None):
         deadline = time.monotonic() + 90
+        last_instances = None
         while time.monotonic() < deadline:
             try:
                 with urllib.request.urlopen(base + '/health/ready', timeout=1) as response:
-                    if response.status == 200:
-                        return
+                    healthy = response.status == 200
+                if healthy and expected_instance is None:
+                    return
+                if healthy:
+                    req = urllib.request.Request(base + '/operator/api/instances', headers={
+                        'Host': 'localhost:8787', 'Authorization': 'Bearer ' + token})
+                    with urllib.request.urlopen(req, timeout=2) as response:
+                        last_instances = json.loads(response.read())['instances']
+                    matching = [entry for entry in last_instances if entry['instance_id'] == expected_instance]
+                    if len(matching) == 1:
+                        if matching[0]['state'] == 'failed':
+                            raise AssertionError('Restored instance failed admission: ' + json.dumps(matching[0]))
+                        if matching[0]['state'] == 'running':
+                            return
             except (OSError, urllib.error.URLError):
                 pass
-            if docker('inspect', '--format', '{{.State.Running}}', name).stdout.strip() != 'true':
-                raise AssertionError('CentOS daemon exited before readiness')
+            if not state()['state']['Running']:
+                raise AssertionError('CentOS daemon exited before instance readiness')
             time.sleep(0.2)
-        raise AssertionError('CentOS daemon readiness deadline expired')
+        raise AssertionError('CentOS instance readiness deadline expired: ' + json.dumps(last_instances))
+
+    def persisted_identity():
+        return docker('exec', name, 'sh', '-c',
+                      'sha256sum "$HOME/.open-compute/ocd.toml" "$HOME/.open-compute/keys/admin.token" "$HOME/.open-compute/instances/compat/compute.toml"').stdout
 
     bootstrap = '''set -eu
 umask 077
@@ -111,6 +132,9 @@ exec /ocd --no-update-check run
                '--security-opt=no-new-privileges', '--publish', '127.0.0.1::8787',
                *mounts, image, 'sh', '-c', bootstrap)
         base = endpoint()
+        mounted = state()
+        assert any(item['type'] == 'volume' and item['name'] == volume and item['destination'] == '/home/occompat/.open-compute' and item['rw'] for item in mounted['mounts'])
+        assert not mounted['tmpfs'], 'Persistent smoke authority must not use tmpfs'
         ready()
         docker('exec', name, '/ocd', '--no-update-check', 'instance', 'setup', '--yes', '--name', 'compat')
         token = docker('exec', name, 'cat', '/home/occompat/.open-compute/keys/admin.token').stdout.strip()
@@ -137,9 +161,12 @@ exec /ocd --no-update-check run
         # while the TCP connection uses Docker's explicit published endpoint.
         worker_host = f'centos82-worker.{account}.localhost'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
+        before_restart = persisted_identity()
+        print('Real Worker KV response verified before daemon restart', flush=True)
         docker('restart', '--time', '20', name)
         base = endpoint()
-        ready()
+        assert persisted_identity() == before_restart, 'Persistent configuration or credentials changed across restart'
+        ready(account)
         assert request(value_path) == b'ocd-centos82-worker-ok'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         # This bare OS fixture mounts no Docker socket and installs no runtime libraries.
@@ -150,6 +177,8 @@ exec /ocd --no-update-check run
                   'sha256': hashlib.sha256(BINARY.read_bytes()).hexdigest(),
                   'controlHost': 'localhost:8787', 'workerHost': worker_host,
                   'httpStatus': 200, 'response': 'ocd-centos82-worker-ok',
+                  'storageMountType': 'volume', 'persistentIdentityUnchanged': True,
+                  'restoredInstanceRunning': True,
                   'kvSurvivedDaemonRestart': True, 'workerSurvivedDaemonRestart': True,
                   'dockerRequiredByDaemon': False, 'passed': True}
         (EVIDENCE / 'centos82-ocd-smoke.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -173,9 +202,12 @@ exec /ocd --no-update-check run
 def main():
     image = 'ocd-centos82-smoke:' + uuid.uuid4().hex
     docker('build', '--tag', image, '--file', str(ROOT / 'test/glibc-compat/Dockerfile.smoke'), str(ROOT / 'test/glibc-compat'))
+    volume = 'ocd-centos82-data-' + uuid.uuid4().hex
+    docker('volume', 'create', volume)
     try:
-        exercise(image)
+        exercise(image, volume)
     finally:
+        docker('volume', 'rm', volume, check=False)
         docker('image', 'rm', image, check=False)
 
 
