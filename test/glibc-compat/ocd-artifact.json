@@ -1,8 +1,8 @@
 {
   "repository": "charlzyx/open-compute",
-  "runId": 39304268154,
-  "artifactId": 12214277150,
-  "producerCommit": "2ea9a7680ea790b861988b69e2242ca91304ea65",
-  "binarySha256": "f0cf30ac1f3bbf6965a5dee3765e610916c01b694f05f3a54cc3cfff916665bd",
-  "workerdLockSha256": "7913ea7bbcc89d95ccb3487be7448da382b86e5cf2c2f187e5c7a23a2421c0ab"
+  "runId": 39329694466,
+  "artifactId": 12224902329,
+  "producerCommit": "71f0d18f7c6c08af352fb8e13ec87f4a7002d8a9",
+  "binarySha256": "c13adf4c5ea8542a75477812aa70e83177b6b19a71d4ea6de7e0d3fd3cdc8c43",
+  "workerdLockSha256": "d11663cfced71205406b6fead031021c3db0818b898c0d7e0a8eae2faacdf924"
 }

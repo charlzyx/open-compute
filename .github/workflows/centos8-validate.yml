@@ -1,5 +1,7 @@
 name: CentOS 8 exact artifact validation
 on:
+  push:
+    branches: [centos8-compat]
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,13 +21,13 @@ jobs:
         run: |
           git submodule update --init --depth 1 third_party/workerd third_party/gitserver
           test -f third_party/gitserver/crates/gitserver-core/Cargo.toml
-          git fetch --depth 1 origin 2ea9a7680ea790b861988b69e2242ca91304ea65
+          git fetch --depth 1 origin 71f0d18f7c6c08af352fb8e13ec87f4a7002d8a9
       - name: Download the exact compiled ocd evidence
         uses: actions/download-artifact@v8
         with:
           github-token: ${{ github.token }}
-          run-id: 39304268154
-          artifact-ids: 12214277150
+          run-id: 39329694466
+          artifact-ids: 12224902329
           path: .temp/glibc-ocd/source-evidence
       - name: Verify binary hash, producer identity and unchanged production inputs
         env:
@@ -34,8 +36,8 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           github-token: ${{ github.token }}
-          run-id: 39282764991
-          artifact-ids: 12205507774
+          run-id: 39314473182
+          artifact-ids: 12221724724
           path: .temp/glibc-ocd/workerd
       - name: Verify the exact compatible workerd input
         env:
