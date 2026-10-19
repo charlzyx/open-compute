@@ -29,8 +29,11 @@ build:linux --linkopt=--ld-path=/opt/llvm/bin/ld.lld
 build:linux --host_linkopt=--ld-path=/opt/llvm/bin/ld.lld
 CONFIG
 cp .local/bazelrc "$evidence/compat.bazelrc"
-bazel --output_user_root="$root/.temp/glibc-compat/bazel" build \
+bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel build \
   //src/workerd/server:workerd --config=release_linux --strip=always \
+  --disk_cache=/var/tmp/open-compute-glibc228/action-cache \
+  --repository_cache=/var/tmp/open-compute-glibc228/repository-cache \
+  --experimental_disk_cache_gc_max_size=6G \
   --incompatible_enable_proto_toolchain_resolution=false \
   --@rules_rust//:extra_exec_rustc_flags=-Cstrip=none \
   --jobs=4 --local_resources=memory=10240 2>&1 | tee "$evidence/build.log"
