@@ -395,7 +395,7 @@ impl WorkersTypesPin {
 }
 
 impl RuntimeSourcePin {
-    fn compatibility_artifact_url(&self) -> Result<Option<String>, PlatformError> {
+    pub(super) fn compatibility_artifact_url(&self) -> Result<Option<String>, PlatformError> {
         let Some(profile) = self.build_inputs.get("compatibilityProfile") else {
             return Ok(None);
         };
