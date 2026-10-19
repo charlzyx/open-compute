@@ -19,12 +19,14 @@ def docker(*args, check=True):
                           timeout=120, check=check)
 
 
-def main():
-    docker('pull', IMAGE)
+def exercise(image):
+    identity = docker('run', '--rm', '--network', 'none', image, 'sh', '-c',
+                      'printf "%s\\n" "$(id -u)" "$(id -g)" "$HOME" "$(getent passwd "$(id -u)" | cut -d: -f6)" "$(stat -c %u "$HOME")" "$(stat -c %a "$HOME")"').stdout.splitlines()
+    assert identity == ['10001', '10001', '/home/occompat', '/home/occompat', '10001', '700'], 'UID, passwd home and ownership must agree'
     mounts = ['--mount', f'type=bind,source={BINARY},target=/ocd,readonly']
-    glibc = docker('run', '--rm', '--network', 'none', IMAGE, 'getconf', 'GNU_LIBC_VERSION').stdout.strip()
+    glibc = docker('run', '--rm', '--network', 'none', image, 'getconf', 'GNU_LIBC_VERSION').stdout.strip()
     assert glibc == 'glibc 2.28'
-    version = docker('run', '--rm', '--network', 'none', *mounts, IMAGE, '/ocd', '--no-update-check', '--version').stdout.strip()
+    version = docker('run', '--rm', '--network', 'none', *mounts, image, '/ocd', '--no-update-check', '--version').stdout.strip()
     name = 'ocd-centos82-' + uuid.uuid4().hex
     token = ''
     base = ''
@@ -35,7 +37,8 @@ def main():
         return {'state': {key: raw['State'][key] for key in
                           ('Status', 'Running', 'ExitCode', 'OOMKilled', 'Error')},
                 'ports': raw['NetworkSettings']['Ports'],
-                'configuredPorts': raw['HostConfig']['PortBindings']}
+                'configuredPorts': raw['HostConfig']['PortBindings'],
+                'configuredUser': raw['Config']['User']}
 
     def endpoint():
         deadline = time.monotonic() + 20
@@ -84,23 +87,25 @@ def main():
 
     bootstrap = '''set -eu
 umask 077
-# CentOS ships /root without owner write; no DAC override is retained.
-chmod 0700 /root
-if [ ! -e /root/.open-compute/ocd.toml ]; then
-  mkdir -p /root/.open-compute/keys
-  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n' > /root/.open-compute/keys/admin.token
-  printf '[server]\\npublic_bind = "0.0.0.0:8787"\\nadmin_auth = { file = "./keys/admin.token" }\\n' > /root/.open-compute/ocd.toml
+test "$(id -u)" = 10001
+test "$HOME" = /home/occompat
+if [ ! -e "$HOME/.open-compute/ocd.toml" ]; then
+  mkdir -p "$HOME/.open-compute/keys"
+  head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \\n' > "$HOME/.open-compute/keys/admin.token"
+  printf '[server]\\npublic_bind = "0.0.0.0:8787"\\nadmin_auth = { file = "./keys/admin.token" }\\n' > "$HOME/.open-compute/ocd.toml"
 fi
+test "$(stat -c %u "$HOME/.open-compute")" = "$(id -u)"
+test "$(stat -c %a "$HOME/.open-compute")" = 700
 exec /ocd --no-update-check run
 '''
     try:
         docker('run', '--detach', '--name', name, '--cap-drop=ALL',
                '--security-opt=no-new-privileges', '--publish', '127.0.0.1::8787',
-               *mounts, IMAGE, 'sh', '-c', bootstrap)
+               *mounts, image, 'sh', '-c', bootstrap)
         base = endpoint()
         ready()
         docker('exec', name, '/ocd', '--no-update-check', 'instance', 'setup', '--yes', '--name', 'compat')
-        token = docker('exec', name, 'cat', '/root/.open-compute/keys/admin.token').stdout.strip()
+        token = docker('exec', name, 'cat', '/home/occompat/.open-compute/keys/admin.token').stdout.strip()
         accounts = request('/client/v4/accounts')
         assert len(accounts) == 1
         account = accounts[0]['id']
@@ -126,7 +131,9 @@ exec /ocd --no-update-check run
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         # This bare OS fixture mounts no Docker socket and installs no runtime libraries.
         docker('exec', name, 'sh', '-c', '! command -v docker; test ! -e /var/run/docker.sock')
-        report = {'image': IMAGE, 'glibc': glibc, 'ocd': version,
+        report = {'baseImage': IMAGE, 'image': docker('image', 'inspect', '--format', '{{.Id}}', image).stdout.strip(),
+                  'uid': int(identity[0]), 'home': identity[2], 'ocdDir': identity[2] + '/.open-compute',
+                  'glibc': glibc, 'ocd': version,
                   'sha256': hashlib.sha256(BINARY.read_bytes()).hexdigest(),
                   'httpStatus': 200, 'response': 'ocd-centos82-worker-ok',
                   'kvSurvivedDaemonRestart': True, 'workerSurvivedDaemonRestart': True,
@@ -147,6 +154,15 @@ exec /ocd --no-update-check run
             if not passed and sanitized:
                 print('CentOS daemon ' + suffix + ':\n' + sanitized[-8000:], flush=True)
         docker('rm', '--force', name, check=False)
+
+
+def main():
+    image = 'ocd-centos82-smoke:' + uuid.uuid4().hex
+    docker('build', '--tag', image, '--file', str(ROOT / 'test/glibc-compat/Dockerfile.smoke'), str(ROOT / 'test/glibc-compat'))
+    try:
+        exercise(image)
+    finally:
+        docker('image', 'rm', image, check=False)
 
 
 if __name__ == '__main__':

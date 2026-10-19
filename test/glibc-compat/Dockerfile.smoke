@@ -1,0 +1,13 @@
+FROM centos@sha256:fd84102fc72960dd1b8da0ee3b4c13e3b0c1d2a085de118bc4c97821cd986e02
+# Only add a disposable operator identity; retain the original system libraries.
+RUN test -z "$(getent passwd 10001)" \
+    && test -z "$(getent passwd occompat)" \
+    && test -z "$(getent group 10001)" \
+    && printf 'occompat:x:10001:\n' >> /etc/group \
+    && printf 'occompat:x:10001:10001:Compatibility fixture:/home/occompat:/bin/sh\n' >> /etc/passwd \
+    && mkdir -p /home/occompat \
+    && chown 10001:10001 /home/occompat \
+    && chmod 0700 /home/occompat
+ENV HOME=/home/occompat
+USER 10001:10001
+WORKDIR /home/occompat
