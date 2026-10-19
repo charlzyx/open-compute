@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "release": "v1.20260930.0-open-compute-r21.204a75bcf-glibc228",
+  "release": "v1.20260930.0-open-compute-r21.204a75bcf-system-malloc-glibc228",
   "revision": "204a75bcfcc35fdf15756bef03eea867711847a6",
   "expectedVersionOutput": "workerd 2026-09-30",
   "systemCompatibilityDate": "2026-09-08",
@@ -35,9 +35,9 @@
   "targets": {
     "linux-x64": {
       "archiveName": "workerd-linux-64.gz",
-      "archiveSha256": "b416cfa1af24373c7d13d8b90120883ea8483920bf1a610623da08aef449dff5",
-      "binarySha256": "b6ee7279096c93f51eff9c36ab142d6c6520d8e424b4b4a3f2ea35b10bb31ca4",
-      "archiveUrl": "https://github.com/charlzyx/open-compute/actions/runs/39282764991/artifacts/12205507774"
+      "archiveSha256": "2e1f60b7d3f7f9d6d1478d020f474964639a397619289f8e2c4ab5d791582d54",
+      "binarySha256": "7d40899af4e5a8ee1c6f959bba489c0a0ee087b00dce3758883ee7af7ab3d290",
+      "archiveUrl": "https://github.com/charlzyx/open-compute/actions/runs/39314473182/artifacts/12221724724"
     }
   },
   "source": {
@@ -50,14 +50,16 @@
       "strip": "always",
       "macosExecRustStrip": "none",
       "compatibilityProfile": "linux-x64-glibc228",
-      "compatibilityWorkflowRun": "https://github.com/charlzyx/open-compute/actions/runs/39282764991",
-      "compatibilityArtifactId": "12205507774",
-      "compatibilityProducerCommit": "0e4472c5bb705395c0465f2e3f20f691d62e6d37",
+      "compatibilityWorkflowRun": "https://github.com/charlzyx/open-compute/actions/runs/39314473182",
+      "compatibilityArtifactId": "12221724724",
+      "compatibilityProducerCommit": "33c89c92a5b7e5980b9602b149e356a1244839e8",
       "compatibilityBuilderSha256": "ea17bd7a18f69cfb15bb1b169f310958b2f25f0d6efe5b233879d14438f9f21d",
       "compiler": "LLVM 22.1.8 kernel.org Debian 10 build",
       "libc": "glibc 2.28",
       "cxxRuntime": "static libc++/libc++abi/libunwind 22.1.8",
       "linuxConfig": "release_linux",
+      "allocator": "system",
+      "allocatorBazelOption": "--//src/workerd/server:use_tcmalloc=false",
       "privateContainerProtocol": "open-compute-container-protocol-v3",
       "archive": "GNU gzip -9n -c",
       "qualification": "CentOS 8.2 userspace: exact version, ELF ABI, real Worker HTTP 200; modern runner kernel",

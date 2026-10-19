@@ -1,7 +1,5 @@
 name: CentOS 8 exact artifact validation
 on:
-  push:
-    branches: [centos8-compat]
   workflow_dispatch:
 permissions:
   contents: read
