@@ -31,6 +31,15 @@ set +a
 python test/glibc-compat/check-elf.py "$OPEN_COMPUTE_TEST_WORKERD" > "$evidence/workerd-elf.json"
 python test/glibc-compat/check-elf.py "$OPEN_COMPUTE_BUILD_CADDY" > "$evidence/caddy-elf.json"
 node --test --test-name-pattern='compatibility build profile' test/release-tools.test.mjs
+# cf delegates this fixture to npx; run the same locked Vite directly so a
+# native/tooling failure retains its complete output instead of a wrapper exit.
+node --version
+npm --version
+npx --version
+(
+  cd test/applications/postgres-driver
+  npx --no-install vite build --mode production
+) 2>&1 | tee "$evidence/postgres-vite.log"
 ./scripts/package-release.sh --dest "$evidence/ocd-linux-x64-glibc228" \
   --archive "$OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE" | tee "$evidence/package.json"
 python test/glibc-compat/check-elf.py "$evidence/ocd-linux-x64-glibc228" > "$evidence/ocd-elf.json"
