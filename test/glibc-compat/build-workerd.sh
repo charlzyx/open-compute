@@ -19,6 +19,8 @@ mkdir -p .local
 cat > .local/bazelrc <<'CONFIG'
 build:linux --repo_env=CC=/opt/llvm/bin/clang
 build:linux --repo_env=AR=/opt/llvm/bin/llvm-ar
+build:linux --copt=--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr
+build:linux --host_copt=--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr
 build:linux --cxxopt=-isystem/opt/llvm/include/c++/v1
 build:linux --host_cxxopt=-isystem/opt/llvm/include/c++/v1
 build:linux --linkopt=-L/opt/llvm/lib

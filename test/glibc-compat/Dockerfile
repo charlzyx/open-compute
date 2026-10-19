@@ -15,6 +15,8 @@ RUN mkdir -p /opt/llvm /build \
     && tar -xJf /build/llvm.tar.xz -C /build \
     && cmake -G Ninja -S /build/llvm-project-22.1.8.src/runtimes -B /build/runtimes \
          -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+         -DCMAKE_C_FLAGS=--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr \
+         -DCMAKE_CXX_FLAGS=--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr \
          -DCMAKE_INSTALL_PREFIX=/opt/llvm -DCMAKE_INSTALL_LIBDIR=lib \
          -DLLVM_ENABLE_PER_TARGET_RUNTIME_DIR=OFF \
          '-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi;libunwind' \
