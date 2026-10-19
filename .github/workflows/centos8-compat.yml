@@ -1,0 +1,49 @@
+name: CentOS 8 compatibility experiment
+
+on:
+  push:
+    branches: [centos8-compat]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: centos8-compat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  workerd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Initialize the exact pinned workerd source
+        run: git submodule update --init --depth 1 third_party/workerd
+      - name: Inspect available build storage
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          docker system df -v
+      - name: Build LLVM and static C++ runtimes on glibc 2.28
+        run: docker build --progress plain -t workerd-glibc228 -f test/glibc-compat/Dockerfile test/glibc-compat
+      - name: Rebuild the pinned workerd and exercise a real Worker
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace" \
+            --workdir /workspace \
+            workerd-glibc228 bash test/glibc-compat/build-workerd.sh
+      - name: Record remaining build storage
+        if: always()
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          docker system df -v
+          sudo du -sh .temp/glibc-compat || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workerd-linux-x64-glibc228-experiment
+          path: .temp/glibc-compat/evidence/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
