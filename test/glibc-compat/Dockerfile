@@ -1,7 +1,7 @@
 FROM quay.io/pypa/manylinux_2_28_x86_64@sha256:1e7b8460ad8fb3fb0fbe1cd818845159ac896b4fd17452d56e892c291f3b97a8
 
 ENV PATH=/opt/python/cp313-cp313/bin:/opt/llvm/bin:$PATH
-RUN dnf install -y git tar gzip xz unzip zip patch libxml2 libicu libzstd zlib-devel libatomic-devel which \
+RUN dnf install -y git tar gzip xz unzip zip patch libxml2 libicu libzstd zlib-devel which \
     && dnf clean all \
     && python -m pip install --no-cache-dir cmake==3.31.6 ninja==1.12.1 pyelftools==0.33
 
