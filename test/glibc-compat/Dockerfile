@@ -3,7 +3,7 @@ FROM quay.io/pypa/manylinux_2_28_x86_64@sha256:1e7b8460ad8fb3fb0fbe1cd818845159a
 ENV PATH=/opt/python/cp313-cp313/bin:/opt/llvm/bin:$PATH
 RUN dnf install -y git tar gzip xz unzip zip patch libxml2 libicu libzstd zlib-devel which \
     && dnf clean all \
-    && python -m pip install --no-cache-dir cmake==3.31.6 ninja==1.12.1 pyelftools==0.33
+    && python -m pip install --no-cache-dir cmake==3.31.6 ninja==1.13.0 pyelftools==0.33
 
 RUN mkdir -p /opt/llvm /build \
     && curl -fL https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-22.1.8-x86_64.tar.xz -o /build/clang.tar.xz \
