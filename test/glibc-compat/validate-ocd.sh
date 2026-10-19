@@ -4,6 +4,8 @@ root="$PWD"
 evidence="$root/.temp/glibc-ocd/evidence"
 git config --global --add safe.directory "$root"
 git config --global --add safe.directory "$root/third_party/workerd"
+git config --global --add safe.directory "$root/third_party/gitserver"
+test -f third_party/gitserver/crates/gitserver-core/Cargo.toml
 export OPEN_COMPUTE_BUILD_PROFILE=linux-x64-glibc228
 export CARGO_TARGET_DIR="$root/.temp/glibc-ocd/target" CARGO_BUILD_JOBS=4
 export MBX_BUILD_SCRIPT_EXECUTION=0 MBX_TARGET_VIEWS=0 MBX_RESTORE_HARDLINK=0 MBX_GC_AUTO=false
