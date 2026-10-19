@@ -133,7 +133,9 @@ exec /ocd --no-update-check run
                 f'--{boundary}\r\nContent-Disposition: form-data; name="index.js"; filename="index.js"\r\n'
                 f'Content-Type: application/javascript+module\r\n\r\n{source}\r\n--{boundary}--\r\n').encode()
         request(prefix + '/workers/scripts/centos82-worker', 'PUT', body, 'multipart/form-data; boundary=' + boundary)
-        worker_host = f'centos82-worker.{account}.localhost:8787'
+        # Local-origin Host follows the installed-product API; omit the port
+        # while the TCP connection uses Docker's explicit published endpoint.
+        worker_host = f'centos82-worker.{account}.localhost'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         docker('restart', '--time', '20', name)
         base = endpoint()
