@@ -61,6 +61,35 @@ const cargoConfigPath = fileURLToPath(
   new URL("../.cargo/config.toml", import.meta.url),
 );
 
+test("failed build commands retain both output streams and their exit status", async () => {
+  const archiveModule = new URL(
+    "../scripts/workerd-archive.ts",
+    import.meta.url,
+  ).href;
+  const invoke = (source) =>
+    execFileAsync(process.execPath, [
+      "--input-type=module",
+      "--eval",
+      `import { command } from ${JSON.stringify(archiveModule)};
+     process.stdout.write(command(process.execPath, ["--eval", ${JSON.stringify(source)}]));`,
+    ]);
+  const successful = await invoke('process.stdout.write("report");');
+  assert.equal(successful.stdout, "report");
+  assert.equal(successful.stderr, "");
+  await assert.rejects(
+    invoke(
+      'process.stdout.write("build details\\n"); process.stderr.write("build error\\n"); process.exit(7);',
+    ),
+    (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /build details/);
+      assert.match(error.stderr, /build error/);
+      assert.match(error.stderr, /failed \(exit 7\)/);
+      return true;
+    },
+  );
+});
+
 async function writeTestCommand(directory, name, source) {
   await writeFile(join(directory, name), source, { mode: 0o755 });
 }

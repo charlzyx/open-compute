@@ -16,6 +16,23 @@ def job(source, name):
 
 
 class ImageWorkflowTests(unittest.TestCase):
+    def test_fork_packages_wait_for_both_native_image_artifacts(self):
+        source = (ROOT / '.github/workflows/fork-ocd-artifacts.yml').read_text()
+        producer = job(source, 'fixture-images')
+        self.assertIn('uses: ./.github/workflows/container-images.yml', producer)
+        self.assertNotIn('arm64: false', producer)
+        body = job(source, 'package')
+        self.assertRegex(body, r'needs: [^\n]*fixture-images')
+        self.assertEqual(body.count(PREPARE), 1)
+        self.assertLess(body.index('uses: ./.github/actions/setup-open-compute'),
+                        body.index(PREPARE))
+        self.assertLess(body.index(PREPARE), body.index('./scripts/package-release.sh'))
+        for target in ('linux-x64', 'linux-arm64', 'darwin-arm64'):
+            self.assertIn('target: ' + target, body)
+        self.assertNotIn('setup-container-fixture-engine', body)
+        self.assertNotIn('with-ci-broker.py', body)
+        self.assertNotIn('with-ci-macos-engine.py', body)
+
     def test_each_build_consumer_waits_for_current_run_images(self):
         for workflow, names in [('ci.yml', ('checks', 'ai-search-qualification',
                                             's3-provider-qualification')),

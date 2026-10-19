@@ -228,7 +228,10 @@ export function command(
   });
   process.stderr.write(result.stderr ?? "");
   if (result.error || result.status !== 0) {
-    throw new Error(`${program} failed`);
+    process.stderr.write(result.stdout ?? "");
+    throw new Error(`${program} failed (exit ${result.status ?? "unknown"})`, {
+      cause: result.error,
+    });
   }
   return result.stdout;
 }

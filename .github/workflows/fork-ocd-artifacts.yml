@@ -14,8 +14,12 @@ permissions:
   contents: read
 
 jobs:
+  fixture-images:
+    uses: ./.github/workflows/container-images.yml
+
   package:
     name: package (${{ matrix.target }})
+    needs: fixture-images
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +36,7 @@ jobs:
         with:
           lfs: true
       - uses: ./.github/actions/setup-open-compute
+      - uses: ./.github/actions/prepare-container-fixture-images
       - name: Package the native ocd executable
         shell: bash
         env:
