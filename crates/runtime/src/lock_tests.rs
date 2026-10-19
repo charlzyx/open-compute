@@ -69,11 +69,7 @@ fn private_lock_helpers_cover_unavailable_target_and_visitor_contracts() {
     };
     assert_eq!(
         target
-            .validate(
-                "https://github.com/elliothux/workerd",
-                "v1.20260830.1",
-                "unknown-target"
-            )
+            .validate(&lock.source, "v1.20260830.1", "unknown-target")
             .unwrap_err()
             .code(),
         ErrorCode::RuntimeInvalid

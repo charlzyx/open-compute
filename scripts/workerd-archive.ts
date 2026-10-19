@@ -38,13 +38,21 @@ function string(value: unknown): string {
   return value;
 }
 
-async function formalLock(): Promise<{
+async function formalLock(target = hostTarget()): Promise<{
   bytes: Buffer;
   lock: Record<string, unknown>;
 }> {
-  const bytes = await readFile(
-    join(repository, "packages/runtime/workerd.lock.json"),
-  );
+  const profile = process.env.OPEN_COMPUTE_BUILD_PROFILE;
+  if (
+    profile !== undefined &&
+    (profile !== "linux-x64-glibc228" || hostTarget() !== "linux-x64")
+  )
+    throw new Error("unsupported workerd build profile for this host");
+  const name =
+    profile && target === "linux-x64"
+      ? "workerd-glibc228.lock.json"
+      : "workerd.lock.json";
+  const bytes = await readFile(join(repository, "packages/runtime", name));
   return {
     bytes,
     lock: record(JSON.parse(bytes.toString("utf8")) as unknown),
@@ -57,12 +65,13 @@ export async function loadPin(target = hostTarget()) {
   ) {
     throw new Error("unsupported workerd target");
   }
-  const { bytes, lock } = await formalLock();
+  const { bytes, lock } = await formalLock(target);
   const entry = record(record(lock.targets)[target]);
   const source = record(lock.source);
   const sourceRepository = string(source.repository);
   const upstreamBase = string(source.upstreamBase);
   const buildInputs = record(source.buildInputs);
+  const compatibilityUrl = compatibilityArtifactUrl(buildInputs);
   for (const name of ["bazel", "target", "mode", "strip", "macosExecRustStrip"])
     string(buildInputs[name]);
   if (
@@ -98,7 +107,12 @@ export async function loadPin(target = hostTarget()) {
     !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(release) ||
     archiveName !== expectedName ||
     archiveUrl !==
-      `${sourceRepository}/releases/download/${release}/${archiveName}` ||
+      (compatibilityUrl ??
+        `${sourceRepository}/releases/download/${release}/${archiveName}`) ||
+    (compatibilityUrl !== undefined &&
+      (target !== "linux-x64" ||
+        !release.endsWith("-glibc228") ||
+        Object.keys(record(lock.targets)).length !== 1)) ||
     !/^[a-f0-9]{64}$/.test(archiveSha256) ||
     !/^[a-f0-9]{64}$/.test(binarySha256)
   ) {
@@ -124,6 +138,7 @@ export async function loadPin(target = hostTarget()) {
     release,
     archiveName,
     archiveUrl,
+    compatibilityProfile: compatibilityUrl !== undefined,
     archiveSha256,
     binarySha256,
     expectedVersion,
@@ -132,6 +147,25 @@ export async function loadPin(target = hostTarget()) {
     catalogSha256,
     lockSha256: sha256(bytes),
   };
+}
+
+function compatibilityArtifactUrl(
+  inputs: Record<string, unknown>,
+): string | undefined {
+  if (inputs.compatibilityProfile === undefined) return undefined;
+  const run = string(inputs.compatibilityWorkflowRun);
+  const artifact = string(inputs.compatibilityArtifactId);
+  if (
+    inputs.compatibilityProfile !== "linux-x64-glibc228" ||
+    !/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/actions\/runs\/[1-9][0-9]*$/.test(
+      run,
+    ) ||
+    !/^[1-9][0-9]*$/.test(artifact) ||
+    !/^[a-f0-9]{64}$/.test(string(inputs.compatibilityBuilderSha256)) ||
+    !/^[a-f0-9]{40}$/.test(string(inputs.compatibilityProducerCommit))
+  )
+    throw new Error("invalid compatibility workerd build provenance");
+  return `${run}/artifacts/${artifact}`;
 }
 
 export async function loadPyodidePin() {
@@ -271,6 +305,10 @@ export async function prepareWorkerd(
       throw new Error("archive exceeds the size bound");
     archive = await readFile(archivePath);
   } else if (download) {
+    if (pin.compatibilityProfile)
+      throw new Error(
+        "compatibility builds require an explicitly downloaded workflow artifact archive",
+      );
     // The only runtime download path is this explicitly requested build-time operation.
     archive = await downloadBounded(
       pin.archiveUrl,

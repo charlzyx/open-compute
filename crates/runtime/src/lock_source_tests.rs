@@ -66,3 +66,75 @@ fn lock_source_provenance_and_independent_types_are_validated() {
     good.as_object_mut().unwrap().remove("source");
     assert!(RuntimeLock::parse(&serde_json::to_vec(&good).unwrap()).is_err());
 }
+
+#[test]
+fn compatibility_artifact_provenance_is_verified_without_weakening_release_pins() {
+    let bytes = include_bytes!("../../../packages/runtime/workerd-glibc228.lock.json");
+    let good: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    let parsed = RuntimeLock::parse(bytes).unwrap();
+    assert_eq!(parsed.targets.len(), 1);
+    assert_eq!(
+        parsed.source.compatibility_artifact_url().unwrap().unwrap(),
+        parsed.targets["linux-x64"].archive_url
+    );
+    for (pointer, invalid) in [
+        ("/source/buildInputs/compatibilityProfile", "unknown"),
+        (
+            "/source/buildInputs/compatibilityWorkflowRun",
+            "http://github.com/owner/repo/actions/runs/1",
+        ),
+        (
+            "/source/buildInputs/compatibilityWorkflowRun",
+            "https://example.com/owner/repo/actions/runs/1",
+        ),
+        (
+            "/source/buildInputs/compatibilityWorkflowRun",
+            "https://github.com/owner/repo/actions/runs/1?token=secret",
+        ),
+        (
+            "/source/buildInputs/compatibilityWorkflowRun",
+            "https://github.com/owner/repo/actions/runs/0",
+        ),
+        ("/source/buildInputs/compatibilityArtifactId", "0"),
+        ("/source/buildInputs/compatibilityArtifactId", "../other"),
+        ("/source/buildInputs/compatibilityBuilderSha256", "invalid"),
+        ("/source/buildInputs/compatibilityProducerCommit", "invalid"),
+        (
+            "/targets/linux-x64/archiveUrl",
+            "https://github.com/owner/repo/actions/runs/1/artifacts/2",
+        ),
+        ("/release", "unqualified-release"),
+    ] {
+        let mut value = good.clone();
+        *value.pointer_mut(pointer).unwrap() = serde_json::json!(invalid);
+        assert!(
+            RuntimeLock::parse(&serde_json::to_vec(&value).unwrap()).is_err(),
+            "{pointer}"
+        );
+    }
+    for key in [
+        "compatibilityWorkflowRun",
+        "compatibilityArtifactId",
+        "compatibilityBuilderSha256",
+        "compatibilityProducerCommit",
+    ] {
+        let mut value = good.clone();
+        value["source"]["buildInputs"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(
+            RuntimeLock::parse(&serde_json::to_vec(&value).unwrap()).is_err(),
+            "{key}"
+        );
+    }
+    let mut multiple = good.clone();
+    multiple["targets"]["linux-arm64"] = multiple["targets"]["linux-x64"].clone();
+    assert!(RuntimeLock::parse(&serde_json::to_vec(&multiple).unwrap()).is_err());
+    let mut unsigned = good.clone();
+    unsigned["source"]["buildInputs"]
+        .as_object_mut()
+        .unwrap()
+        .remove("compatibilityProfile");
+    assert!(RuntimeLock::parse(&serde_json::to_vec(&unsigned).unwrap()).is_err());
+}

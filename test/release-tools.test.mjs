@@ -1030,3 +1030,67 @@ test("installation qualification is a mandatory publication dependency", async (
     },
   );
 });
+
+test("compatibility build profile preserves the default pin and requires a verified artifact", async () => {
+  const module = new URL("../scripts/workerd-archive.ts", import.meta.url).href;
+  const invoke = (profile, source) =>
+    execFileAsync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import {loadPin, prepareWorkerd} from ${JSON.stringify(module)}; ${source}`,
+      ],
+      { env: { ...process.env, OPEN_COMPUTE_BUILD_PROFILE: profile } },
+    );
+  await assert.rejects(
+    invoke("unknown", "await loadPin();"),
+    /unsupported workerd build profile/,
+  );
+  const original = JSON.parse(
+    (
+      await invoke(
+        undefined,
+        'console.log(JSON.stringify(await loadPin("linux-x64")));',
+      )
+    ).stdout,
+  );
+  assert.equal(original.compatibilityProfile, false);
+  if (hostTarget() !== "linux-x64") {
+    await assert.rejects(
+      invoke("linux-x64-glibc228", "await loadPin();"),
+      /unsupported workerd build profile/,
+    );
+    return;
+  }
+  const selected = await invoke(
+    "linux-x64-glibc228",
+    "console.log(JSON.stringify(await loadPin()));",
+  );
+  const pin = JSON.parse(selected.stdout);
+  const tracked = JSON.parse(
+    await readFile(
+      new URL(
+        "../packages/runtime/workerd-glibc228.lock.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(pin.compatibilityProfile, true);
+  assert.equal(pin.binarySha256, tracked.targets["linux-x64"].binarySha256);
+  assert.equal(pin.catalogSha256, original.catalogSha256);
+  assert.notEqual(pin.lockSha256, original.lockSha256);
+  await assert.rejects(
+    invoke(
+      "linux-x64-glibc228",
+      'await prepareWorkerd("/tmp", undefined, true);',
+    ),
+    /explicitly downloaded workflow artifact/,
+  );
+  const foreign = await invoke(
+    "linux-x64-glibc228",
+    'console.log(JSON.stringify(await loadPin("darwin-arm64")));',
+  );
+  assert.equal(JSON.parse(foreign.stdout).compatibilityProfile, false);
+});

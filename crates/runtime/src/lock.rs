@@ -246,9 +246,19 @@ impl RuntimeLock {
                 "workerd lock must list at least one target",
             ));
         }
+        if self.source.compatibility_artifact_url()?.is_some()
+            && (self.targets.len() != 1
+                || !self.targets.contains_key("linux-x64")
+                || !self.release.ends_with("-glibc228"))
+        {
+            return Err(PlatformError::new(
+                ErrorCode::RuntimeInvalid,
+                "compatibility workerd pin must describe only the Linux x64 build",
+            ));
+        }
         for (name, target) in &self.targets {
             validate_target_name(name)?;
-            target.validate(&self.source.repository, &self.release, name)?;
+            target.validate(&self.source, &self.release, name)?;
         }
         Ok(())
     }
@@ -302,7 +312,7 @@ impl PyodideBundlePin {
 impl RuntimeTarget {
     fn validate(
         &self,
-        repository: &str,
+        source: &RuntimeSourcePin,
         release: &str,
         target_name: &str,
     ) -> Result<(), PlatformError> {
@@ -343,10 +353,12 @@ impl RuntimeTarget {
                 "archive URL must not contain a query or fragment",
             ));
         }
-        let expected_url = format!(
-            "{repository}/releases/download/{release}/{}",
-            self.archive_name
-        );
+        let expected_url = source.compatibility_artifact_url()?.unwrap_or_else(|| {
+            format!(
+                "{}/releases/download/{release}/{}",
+                source.repository, self.archive_name
+            )
+        });
         if self.archive_url != expected_url {
             return Err(PlatformError::new(
                 ErrorCode::RuntimeInvalid,
@@ -383,6 +395,60 @@ impl WorkersTypesPin {
 }
 
 impl RuntimeSourcePin {
+    fn compatibility_artifact_url(&self) -> Result<Option<String>, PlatformError> {
+        let Some(profile) = self.build_inputs.get("compatibilityProfile") else {
+            return Ok(None);
+        };
+        let invalid = || {
+            PlatformError::new(
+                ErrorCode::RuntimeInvalid,
+                "invalid compatibility workerd build provenance",
+            )
+        };
+        if profile != "linux-x64-glibc228" {
+            return Err(invalid());
+        }
+        let run = self
+            .build_inputs
+            .get("compatibilityWorkflowRun")
+            .ok_or_else(invalid)?;
+        let artifact = self
+            .build_inputs
+            .get("compatibilityArtifactId")
+            .ok_or_else(invalid)?;
+        let builder = self
+            .build_inputs
+            .get("compatibilityBuilderSha256")
+            .ok_or_else(invalid)?;
+        let producer = self
+            .build_inputs
+            .get("compatibilityProducerCommit")
+            .ok_or_else(invalid)?;
+        let url = Url::parse(run).map_err(|_| invalid())?;
+        let parts = url.path_segments().ok_or_else(invalid)?.collect::<Vec<_>>();
+        if url.scheme() != "https"
+            || url.host_str() != Some("github.com")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || url.as_str() != run
+            || parts.len() != 5
+            || parts[0].is_empty()
+            || parts[1].is_empty()
+            || parts[2] != "actions"
+            || parts[3] != "runs"
+            || parts[4].parse::<u64>().ok().is_none_or(|id| id == 0)
+            || artifact.parse::<u64>().ok().is_none_or(|id| id == 0)
+        {
+            return Err(invalid());
+        }
+        parse_sha256_hex(builder)?;
+        require_git_sha(producer)?;
+        Ok(Some(format!("{run}/artifacts/{artifact}")))
+    }
+
     fn validate(&self) -> Result<(), PlatformError> {
         if self.repository != "https://github.com/elliothux/workerd" {
             return Err(PlatformError::new(

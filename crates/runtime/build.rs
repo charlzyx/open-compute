@@ -18,9 +18,17 @@ const MAX_PYODIDE_BUNDLE: u64 = 32 * 1024 * 1024;
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-env-changed=OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE");
     println!("cargo:rerun-if-env-changed=OPEN_COMPUTE_BUILD_CADDY");
+    println!("cargo:rerun-if-env-changed=OPEN_COMPUTE_BUILD_PROFILE");
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("../..");
     let target = build_target()?;
-    let lock_bytes = tracked(&root.join("packages/runtime/workerd.lock.json"))?;
+    let lock_name = match env::var("OPEN_COMPUTE_BUILD_PROFILE") {
+        Err(env::VarError::NotPresent) => "workerd.lock.json",
+        Ok(profile) if profile == "linux-x64-glibc228" && target == "linux-x64" => {
+            "workerd-glibc228.lock.json"
+        }
+        _ => return Err("unsupported workerd build profile for this target".into()),
+    };
+    let lock_bytes = tracked(&root.join("packages/runtime").join(lock_name))?;
     let lock: serde_json::Value = serde_json::from_slice(&lock_bytes)?;
     let selected = &lock["targets"][target];
     let caddy_lock_bytes = tracked(&root.join("packages/runtime/caddy.lock.json"))?;

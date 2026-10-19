@@ -1,0 +1,90 @@
+name: CentOS 8 ocd compatibility
+on:
+  push:
+    branches: [centos8-compat]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: centos8-ocd-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fixture-images:
+    uses: ./.github/workflows/container-images.yml
+    with:
+      arm64: false
+  package:
+    needs: fixture-images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - name: Initialize pinned source submodules
+        run: git submodule update --init --depth 1 third_party/workerd third_party/gitserver
+      - uses: ./.github/actions/prepare-container-fixture-images
+      - name: Reuse the exact qualified workerd artifact
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39282764991
+          artifact-ids: 12205507774
+          path: .temp/glibc-ocd/workerd
+      - name: Verify artifact provenance and content before use
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B test/glibc-compat/verify-workerd.py
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the glibc 2.28 Rust packaging environment
+        uses: docker/build-push-action@v6
+        with:
+          context: test/glibc-compat
+          file: test/glibc-compat/Dockerfile.ocd
+          tags: ocd-glibc228
+          load: true
+          cache-from: type=gha,scope=centos8-ocd
+          cache-to: type=gha,mode=max,scope=centos8-ocd
+      - uses: actions/cache/restore@v4
+        id: cargo_cache
+        with:
+          path: .temp/glibc-ocd/target
+          key: centos8-ocd-rust198-${{ hashFiles('Cargo.lock', 'test/glibc-compat/Dockerfile.ocd') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            centos8-ocd-rust198-${{ hashFiles('Cargo.lock', 'test/glibc-compat/Dockerfile.ocd') }}-
+      - name: Build and verify the self-contained compatible ocd
+        env:
+          FIXTURE_INPUT: ${{ env.OPEN_COMPUTE_TEST_CONTAINERS_INPUT }}
+        run: |
+          set -euo pipefail
+          mkdir -p .temp/glibc-ocd/evidence
+          docker run --rm \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=$GITHUB_WORKSPACE" \
+            --mount "type=bind,source=$RUNNER_TEMP,target=$RUNNER_TEMP" \
+            --workdir "$GITHUB_WORKSPACE" \
+            --env "OPEN_COMPUTE_TEST_CONTAINERS_INPUT=$FIXTURE_INPUT" \
+            ocd-glibc228 bash test/glibc-compat/build-ocd.sh
+      - name: Exercise the complete daemon and Worker in CentOS 8.2
+        run: python3 -B test/glibc-compat/ocd-smoke.py
+      - name: Prepare owned Cargo cache and build evidence
+        if: always()
+        run: |
+          if [ -d .temp/glibc-ocd ]; then
+            sudo chown -R "$(id -u):$(id -g)" .temp/glibc-ocd
+            du -sh .temp/glibc-ocd/target || true
+          fi
+          df -h "$GITHUB_WORKSPACE"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .temp/glibc-ocd/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ocd-linux-x64-glibc228-experiment
+          path: .temp/glibc-ocd/evidence/
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
