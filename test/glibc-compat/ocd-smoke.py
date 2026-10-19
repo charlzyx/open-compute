@@ -57,14 +57,22 @@ def exercise(image):
         raise AssertionError('Docker did not publish the configured smoke port')
 
     def request(path, method='GET', body=None, content_type='application/json', host=None):
-        headers = {'Authorization': 'Bearer ' + token, 'Content-Type': content_type}
-        if host:
-            headers['Host'] = host
+        # The TCP destination is a Docker-published port; authority must still
+        # identify the actual 8787 listener checked by SharedRoutes.
+        headers = {'Host': host or 'localhost:8787', 'Content-Type': content_type}
+        if host is None:
+            headers['Authorization'] = 'Bearer ' + token
         data = json.dumps(body).encode() if isinstance(body, dict) else body
         req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=15) as response:
-            payload = response.read()
-            assert response.status == 200
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                payload = response.read()
+                assert response.status == 200
+        except urllib.error.HTTPError as error:
+            detail = error.read(4096).decode(errors='replace')
+            if token:
+                detail = detail.replace(token, '[redacted]')
+            raise AssertionError(f'{method} {path} Host={headers["Host"]} returned {error.code}: {detail}') from None
         if host or '/values/' in path:
             return payload
         value = json.loads(payload)
@@ -109,6 +117,9 @@ exec /ocd --no-update-check run
         accounts = request('/client/v4/accounts')
         assert len(accounts) == 1
         account = accounts[0]['id']
+        instances = json.loads(docker('exec', name, '/ocd', '--no-update-check', 'instances', '--json').stdout)['instances']
+        assert len(instances) == 1 and instances[0]['state'] == 'running'
+        assert account == instances[0]['instance_id'], 'Discovery must identify the initialized instance'
         prefix = f'/client/v4/accounts/{account}'
         namespace = request(prefix + '/storage/kv/namespaces', 'POST', {'title': 'centos-compat'})['id']
         value_path = prefix + f'/storage/kv/namespaces/{namespace}/values/state'
@@ -122,7 +133,7 @@ exec /ocd --no-update-check run
                 f'--{boundary}\r\nContent-Disposition: form-data; name="index.js"; filename="index.js"\r\n'
                 f'Content-Type: application/javascript+module\r\n\r\n{source}\r\n--{boundary}--\r\n').encode()
         request(prefix + '/workers/scripts/centos82-worker', 'PUT', body, 'multipart/form-data; boundary=' + boundary)
-        worker_host = f'centos82-worker.{account}.localhost'
+        worker_host = f'centos82-worker.{account}.localhost:8787'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         docker('restart', '--time', '20', name)
         base = endpoint()
@@ -135,6 +146,7 @@ exec /ocd --no-update-check run
                   'uid': int(identity[0]), 'home': identity[2], 'ocdDir': identity[2] + '/.open-compute',
                   'glibc': glibc, 'ocd': version,
                   'sha256': hashlib.sha256(BINARY.read_bytes()).hexdigest(),
+                  'controlHost': 'localhost:8787', 'workerHost': worker_host,
                   'httpStatus': 200, 'response': 'ocd-centos82-worker-ok',
                   'kvSurvivedDaemonRestart': True, 'workerSurvivedDaemonRestart': True,
                   'dockerRequiredByDaemon': False, 'passed': True}
