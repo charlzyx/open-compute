@@ -1094,3 +1094,40 @@ test("compatibility build profile preserves the default pin and requires a verif
   );
   assert.equal(JSON.parse(foreign.stdout).compatibilityProfile, false);
 });
+
+test("compatibility build profile retains the formal Pyodide pin and provenance", async () => {
+  const readLock = async (name) =>
+    JSON.parse(
+      await readFile(
+        new URL(`../packages/runtime/${name}`, import.meta.url),
+        "utf8",
+      ),
+    );
+  const formal = await readLock("workerd.lock.json");
+  const compatibility = await readLock("workerd-glibc228.lock.json");
+  assert.deepEqual(compatibility.pyodideBundle, formal.pyodideBundle);
+  for (const key of ["pyodideBundleTarget", "pyodideBundleArchive"])
+    assert.equal(
+      compatibility.source.buildInputs[key],
+      formal.source.buildInputs[key],
+    );
+  if (hostTarget() === "linux-x64") {
+    const module = new URL("../scripts/workerd-archive.ts", import.meta.url)
+      .href;
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import {loadPyodidePin} from ${JSON.stringify(module)}; console.log(JSON.stringify(await loadPyodidePin()));`,
+      ],
+      {
+        env: {
+          ...process.env,
+          OPEN_COMPUTE_BUILD_PROFILE: "linux-x64-glibc228",
+        },
+      },
+    );
+    assert.deepEqual(JSON.parse(stdout), formal.pyodideBundle);
+  }
+});
