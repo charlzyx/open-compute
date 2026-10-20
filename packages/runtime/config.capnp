@@ -1,5 +1,6 @@
 using Workerd = import "/workerd/workerd.capnp";
 
+const tenantNamespaceCount :Text = "__OPEN_COMPUTE_TENANT_NAMESPACE_COUNT__";
 const tenantIsolateAdmission :Text = "__OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION__";
 const internalToken :Text = "__OPEN_COMPUTE_INTERNAL_TOKEN__";
 const doRouterRpcHost :Text = "__OPEN_COMPUTE_DO_RPC_HOST__";
@@ -176,6 +177,7 @@ const loaderHostWorker :Workerd.Worker = (
     (name = "LOADER", workerLoader = (id = "open-compute", inheritTails = true)),
     (name = "WORKER_LOADER_FACTORY", workerLoader = (id = "open-compute-public", factory = true)),
     (name = "TENANT_ISOLATE_ADMISSION", text = .tenantIsolateAdmission),
+    (name = "TENANT_NAMESPACE_COUNT", text = .tenantNamespaceCount),
     (name = "HOST_EXTENSION_FACTORY", hostExtensionFactory = void),
     (name = "QUEUE_WIRE_CODEC", openComputeQueueCodec = void),
     (name = "RUNTIME_SOURCE", service = "runtime-source"),
@@ -271,6 +273,7 @@ const doHostWorker :Workerd.Worker = (
     (name = "LOADER", workerLoader = (id = "open-compute", inheritTails = true)),
     (name = "WORKER_LOADER_FACTORY", workerLoader = (id = "open-compute-public", factory = true)),
     (name = "TENANT_ISOLATE_ADMISSION", text = .tenantIsolateAdmission),
+    (name = "TENANT_NAMESPACE_COUNT", text = .tenantNamespaceCount),
     (name = "HOST_EXTENSION_FACTORY", hostExtensionFactory = void),
     (name = "QUEUE_WIRE_CODEC", openComputeQueueCodec = void),
     (name = "RUNTIME_SOURCE", service = "runtime-source"),

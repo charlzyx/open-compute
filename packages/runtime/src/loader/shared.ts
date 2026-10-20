@@ -35,49 +35,89 @@ function warmSnapshotKey(
   return `${envelope.loaderKey}\0${envelope.expected}\0${envelope.routeGeneration}`;
 }
 
-/**
- * One named namespace, not one per shard. workerd keeps every named isolate
- * until that namespace exceeds 64, so sixteen namespaces retained every
- * Worker touched by a burst. `getPrivate` is the host grant already held by
- * `env.LOADER`; the public `get` loader rejects host policy and bindings.
- */
-const TENANT_NAMESPACE = "tenant/0";
-let tenantAdmitted = 0;
-const tenantWaiting: object[] = [];
-/** Bound queued requests to four waves of the native 64-entry cache. */
+/** Native namespaces retain at most 64 named isolates each; sharding is opt-in. */
 const MAX_TENANT_WAITERS = 256;
+const tenantAdmittedByShard = new Array<number>(32).fill(0);
+let tenantAdmitted = 0;
+const tenantWaiting: { shard: number }[] = [];
 
-/** Return the shared namespace through a request-scoped host grant. */
-export function tenantLoader(env: LoaderEnv, _loaderKey: string): WorkerLoader {
-  return env.WORKER_LOADER_FACTORY.getPrivate(TENANT_NAMESPACE);
+function admissionPolicy(env: LoaderEnv) {
+  const limit = Number(env.TENANT_ISOLATE_ADMISSION);
+  const namespaces = Number(env.TENANT_NAMESPACE_COUNT);
+  const perNamespace = namespaces === 1 ? 64 : 48;
+  if (
+    !Number.isInteger(namespaces) ||
+    namespaces < 1 ||
+    namespaces > 32 ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > namespaces * perNamespace
+  )
+    throw bindingError("RUNTIME_UNAVAILABLE");
+  return { limit, namespaces, perNamespace };
 }
 
-async function acquireTenantAdmission(limit: number): Promise<void> {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 64)
-    throw bindingError("RUNTIME_UNAVAILABLE");
-  if (tenantAdmitted < limit && tenantWaiting.length === 0) {
+function tenantShard(loaderKey: string, namespaces: number): number {
+  let hash = 2166136261;
+  for (let index = 0; index < loaderKey.length; index += 1)
+    hash = Math.imul(hash ^ loaderKey.charCodeAt(index), 16777619) >>> 0;
+  return hash % namespaces;
+}
+
+/** Return a request-scoped grant for the immutable deployment's stable shard. */
+export function tenantLoader(env: LoaderEnv, loaderKey: string): WorkerLoader {
+  const policy = admissionPolicy(env);
+  return env.WORKER_LOADER_FACTORY.getPrivate(
+    `tenant/${tenantShard(loaderKey, policy.namespaces)}`,
+  );
+}
+
+function nextEligibleTenant(perNamespace: number) {
+  return tenantWaiting.find(
+    (ticket) => tenantAdmittedByShard[ticket.shard]! < perNamespace,
+  );
+}
+
+async function acquireTenantAdmission(
+  env: LoaderEnv,
+  loaderKey: string,
+): Promise<number> {
+  const policy = admissionPolicy(env);
+  const shard = tenantShard(loaderKey, policy.namespaces);
+  if (
+    tenantAdmitted < policy.limit &&
+    tenantAdmittedByShard[shard]! < policy.perNamespace &&
+    !nextEligibleTenant(policy.perNamespace)
+  ) {
     tenantAdmitted += 1;
-    return;
+    tenantAdmittedByShard[shard]! += 1;
+    return shard;
   }
   if (tenantWaiting.length >= MAX_TENANT_WAITERS)
     throw bindingError("SERVICE_LIMIT_EXCEEDED");
-  const ticket = {};
+  const ticket = { shard };
   tenantWaiting.push(ticket);
   try {
-    while (tenantWaiting[0] !== ticket || tenantAdmitted >= limit) {
-      // Each waiter must own pending I/O; another request cannot keep it alive.
+    while (
+      tenantAdmitted >= policy.limit ||
+      nextEligibleTenant(policy.perNamespace) !== ticket
+    ) {
+      // Each waiter owns pending I/O. Skip saturated shards without bypassing their FIFO.
       await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    tenantWaiting.shift();
+    tenantWaiting.splice(tenantWaiting.indexOf(ticket), 1);
     tenantAdmitted += 1;
+    tenantAdmittedByShard[shard]! += 1;
+    return shard;
   } finally {
     const index = tenantWaiting.indexOf(ticket);
     if (index !== -1) tenantWaiting.splice(index, 1);
   }
 }
 
-function releaseTenantAdmission(): void {
+function releaseTenantAdmission(shard: number): void {
   tenantAdmitted -= 1;
+  tenantAdmittedByShard[shard]! -= 1;
 }
 
 function cacheCapacityExceeded(error: unknown): boolean {
@@ -94,7 +134,7 @@ export async function loadTenantStub(
   name: string,
   code: () => Promise<WorkerLoaderWorkerCode>,
 ): Promise<{ stub: WorkerStub; release: () => void }> {
-  await acquireTenantAdmission(Number(env.TENANT_ISOLATE_ADMISSION));
+  const shard = await acquireTenantAdmission(env, loaderKey);
   try {
     let stub: WorkerStub | undefined;
     for (let attempt = 0; attempt < 32; attempt += 1) {
@@ -113,11 +153,11 @@ export async function loadTenantStub(
       release() {
         if (released) return;
         released = true;
-        releaseTenantAdmission();
+        releaseTenantAdmission(shard);
       },
     };
   } catch (error) {
-    releaseTenantAdmission();
+    releaseTenantAdmission(shard);
     throw error;
   }
 }

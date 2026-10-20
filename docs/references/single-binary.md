@@ -28,15 +28,22 @@ managed 使用 Chrome 原生 sandbox 和平台 CDP 权限边界，不叠加外�
 
 ## 租户请求准入
 
-`OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION` 设置每个实例的 Loader 并发准入数。
-默认值为 48，允许范围为 1–64。空值、非整数和范围外的值会使配置编译失败。
-例如，启动进程时设置 `OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION=64`。
-更改后须重启 `ocd`；同一进程的所有实例使用该值。此值仅传给系统 Loader，不进入租户 `env`。
+`OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION` 设置每个 Loader 的总并发准入数，默认值为 48。
+`OPEN_COMPUTE_TENANT_NAMESPACE_COUNT` 设置命名空间数量，默认值为 1，允许范围为 1–32。
+单命名空间允许 1–64 个在途请求；多命名空间每片最多 48 个，总数不应超过分片数乘以 48。
+1024 请求的显式测试配置为 `OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION=1024` 与
+`OPEN_COMPUTE_TENANT_NAMESPACE_COUNT=32`。更改后须重启 `ocd`；同一进程的所有实例使用该配置。
+空值、非整数、范围外的值和超过分片容量的准入数会使配置编译失败。
+这些值仅传给系统 Loader，不进入租户 `env`。
 
-超过准入数的请求按 FIFO 顺序等待，每个等待请求保留自己的计时器。
-每个 Loader 最多保留 256 个等待请求；超过队列容量返回 `SERVICE_LIMIT_EXCEEDED`。
-该值不限制已注册 Worker 的数量。底层每个命名空间仍最多缓存 64 个 named isolate；
-更多 Worker 可经缓存淘汰执行，不能据此承诺全部同时常驻。提高准入数前须验证内存和请求延迟。
+每片的等待请求按 FIFO 顺序执行。Loader 在有空位的分片中选择最早等待的请求，
+使热点分片不阻塞空闲分片。每个等待请求保留自己的计时器；每个 Loader 最多保留 256 个等待请求。
+超过队列容量返回 `SERVICE_LIMIT_EXCEEDED`。
+
+这些值不限制已注册 Worker 的数量。底层每个命名空间仍最多缓存 64 个 named isolate；
+32 片最多可缓存 2048 个，缓存只在容量不足时淘汰闲置项。本配置不提供全局 LRU 或按字节自动驱逐。
+启用多片会增加闲置缓存驻留量；operator 应按宿主或 cgroup 的实际配额监测内存并保留余量。
+1024 个轻量夹具通过不代表完整 OCD、KV 或其他业务代码具有相同内存需求。
 
 ## 内嵌内容
 

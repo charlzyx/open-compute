@@ -19,6 +19,8 @@ const {
 test("every worker shares one loader namespace", () => {
   const names = [];
   const env = {
+    TENANT_ISOLATE_ADMISSION: "48",
+    TENANT_NAMESPACE_COUNT: "1",
     WORKER_LOADER_FACTORY: {
       getPrivate(name) {
         names.push(name);
@@ -46,6 +48,7 @@ test("tenant admission waits once 48 isolates are in flight", async () => {
   let calls = 0;
   const env = {
     TENANT_ISOLATE_ADMISSION: "48",
+    TENANT_NAMESPACE_COUNT: "1",
     WORKER_LOADER_FACTORY: {
       getPrivate() {
         return {
@@ -88,6 +91,7 @@ test("tenant admission preserves FIFO at a configured limit and rejects invalid 
   let calls = 0;
   const env = {
     TENANT_ISOLATE_ADMISSION: "1",
+    TENANT_NAMESPACE_COUNT: "1",
     WORKER_LOADER_FACTORY: {
       getPrivate() {
         return {
@@ -137,6 +141,7 @@ test("tenant admission preserves FIFO at a configured limit and rejects invalid 
 test("failed waiters and loader errors release queue state", async (t) => {
   const env = {
     TENANT_ISOLATE_ADMISSION: "1",
+    TENANT_NAMESPACE_COUNT: "1",
     WORKER_LOADER_FACTORY: {
       getPrivate() {
         return {
@@ -179,6 +184,7 @@ test("failed waiters and loader errors release queue state", async (t) => {
 test("tenant admission rejects excess waiters without leaking capacity", async () => {
   const env = {
     TENANT_ISOLATE_ADMISSION: "64",
+    TENANT_NAMESPACE_COUNT: "1",
     WORKER_LOADER_FACTORY: {
       getPrivate() {
         return {
@@ -208,6 +214,81 @@ test("tenant admission rejects excess waiters without leaking capacity", async (
   (
     await loadTenantStub(env, "worker", "after-overflow", async () => ({}))
   ).release();
+});
+
+test("a saturated shard does not block another shard and keeps its FIFO", async () => {
+  let calls = 0;
+  const env = {
+    TENANT_ISOLATE_ADMISSION: "96",
+    TENANT_NAMESPACE_COUNT: "2",
+    WORKER_LOADER_FACTORY: {
+      getPrivate(name) {
+        return {
+          name,
+          get() {
+            calls += 1;
+            return {};
+          },
+        };
+      },
+    },
+  };
+  const byShard = [[], []];
+  for (let index = 0; byShard.some((keys) => keys.length < 50); index += 1) {
+    const key = `worker-${index}`;
+    const shard = tenantLoader(env, key).name === "tenant/0" ? 0 : 1;
+    byShard[shard].push(key);
+  }
+  assert.equal(
+    tenantLoader(env, byShard[0][0]).name,
+    tenantLoader(env, byShard[0][0]).name,
+  );
+  const held = await Promise.all(
+    byShard[0]
+      .slice(0, 48)
+      .map((key) => loadTenantStub(env, key, key, async () => ({}))),
+  );
+  const order = [];
+  const queued = byShard[0].slice(48, 50).map((key, index) =>
+    loadTenantStub(env, key, key, async () => ({})).then((gate) => {
+      order.push(index);
+      return gate;
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 48);
+  const coldKey = byShard[1][0];
+  const other = await loadTenantStub(env, coldKey, coldKey, async () => ({}));
+  assert.equal(calls, 49);
+  assert.deepEqual(order, []);
+  other.release();
+  held[0].release();
+  const first = await queued[0];
+  assert.deepEqual(order, [0]);
+  first.release();
+  (await queued[1]).release();
+  assert.deepEqual(order, [0, 1]);
+  for (const gate of held.slice(1)) gate.release();
+});
+
+test("namespace policy rejects invalid shards and excess per-shard admission", async () => {
+  for (const [limit, namespaces] of [
+    ["48", "0"],
+    ["48", "33"],
+    ["48", "1.5"],
+    ["97", "2"],
+    ["1537", "32"],
+  ]) {
+    await assert.rejects(
+      loadTenantStub(
+        { TENANT_ISOLATE_ADMISSION: limit, TENANT_NAMESPACE_COUNT: namespaces },
+        "worker",
+        "invalid",
+        async () => ({}),
+      ),
+      /RUNTIME_UNAVAILABLE/,
+    );
+  }
 });
 
 test("runtime snapshot cache drops oldest entries past the byte budget", async () => {
