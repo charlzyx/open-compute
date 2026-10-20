@@ -42,37 +42,42 @@ function warmSnapshotKey(
  * `env.LOADER`; the public `get` loader rejects host policy and bindings.
  */
 const TENANT_NAMESPACE = "tenant/0";
-/** Leave spare slots under the 64-entry cap so an idle isolate can be evicted. */
-const TENANT_ISOLATE_ADMISSION = 48;
 let tenantAdmitted = 0;
-const tenantWaiting: Array<() => void> = [];
+const tenantWaiting: object[] = [];
+/** Bound queued requests to four waves of the native 64-entry cache. */
+const MAX_TENANT_WAITERS = 256;
 
-/**
- * Return the single shared loader namespace.
- * `getPrivate` binds the channel to this request, so the handle is not reused.
- * The factory's namespace table still returns the same `tenant/0` isolates.
- */
+/** Return the shared namespace through a request-scoped host grant. */
 export function tenantLoader(env: LoaderEnv, _loaderKey: string): WorkerLoader {
   return env.WORKER_LOADER_FACTORY.getPrivate(TENANT_NAMESPACE);
 }
 
-function acquireTenantAdmission(): Promise<void> {
-  if (tenantAdmitted < TENANT_ISOLATE_ADMISSION) {
+async function acquireTenantAdmission(limit: number): Promise<void> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 64)
+    throw bindingError("RUNTIME_UNAVAILABLE");
+  if (tenantAdmitted < limit && tenantWaiting.length === 0) {
     tenantAdmitted += 1;
-    return Promise.resolve();
+    return;
   }
-  return new Promise((resolve) => {
-    tenantWaiting.push(() => {
-      tenantAdmitted += 1;
-      resolve();
-    });
-  });
+  if (tenantWaiting.length >= MAX_TENANT_WAITERS)
+    throw bindingError("SERVICE_LIMIT_EXCEEDED");
+  const ticket = {};
+  tenantWaiting.push(ticket);
+  try {
+    while (tenantWaiting[0] !== ticket || tenantAdmitted >= limit) {
+      // Each waiter must own pending I/O; another request cannot keep it alive.
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    tenantWaiting.shift();
+    tenantAdmitted += 1;
+  } finally {
+    const index = tenantWaiting.indexOf(ticket);
+    if (index !== -1) tenantWaiting.splice(index, 1);
+  }
 }
 
 function releaseTenantAdmission(): void {
   tenantAdmitted -= 1;
-  const next = tenantWaiting.shift();
-  if (next) next();
 }
 
 function cacheCapacityExceeded(error: unknown): boolean {
@@ -82,14 +87,14 @@ function cacheCapacityExceeded(error: unknown): boolean {
   );
 }
 
-/** Load one named tenant isolate, queueing once 48 are already in flight. */
+/** Load one named tenant isolate, queueing at the host-configured in-flight limit. */
 export async function loadTenantStub(
   env: LoaderEnv,
   loaderKey: string,
   name: string,
   code: () => Promise<WorkerLoaderWorkerCode>,
 ): Promise<{ stub: WorkerStub; release: () => void }> {
-  await acquireTenantAdmission();
+  await acquireTenantAdmission(Number(env.TENANT_ISOLATE_ADMISSION));
   try {
     let stub: WorkerStub | undefined;
     for (let attempt = 0; attempt < 32; attempt += 1) {

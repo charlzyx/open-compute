@@ -279,6 +279,7 @@ pub(crate) fn digest_for_with_tokens_and_policy(
     let rendered =
         render_config_with_tokens(template_str, token, binding_token, observability_token)?;
     let rendered = render_do_policy(rendered, durable_objects)?;
+    let rendered = crate::tenant_admission::render(rendered)?;
     let rendered = crate::container_provider::render(&rendered, container_provider)?;
     let rendered = render_lock_compatibility(rendered, runtime.lock())?;
     let digest = config_input_digest(&DigestInputs {

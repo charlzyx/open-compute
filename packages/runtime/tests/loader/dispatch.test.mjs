@@ -94,6 +94,7 @@ test("runtime exceptions containing bundle vocabulary stay sanitized runtime fai
             }),
         },
         // This test exercises an already-loaded deployment; assembly has separate coverage.
+        TENANT_ISOLATE_ADMISSION: "48",
         LOADER: loader,
         WORKER_LOADER_FACTORY: { getPrivate: () => loader },
       },
@@ -219,6 +220,7 @@ test("warm runtime snapshots are reused until the route generation changes", asy
   let generation = 7;
   let fetches = 0;
   const env = {
+    TENANT_ISOLATE_ADMISSION: "48",
     RUNTIME_SOURCE: {
       fetch: async () => {
         fetches += 1;
@@ -293,6 +295,7 @@ test("DO admission awaits loading and rejects failed or malformed host validatio
             contentKind: "worker",
           }),
       },
+      TENANT_ISOLATE_ADMISSION: "48",
       LOADER: loader,
       WORKER_LOADER_FACTORY: { getPrivate: () => loader },
     });

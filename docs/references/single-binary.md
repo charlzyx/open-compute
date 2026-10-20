@@ -26,6 +26,18 @@ Open Compute 只有一种生产发行形式：按平台构建的单个 `ocd` 可
 managed 使用 Chrome 原生 sandbox 和平台 CDP 权限边界，不叠加外层 sandbox；安装与实例配置见
 [首次启动手册](runbooks/install-and-first-start.md)。外部 CDP 模式由 operator 管理浏览器进程及其访问权限。
 
+## 租户请求准入
+
+`OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION` 设置每个实例的 Loader 并发准入数。
+默认值为 48，允许范围为 1–64。空值、非整数和范围外的值会使配置编译失败。
+例如，启动进程时设置 `OPEN_COMPUTE_TENANT_ISOLATE_ADMISSION=64`。
+更改后须重启 `ocd`；同一进程的所有实例使用该值。此值仅传给系统 Loader，不进入租户 `env`。
+
+超过准入数的请求按 FIFO 顺序等待，每个等待请求保留自己的计时器。
+每个 Loader 最多保留 256 个等待请求；超过队列容量返回 `SERVICE_LIMIT_EXCEEDED`。
+该值不限制已注册 Worker 的数量。底层每个命名空间仍最多缓存 64 个 named isolate；
+更多 Worker 可经缓存淘汰执行，不能据此承诺全部同时常驻。提高准入数前须验证内存和请求延迟。
+
 ## 内嵌内容
 
 - 当前目标平台正式 pin 对应的 workerd gzip；

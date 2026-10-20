@@ -18,6 +18,7 @@ mod verify;
 
 mod digest;
 mod fsutil;
+mod tenant_admission;
 
 pub use compile::{
     CompileRequest, CompiledConfig, ConfigRole, PlatformReleaseMeta, compile_static_config,

@@ -45,6 +45,7 @@ test("every worker shares one loader namespace", () => {
 test("tenant admission waits once 48 isolates are in flight", async () => {
   let calls = 0;
   const env = {
+    TENANT_ISOLATE_ADMISSION: "48",
     WORKER_LOADER_FACTORY: {
       getPrivate() {
         return {
@@ -81,6 +82,132 @@ test("tenant admission waits once 48 isolates are in flight", async () => {
   assert.equal(calls, 49);
   gate.release();
   for (const held of open.slice(1)) held.release();
+});
+
+test("tenant admission preserves FIFO at a configured limit and rejects invalid limits", async () => {
+  let calls = 0;
+  const env = {
+    TENANT_ISOLATE_ADMISSION: "1",
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        return {
+          get() {
+            return { id: ++calls };
+          },
+        };
+      },
+    },
+  };
+  const first = await loadTenantStub(env, "worker", "first", async () => ({}));
+  const order = [];
+  const second = loadTenantStub(env, "worker", "second", async () => ({})).then(
+    (gate) => {
+      order.push("second");
+      return gate;
+    },
+  );
+  const third = loadTenantStub(env, "worker", "third", async () => ({})).then(
+    (gate) => {
+      order.push("third");
+      return gate;
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+  first.release();
+  first.release();
+  const next = await second;
+  assert.deepEqual(order, ["second"]);
+  next.release();
+  (await third).release();
+  assert.deepEqual(order, ["second", "third"]);
+  for (const value of ["", "0", "65", "NaN", "1.5"]) {
+    await assert.rejects(
+      loadTenantStub(
+        { ...env, TENANT_ISOLATE_ADMISSION: value },
+        "worker",
+        "invalid",
+        async () => ({}),
+      ),
+      /RUNTIME_UNAVAILABLE/,
+    );
+  }
+});
+
+test("failed waiters and loader errors release queue state", async (t) => {
+  const env = {
+    TENANT_ISOLATE_ADMISSION: "1",
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        return {
+          get() {
+            return {};
+          },
+        };
+      },
+    },
+  };
+  const first = await loadTenantStub(env, "worker", "first", async () => ({}));
+  const timer = t.mock.method(globalThis, "setTimeout", () => {
+    throw new Error("timer cancelled");
+  });
+  await assert.rejects(
+    loadTenantStub(env, "worker", "cancelled", async () => ({})),
+    /timer cancelled/,
+  );
+  timer.mock.restore();
+  const next = loadTenantStub(env, "worker", "next", async () => ({}));
+  first.release();
+  (await next).release();
+  const broken = {
+    ...env,
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        throw new Error("loader failed");
+      },
+    },
+  };
+  await assert.rejects(
+    loadTenantStub(broken, "worker", "broken", async () => ({})),
+    /loader failed/,
+  );
+  (
+    await loadTenantStub(env, "worker", "after-error", async () => ({}))
+  ).release();
+});
+
+test("tenant admission rejects excess waiters without leaking capacity", async () => {
+  const env = {
+    TENANT_ISOLATE_ADMISSION: "64",
+    WORKER_LOADER_FACTORY: {
+      getPrivate() {
+        return {
+          get() {
+            return {};
+          },
+        };
+      },
+    },
+  };
+  const open = await Promise.all(
+    Array.from({ length: 64 }, (_, index) =>
+      loadTenantStub(env, "worker", `open-${index}`, async () => ({})),
+    ),
+  );
+  const waiting = Array.from({ length: 256 }, (_, index) =>
+    loadTenantStub(env, "worker", `waiting-${index}`, async () => ({})).then(
+      (gate) => gate.release(),
+    ),
+  );
+  await assert.rejects(
+    loadTenantStub(env, "worker", "overflow", async () => ({})),
+    /SERVICE_LIMIT_EXCEEDED/,
+  );
+  for (const gate of open) gate.release();
+  await Promise.all(waiting);
+  (
+    await loadTenantStub(env, "worker", "after-overflow", async () => ({}))
+  ).release();
 });
 
 test("runtime snapshot cache drops oldest entries past the byte budget", async () => {

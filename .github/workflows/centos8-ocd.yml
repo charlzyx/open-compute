@@ -1,5 +1,14 @@
 name: CentOS 8 ocd compatibility
 on:
+  push:
+    branches: [centos8-compat]
+    paths:
+      - 'crates/**'
+      - 'packages/runtime/**'
+      - 'docs/references/single-binary.md'
+      - 'test/glibc-compat/build-ocd.sh'
+      - 'test/glibc-compat/check-runtime-tests.sh'
+      - '.github/workflows/centos8-ocd.yml'
   workflow_dispatch:
 permissions:
   contents: read

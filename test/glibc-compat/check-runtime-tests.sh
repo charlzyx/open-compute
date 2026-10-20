@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 evidence="$PWD/.temp/glibc-ocd/evidence"
-for selector in tests::lock_source:: packaged_lock_matches_formal_release_pin; do
+for selector in tests::lock_source:: packaged_lock_matches_formal_release_pin tenant_admission::tests::; do
   log="$evidence/runtime-${selector//:/_}.log"
   mbx test --locked -p open-compute-runtime --lib "$selector" -- --nocapture 2>&1 | tee "$log"
   python - "$log" <<'PY'

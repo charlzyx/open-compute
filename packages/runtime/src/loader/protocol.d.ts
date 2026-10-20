@@ -3,6 +3,7 @@ import type { QueueTransportEnv } from "../queues/protocol.js";
 
 /** Private system services; this shape must never be copied into tenant env. */
 export interface LoaderEnv extends QueueTransportEnv, DoPolicyEnv {
+  TENANT_ISOLATE_ADMISSION: string;
   LOADER: WorkerLoader;
   WORKER_LOADER_FACTORY: NativeWorkerLoaderFactory;
   HOST_EXTENSION_FACTORY: NativeHostExtensionFactory;
