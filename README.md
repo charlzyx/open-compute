@@ -33,6 +33,14 @@
 
 ---
 
+## Fork note
+
+[charlzyx/open-compute](https://github.com/charlzyx/open-compute) builds `ocd` for Linux hosts that provide glibc 2.28. CentOS 8 hosts provide glibc 2.28. Compatible RHEL 8-class hosts provide glibc 2.28.
+
+[elliothux/open-compute](https://github.com/elliothux/open-compute) builds `ocd` for a glibc newer than 2.28. This fork keeps the CentOS 8 package build and the `centos8-ocd` workflow on the `centos8-compat` branch. This fork publishes the glibc 2.28 `linux-x64` binary on [GitHub Releases](https://github.com/charlzyx/open-compute/releases).
+
+Download the CentOS 8 binary from [GitHub Releases](https://github.com/charlzyx/open-compute/releases). Read the mainline project at [elliothux/open-compute](https://github.com/elliothux/open-compute).
+
 ## The Workers platform, running on your hardware
 
 You already know how to write Cloudflare Workers. **open-compute runs the compatible Workers programming model** — module workers, familiar bindings, and cf workflows — on a single machine you own.

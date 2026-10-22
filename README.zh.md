@@ -33,6 +33,14 @@
 
 ---
 
+## Fork 说明
+
+[charlzyx/open-compute](https://github.com/charlzyx/open-compute) 为提供 glibc 2.28 的 Linux 主机构建 `ocd`。CentOS 8 主机提供 glibc 2.28。兼容的 RHEL 8 类主机提供 glibc 2.28。
+
+[elliothux/open-compute](https://github.com/elliothux/open-compute) 为高于 2.28 的 glibc 构建 `ocd`。本 fork 在 `centos8-compat` 分支保留 CentOS 8 打包和 `centos8-ocd` 工作流。本 fork 在 [GitHub Releases](https://github.com/charlzyx/open-compute/releases) 发布 glibc 2.28 的 `linux-x64` 二进制。
+
+从 [GitHub Releases](https://github.com/charlzyx/open-compute/releases) 下载 CentOS 8 二进制。主线项目见 [elliothux/open-compute](https://github.com/elliothux/open-compute)。
+
 ## Workers 平台，跑在你自己的硬件上
 
 如果你已经会写 Cloudflare Workers，就可以直接使用 open-compute。标准 module Worker、常用 binding 配合当前 cf 工作流，只是运行位置换成了你自己的机器。
