@@ -26,9 +26,8 @@ pub(in crate::workers_http::v4) async fn get_schedules(
     };
     let result = active_snapshot(&state, &account, &script).and_then(|(_, snapshot)| {
         CronRepository::new(worker_api(&state)?.storage.db())
-            .version_config(snapshot.version.id)
+            .version_declarations(&snapshot.version)
             .map_err(|error| V4Error::from(&error))?
-            .declarations
             .into_iter()
             .map(|declaration| {
                 let time = crate::cloudflare_v4::iso_timestamp(declaration.created_at_ms)?;
