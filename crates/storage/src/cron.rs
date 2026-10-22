@@ -1,7 +1,7 @@
 //! Immutable Cron declarations and live activation authority.
 
 use crate::control_db::ControlDb;
-use crate::worker_repository::require_instance;
+use crate::worker_repository::{VersionContentKind, VersionRecord, require_instance};
 use open_compute_core::{
     CronActivationId, ErrorCode, InstanceId, PlatformError, VersionId, WorkerId,
 };
@@ -226,7 +226,18 @@ impl<'a> CronRepository<'a> {
         })
     }
 
-    /// Read one version's immutable Cron config.
+    /// Read scheduled declarations; assets-only versions have no Cron authority.
+    pub fn version_declarations(
+        &self,
+        version: &VersionRecord,
+    ) -> Result<Vec<CronDeclaration>, PlatformError> {
+        match version.content_kind {
+            VersionContentKind::AssetsOnly => Ok(Vec::new()),
+            VersionContentKind::Worker => Ok(self.version_config(version.id)?.declarations),
+        }
+    }
+
+    /// Read one executable version's immutable Cron config.
     pub fn version_config(
         &self,
         version_id: VersionId,

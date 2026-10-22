@@ -453,8 +453,7 @@ impl<'a> VersionController<'a> {
         let queue_declarations =
             QueueConsumerRepository::new(self.storage.db()).version_declarations(version_id)?;
         let cron_declarations = open_compute_storage::cron::CronRepository::new(self.storage.db())
-            .version_config(version_id)?
-            .declarations;
+            .version_declarations(&version)?;
         let requires_product_promoter =
             !queue_declarations.is_empty() || !cron_declarations.is_empty();
         let mut queue_entrypoints = queue_declarations

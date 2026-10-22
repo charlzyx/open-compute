@@ -1,4 +1,4 @@
-"""Exercise one packaged daemon, real Worker and persisted KV in CentOS 8.2."""
+"""Exercise packaged Workers, static assets and persistence in CentOS 8.2."""
 import hashlib
 import json
 from pathlib import Path
@@ -60,22 +60,24 @@ def exercise(image, volume):
             time.sleep(0.1)
         raise AssertionError('Docker did not publish the configured smoke port')
 
-    def request(path, method='GET', body=None, content_type='application/json', host=None):
+    def request(path, method='GET', body=None, content_type='application/json', host=None,
+                credential=None, status=200):
         # The TCP destination is a Docker-published port; authority must still
         # identify the actual 8787 listener checked by SharedRoutes.
         headers = {'Host': host or 'localhost:8787', 'Content-Type': content_type}
         if host is None:
-            headers['Authorization'] = 'Bearer ' + token
-        data = json.dumps(body).encode() if isinstance(body, dict) else body
+            headers['Authorization'] = 'Bearer ' + (credential or token)
+        data = json.dumps(body).encode() if isinstance(body, (dict, list)) else body
         req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
                 payload = response.read()
-                assert response.status == 200
+                assert response.status == status
         except urllib.error.HTTPError as error:
             detail = error.read(4096).decode(errors='replace')
-            if token:
-                detail = detail.replace(token, '[redacted]')
+            for secret in (token, credential):
+                if secret:
+                    detail = detail.replace(secret, '[redacted]')
             raise AssertionError(f'{method} {path} Host={headers["Host"]} returned {error.code}: {detail}') from None
         if host or '/values/' in path:
             return payload
@@ -161,6 +163,38 @@ exec /ocd --no-update-check run
         # while the TCP connection uses Docker's explicit published endpoint.
         worker_host = f'centos82-worker.{account}.localhost'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
+        def upload_static(script):
+            # The fixed /index.html fixture uses Wrangler's BLAKE3 asset identity.
+            asset_hash = '4c73266e449fea54bba5a6dea074dbbd'
+            session = request(prefix + f'/workers/scripts/{script}/assets-upload-session',
+                              'POST', {'manifest': {'/index.html': {'hash': asset_hash, 'size': 4}}})
+            completion = session['jwt']
+            if session['buckets']:
+                completion = request(prefix + '/workers/assets/upload/' + asset_hash,
+                                     'POST', b'good', 'text/html', credential=completion,
+                                     status=201)['jwt']
+            static_metadata = {'compatibility_date': '2026-09-08',
+                               'assets': {'jwt': completion, 'config': {}}}
+            static_body = (f'--{boundary}\r\nContent-Disposition: form-data; name="metadata"\r\n'
+                           f'Content-Type: application/json\r\n\r\n{json.dumps(static_metadata)}\r\n'
+                           f'--{boundary}--\r\n').encode()
+            request(prefix + f'/workers/scripts/{script}', 'PUT', static_body,
+                    'multipart/form-data; boundary=' + boundary)
+            assert request('/', host=f'{script}.{account}.localhost') == b'good'
+            assert request(prefix + f'/workers/scripts/{script}/schedules') == {'schedules': []}
+
+        upload_static('centos82-static')
+        # Metadata cloning must not invent a Cron configuration for assets-only content.
+        request(prefix + '/workers/scripts/centos82-static/schedules', 'PUT', [])
+        upload_static('centos82-static')
+        scheduled_source = 'export default {fetch(){return new Response("scheduled")},scheduled(){}}'
+        scheduled_body = body.replace(source.encode(), scheduled_source.encode())
+        request(prefix + '/workers/scripts/centos82-cron-static', 'PUT', scheduled_body,
+                'multipart/form-data; boundary=' + boundary)
+        request(prefix + '/workers/scripts/centos82-cron-static/schedules', 'PUT', [{'cron': '0 0 * * *'}])
+        assert len(request(prefix + '/workers/scripts/centos82-cron-static/schedules')['schedules']) == 1
+        upload_static('centos82-cron-static')
+        print('Pure assets deploy, redeploy, metadata clone and Cron retirement verified', flush=True)
         before_restart = persisted_identity()
         print('Real Worker KV response verified before daemon restart', flush=True)
         docker('restart', '--time', '20', name)
@@ -169,6 +203,9 @@ exec /ocd --no-update-check run
         ready(account)
         assert request(value_path) == b'ocd-centos82-worker-ok'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
+        for script in ('centos82-static', 'centos82-cron-static'):
+            assert request('/', host=f'{script}.{account}.localhost') == b'good'
+            assert request(prefix + f'/workers/scripts/{script}/schedules') == {'schedules': []}
         # This bare OS fixture mounts no Docker socket and installs no runtime libraries.
         docker('exec', name, 'sh', '-c', '! command -v docker; test ! -e /var/run/docker.sock')
         report = {'baseImage': IMAGE, 'image': docker('image', 'inspect', '--format', '{{.Id}}', image).stdout.strip(),
@@ -180,6 +217,7 @@ exec /ocd --no-update-check run
                   'storageMountType': 'volume', 'persistentIdentityUnchanged': True,
                   'restoredInstanceRunning': True,
                   'kvSurvivedDaemonRestart': True, 'workerSurvivedDaemonRestart': True,
+                  'pureAssetsSurvivedDaemonRestart': True, 'workerCronToAssetsOnly': True,
                   'dockerRequiredByDaemon': False, 'passed': True}
         (EVIDENCE / 'centos82-ocd-smoke.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))

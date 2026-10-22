@@ -211,8 +211,7 @@ pub(super) async fn clone_version(
         .collect();
     let crons = crons.unwrap_or(
         CronRepository::new(api.storage.db())
-            .version_config(source_version)?
-            .declarations
+            .version_declarations(&snapshot.version)?
             .into_iter()
             .map(|declaration| declaration.expression)
             .collect(),

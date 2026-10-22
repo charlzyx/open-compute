@@ -210,7 +210,12 @@ impl P23PromotionCoordinator {
         }
 
         let cron_repo = CronRepository::new(self.storage.db());
-        let cron_config = cron_repo.version_config(request.version_id)?;
+        let version = workers.get_worker_version(
+            request.instance_id,
+            request.worker_id,
+            request.version_id,
+        )?;
+        let cron_declarations = cron_repo.version_declarations(&version)?;
         let old_crons = cron_repo.live_for_worker(request.worker_id)?;
         let maximum_generation = cron_repo.maximum_generation(request.worker_id)?;
         let reusable_generation = old_crons
@@ -252,7 +257,7 @@ impl P23PromotionCoordinator {
                     request.worker_id,
                     request.version_id,
                     generation,
-                    &cron_config.declarations,
+                    &cron_declarations,
                     request.now_ms,
                 )?,
             )
