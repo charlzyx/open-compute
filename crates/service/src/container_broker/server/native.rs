@@ -69,14 +69,18 @@ pub(super) async fn dispatch(
         .await
         .map_err(|_| invalid())?;
     let body = match &operation {
-        Operation::Create(name) => policy::prepare_create(
-            &bytes,
-            name,
-            lease.as_ref().ok_or_else(invalid)?,
-            state.config.sidecar_image.as_deref().ok_or_else(invalid)?,
-            startup.as_ref().ok_or_else(invalid)?.environment(),
-            &state.config.exec_helper_volume,
-        )?,
+        Operation::Create(name) => {
+            let startup = startup.as_ref().ok_or_else(invalid)?;
+            let body = policy::prepare_create(
+                &bytes,
+                name,
+                lease.as_ref().ok_or_else(invalid)?,
+                state.config.sidecar_image.as_deref().ok_or_else(invalid)?,
+                startup.environment(),
+                &state.config.exec_helper_volume,
+            )?;
+            startup.prepare_create(&body, name)?
+        }
         Operation::ExecCreate(_) => startup.as_ref().ok_or_else(invalid)?.prepare_exec(&bytes)?,
         Operation::ExecStart(_) => {
             let value = policy::validate_exec(&bytes, true)?;

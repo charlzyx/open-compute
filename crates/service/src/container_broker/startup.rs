@@ -117,6 +117,8 @@ pub(super) struct EffectiveStartup {
     command: Vec<String>,
     entrypoint: Vec<String>,
     user: String,
+    exec_user: String,
+    durable_object: bool,
     working_dir: String,
     labels: serde_json::Map<String, serde_json::Value>,
 }
@@ -126,9 +128,59 @@ impl EffectiveStartup {
         &self.environment
     }
 
+    pub(super) fn prepare_create(&self, body: &[u8], name: &str) -> Result<Vec<u8>, PlatformError> {
+        if !self.durable_object || name.ends_with("-proxy") {
+            return Ok(body.to_vec());
+        }
+        let mut value: serde_json::Value = serde_json::from_slice(body).map_err(|_| invalid())?;
+        let root = value.as_object_mut().ok_or_else(invalid)?;
+        root.insert("User".into(), serde_json::json!(self.user));
+        root.insert("Entrypoint".into(), serde_json::json!(self.entrypoint));
+        root.insert("Cmd".into(), serde_json::json!(self.command));
+        let body = serde_json::to_vec(&value).map_err(|_| invalid())?;
+        if body.len() > 16 << 20 {
+            return Err(invalid());
+        }
+        Ok(body)
+    }
+
     pub(super) fn prepare_exec(&self, body: &[u8]) -> Result<Vec<u8>, PlatformError> {
         let mut value = super::policy::validate_exec(body, false)?;
         let root = value.as_object_mut().ok_or_else(invalid)?;
+        if let Some(user) = root.get("User").and_then(serde_json::Value::as_str)
+            && !user.is_empty()
+        {
+            let numeric = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+            match user.split_once(':') {
+                Some((uid, gid)) if numeric(uid) && numeric(gid) => {}
+                // Cloudflare runs a bare numeric UID as root and rejects names.
+                None if numeric(user) => {
+                    root.insert("User".into(), serde_json::json!("0:0"));
+                }
+                _ => return Err(invalid()),
+            }
+        }
+        if self.durable_object {
+            let target_user = root
+                .get("User")
+                .and_then(serde_json::Value::as_str)
+                .filter(|user| !user.is_empty())
+                .unwrap_or(&self.exec_user)
+                .to_owned();
+            let command = root
+                .get_mut("Cmd")
+                .and_then(serde_json::Value::as_array_mut)
+                .ok_or_else(invalid)?;
+            if command.len() != 3
+                || command[0].as_str() != Some(super::helper::PATH)
+                || command[1].as_str() != Some("--open-compute-exec")
+                || !command[2].as_str().is_some_and(super::contract::opaque)
+            {
+                return Err(invalid());
+            }
+            command.push(serde_json::Value::String(target_user));
+            root.insert("User".into(), serde_json::json!("0:0"));
+        }
         // Moby adds HOSTNAME and, for a TTY, TERM before merging the container environment.
         // Bare names in exec overrides remove inherited values; PATH remains available.
         let mut removed = BTreeSet::from(["HOSTNAME", "TERM"]);
@@ -194,10 +246,31 @@ impl EffectiveStartup {
             )
         });
         environment.reverse();
-        let (command, entrypoint) = match lease.startup.entrypoint_override() {
+        let (mut command, mut entrypoint) = match lease.startup.entrypoint_override() {
             Some(entrypoint) => (Vec::new(), entrypoint.clone()),
             None => (array(config.get("Cmd"))?, array(config.get("Entrypoint"))?),
         };
+        let mut user = string(config.get("User"))?;
+        let exec_user = if user.is_empty() {
+            "0:0".to_owned()
+        } else {
+            user.clone()
+        };
+        let durable_object = lease.scheduling_policy
+            == open_compute_storage::containers::ContainerSchedulingPolicy::DurableObject;
+        if durable_object {
+            entrypoint.append(&mut command);
+            command = entrypoint;
+            if command.is_empty() {
+                return Err(invalid());
+            }
+            entrypoint = vec![
+                super::helper::PATH.to_owned(),
+                "--open-compute-main".to_owned(),
+                exec_user.clone(),
+            ];
+            user = "0:0".to_owned();
+        }
         let mut labels = match config.get("Labels") {
             None | Some(serde_json::Value::Null) => serde_json::Map::new(),
             Some(value) => value.as_object().cloned().ok_or_else(invalid)?,
@@ -228,7 +301,9 @@ impl EffectiveStartup {
             environment,
             command,
             entrypoint,
-            user: string(config.get("User"))?,
+            user,
+            exec_user,
+            durable_object,
             working_dir: string(config.get("WorkingDir"))?,
             labels,
         })

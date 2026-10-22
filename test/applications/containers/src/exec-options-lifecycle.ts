@@ -4,7 +4,7 @@ function check(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-async function collect(
+export async function collect(
   native: NativeContainer,
   script: string,
   options: ContainerExecOptions,
@@ -52,7 +52,9 @@ async function collect(
 
 export async function execOptionsLifecycle(
   native: NativeContainer,
+  diagnostic: { phase: string },
 ): Promise<Response> {
+  diagnostic.phase = "exec-options-running-check";
   check(native.running, "exec options require an already running main");
   const deadline = Date.now() + 60000;
   const encoder = new TextEncoder();
@@ -64,6 +66,7 @@ export async function execOptionsLifecycle(
       controller.close();
     },
   });
+  diagnostic.phase = "exec-options-stdin-collect";
   const stdin = await collect(
     native,
     "import os,sys; data=sys.stdin.buffer.read(); assert data==b'first:second'; os.write(1,b'stdin-eof:'+data); os.write(2,b'stdin-err')",
@@ -71,6 +74,7 @@ export async function execOptionsLifecycle(
     () => {},
     deadline,
   );
+  diagnostic.phase = "exec-options-stdin-check";
   check(
     stdin.output.exitCode === 0 &&
       decoder.decode(stdin.output.stdout) === "stdin-eof:first:second" &&
@@ -78,6 +82,7 @@ export async function execOptionsLifecycle(
     "ReadableStream stdin must deliver all bytes and real EOF",
   );
 
+  diagnostic.phase = "exec-options-stdout-ignored-collect";
   const stdoutIgnored = await collect(
     native,
     "import os; os.write(1,b'ignored-out'); os.write(2,b'kept-err')",
@@ -90,6 +95,7 @@ export async function execOptionsLifecycle(
     },
     deadline,
   );
+  diagnostic.phase = "exec-options-stdout-ignored-check";
   check(
     stdoutIgnored.output.exitCode === 0 &&
       stdoutIgnored.output.stdout.byteLength === 0 &&
@@ -97,6 +103,7 @@ export async function execOptionsLifecycle(
     "stdout ignore must discard only stdout",
   );
 
+  diagnostic.phase = "exec-options-stderr-ignored-collect";
   const stderrIgnored = await collect(
     native,
     "import os; os.write(1,b'kept-out'); os.write(2,b'ignored-err')",
@@ -109,6 +116,7 @@ export async function execOptionsLifecycle(
     },
     deadline,
   );
+  diagnostic.phase = "exec-options-stderr-ignored-check";
   check(
     stderrIgnored.output.exitCode === 0 &&
       decoder.decode(stderrIgnored.output.stdout) === "kept-out" &&
@@ -116,6 +124,7 @@ export async function execOptionsLifecycle(
     "stderr ignore must discard only stderr",
   );
 
+  diagnostic.phase = "exec-options-combined-collect";
   const combined = await collect(
     native,
     "import os; os.write(1,b'combined-out\\n'); os.write(2,b'combined-err\\n')",
@@ -131,6 +140,7 @@ export async function execOptionsLifecycle(
     deadline,
   );
   // Independent stdout/stderr pipes do not define an order between their writes.
+  diagnostic.phase = "exec-options-combined-lines-check";
   const combinedLines = decoder.decode(combined.output.stdout).split("\n");
   check(
     combinedLines.pop() === "",
@@ -144,13 +154,16 @@ export async function execOptionsLifecycle(
     "combined stdout must contain both sources and stderr must be empty",
   );
   let secondOutputName: string | null = null;
+  diagnostic.phase = "exec-options-second-output";
   try {
     await combined.process.output();
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
     secondOutputName = error.name;
   }
+  diagnostic.phase = "exec-options-second-output-check";
   check(secondOutputName === "TypeError", "output must reject a second call");
+  diagnostic.phase = "exec-options-running-after-check";
   check(native.running, "exec options must preserve their running main");
   return Response.json({
     stdin: {

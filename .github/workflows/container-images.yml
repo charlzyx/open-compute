@@ -7,6 +7,12 @@ on:
         description: Also prepare native ARM64 images for release consumers
         type: boolean
         default: true
+  workflow_dispatch:
+    inputs:
+      candidate-revision:
+        description: Full immutable source commit for native ARM64 fixture preparation
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,10 +29,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.arm64 && '[{"os":"ubuntu-24.04","architecture":"amd64"},{"os":"ubuntu-24.04-arm","architecture":"arm64"}]' || '[{"os":"ubuntu-24.04","architecture":"amd64"}]') }}
+        include: ${{ fromJSON(inputs.candidate-revision && '[{"os":"ubuntu-24.04-arm","architecture":"arm64"}]' || (inputs.arm64 && '[{"os":"ubuntu-24.04","architecture":"amd64"},{"os":"ubuntu-24.04-arm","architecture":"arm64"}]' || '[{"os":"ubuntu-24.04","architecture":"amd64"}]')) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate-revision || github.sha }}
+      - name: Verify immutable candidate checkout
+        if: inputs.candidate-revision != ''
+        shell: bash
+        env:
+          CANDIDATE_REVISION: ${{ inputs.candidate-revision }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_REVISION"
+          test -z "$(git status --porcelain --untracked-files=all)"
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -62,6 +80,28 @@ jobs:
           python3 -I -B test/containers-fixture/consume-images.py \
             --directory "$output" --architecture "${{ matrix.architecture }}" > "$RUNNER_TEMP/p23-build-input.json"
           echo "directory=$output" >> "$GITHUB_OUTPUT"
+      - name: Record candidate source identity
+        if: inputs.candidate-revision != ''
+        shell: bash
+        env:
+          IMAGE_DIRECTORY: ${{ steps.images.outputs.directory }}
+          CANDIDATE_REVISION: ${{ inputs.candidate-revision }}
+          WORKFLOW_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 -I -B - "$IMAGE_DIRECTORY/candidate-source.json" <<'PYTHON'
+          import json, os, pathlib, subprocess, sys
+          revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert revision == os.environ['CANDIDATE_REVISION']
+          assert not subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], text=True)
+          proof = {'schemaVersion': 1, 'sourceRevision': revision,
+                   'sourceTree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
+                   'workflowRevision': os.environ['WORKFLOW_REVISION'],
+                   'runId': int(os.environ['GITHUB_RUN_ID']), 'architecture': 'arm64'}
+          with pathlib.Path(sys.argv[1]).open('x') as stream:
+              json.dump(proof, stream, indent=2)
+              stream.write('\n')
+          PYTHON
       - uses: actions/upload-artifact@v7
         with:
           name: p23-images-${{ matrix.architecture }}

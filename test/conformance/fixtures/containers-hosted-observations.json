@@ -60,8 +60,8 @@
       "id": "containers::Container::interceptAllOutboundHttp:method#0",
       "signatureSha256": "2f3adf2f3660c54df63b3706e25eb70ea597ccccb1ea9c5c0ac5c0f3a9ab6347",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "A fallback rule handles one unmatched hostname on port80; exact response and HTTP/socket close observed after the specific rule. Other patterns, ports and failure branches unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -69,8 +69,8 @@
       "id": "containers::Container::interceptOutboundHttp:method#0",
       "signatureSha256": "54b0a39d809b3b5aa6e7b099c81a0d0ee537bb1da207a019ed75604548116cd7",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "One exact hostname rule takes precedence over the all-host fallback on port80; exact response and HTTP/socket close observed. Other patterns, ports and failure branches unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -240,8 +240,8 @@
       "id": "containers::ContainerExecOptions::signal:property#0",
       "signatureSha256": "1f78e1308c166981ca5caa2c22c7da18923f1fd468a11e2bbfefa6f19308a5fd",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "A pre-aborted signal rejects with AbortError before returning a process. Aborting after real READY exits137 with stdout/stderr EOF; a subsequent exec confirms the main container remains alive. Other timing races unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -366,8 +366,8 @@
       "id": "containers::ContainerStartResources::diskMb:property#0",
       "signatureSha256": "9c6f72cf30f5964070170ca444c9c7fd6129918a267fe6cf4f4b1d7958620b84",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Custom diskMb:4000 is accepted together with vcpu:1 and memoryMib:3072. The local tuple {vcpu:0.03125,memoryMib:128,diskMb:1000} returns a controlled readiness Error between two accepted controls. This does not isolate a disk predicate; effective allocation and numeric boundaries remain unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -375,8 +375,8 @@
       "id": "containers::ContainerStartResources::memoryMib:property#0",
       "signatureSha256": "0249201df54605705568d397ed7018355079eaba33c2dd2888c6afb8b279f33b",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Custom memoryMib:3072 is accepted with vcpu:1 and diskMb:4000. With only memoryMib changed to 128, readiness returns a controlled Error between accepted controls. The exact predicate, effective allocation and numeric boundaries remain unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -384,8 +384,8 @@
       "id": "containers::ContainerStartResources::vcpu:property#0",
       "signatureSha256": "294047398eca52d4613fe59a40f73c47ffd5f70374395ce376f9c704982b919f",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Custom vcpu:1 is accepted with memoryMib:3072 and diskMb:4000. With only vcpu changed to 0.03125, readiness returns a controlled Error between accepted controls. The exact predicate, effective allocation and numeric boundaries remain unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -465,8 +465,8 @@
       "id": "containers::ContainerStartupOptions::instance:property#0",
       "signatureSha256": "0a93b1be717ce31a82a47352af98c126e29e018b5b28a7f87ec9bbba996fe9d6",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "Named lite and custom {vcpu:1,memoryMib:3072,diskMb:4000} each start a real container. A later differential brackets three controlled readiness Errors with two accepted custom controls: the local small tuple, CPU-only reduction and memory-only reduction. Each container is destroyed; effective allocation, exact failure predicates and complete profile semantics remain unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -537,8 +537,8 @@
       "id": "containers::ExecProcess::kill:method#0",
       "signatureSha256": "c7b8aef435367ff4dfa8dadebdf057e07142a8c7220be833f9f221f5b0f05191",
       "maintainedStatus": "blocked",
-      "hostedEvidenceClass": "unverified-runtime",
-      "observation": null,
+      "hostedEvidenceClass": "observed-subset",
+      "observation": "One kill(9) after real READY exits137 with stdout/stderr EOF. Other signals, repetition and invalid values unverified.",
       "typeAndMatchingSourceEvidence": true,
       "fullMemberQualificationPassed": false
     },
@@ -672,6 +672,16 @@
       "evidencePath": ".temp/p23-full64/inspect-image-controlled-19-preparation/hosted-observations-review.json",
       "evidenceSha256": "3ead3255b23a822b65b9582d4aaeccae5b555286e0a79607cf90816c231ccd85",
       "scope": "Single controlled CF19 run exits0 after official build/deploy0: two distinct-content snapshot IDs restore their exact markers and SHA into fresh DOs; both restored inspect.image references are identical and match the prior hosted reference. Source inspect retains cloudflare/debian-trixie; public application metadata provides no immutable mapping. Base/derived/platform identity and registry formula remain unproved. Independent read-only verification restores all three inventories and finds no secret file. Application/Worker deletion does not prove snapshot-byte deletion or billing ended; no snapshot delete endpoint was discovered. No local runtime or full-member qualification."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/package-r21-main-8ee3-current-preparation/authorized-external-execution-20261021/hosted-root-terminal-review.json",
+      "evidenceSha256": "7ad39ca58d403a4a9f1d39e1b2c7251945611798f801ed0fe2876d8d45c67c6d",
+      "scope": "2026-10-21 UTC: five serial public actions observe eight stable members. HTTP specific/fallback interception and socket close, pre/active AbortSignal, kill(9), lite and custom startup accepted. Custom requests vcpu:1, memoryMib:3072 and diskMb:4000; actual allocation is not measured. Each container is destroyed before the next action. Exact temporary Worker/application/namespace removed; all three inventories restored. No snapshot operation, local equivalence, complete member or full65 qualification claim."
+    },
+    {
+      "evidencePath": ".temp/p23-full64/package-r21-main-8ee3-current-preparation/current-custom-resource-differential-preparation/root-terminal-review.json",
+      "evidenceSha256": "6d973ce18a12c68e8c6bdffb083e11ee4ca911e4c701816e824718f817d8fa76",
+      "scope": "2026-10-21 UTC: five serial custom-input observations. Accepted {vcpu:1,memoryMib:3072,diskMb:4000} controls bracket three controlled readiness Errors: local {vcpu:0.03125,memoryMib:128,diskMb:1000}, CPU-only {vcpu:0.03125,memoryMib:3072,diskMb:4000}, memory-only {vcpu:1,memoryMib:128,diskMb:4000}. All container destruction and exact Worker/application/namespace retirement succeed; original inventories restored. This is a finite input difference, not proof of the specific predicate, numeric minima, allocation, all-values equivalence or full65 qualification."
     }
   ],
   "sourceConflicts": [

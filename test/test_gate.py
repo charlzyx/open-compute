@@ -49,6 +49,7 @@ class GateTests(unittest.TestCase):
         self.assertEqual(gate.CARGO_TARGETS[name], ('open-compute-service', 'p23_containers', True))
         self.assertEqual(gate.TIMING[name], (case,))
         self.assertEqual(gate.ONCE[name], (
+            'exec_options_probe::native_exec_streams_and_code_updates_preserve_owned_processes',
             'snapshots::snapshot_rootfs_excludes_helper_entities_and_hardlink_references',
         ))
         self.assertEqual(gate.GROUPS['all'].count(name), 1)

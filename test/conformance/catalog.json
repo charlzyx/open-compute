@@ -693,14 +693,14 @@
     {
       "id": "containers.native",
       "product": "containers",
-      "surface": "P23 pinned native Container and ExecProcess stable surface; dynamic attachment and provider qualification pending",
+      "surface": "P23 pinned stable Container and ExecProcess surface; real-runtime cases passed, but fixed 65-member compatibility qualification is incomplete",
       "status": "blocked",
       "sources": [
         {
           "kind": "cloudflare-workers-types",
-          "revision": "e9dda5963aba7ee4323960db795690ec78fec118",
+          "revision": "d99bc6b777e35d72d71c2f1fe2fd1db53284528a",
           "path": "index.d.ts",
-          "sha256": "a00b4783854c9028158f776d605790d9a3e17e6a97f4d255beb70035c59c40dd"
+          "sha256": "5cba0df0ed430c5ba6bdf249221c2be24f4344e539e29f2113a042a5e5d23a6f"
         }
       ],
       "positiveCases": [],
@@ -31532,7 +31532,7 @@
         "containers::ExecProcess::stdin:property#0",
         "containers::ExecProcess::stdout:property#0"
       ],
-      "reason": "P23 requires a qualified native dynamic DO attachment, immutable image admission, restricted provider and full real-runtime lifecycle evidence. Storage and compile fixtures do not prove the public Container API."
+      "reason": "Nine Directory members lack a stable producer and positive restore evidence. Official documentation conflicts with fixed-source and hosted omitted-options snapshots and with hosted restored-image inspection. The maintained P23 cases passed; remaining per-member qualification is incomplete."
     },
     {
       "id": "workers-types.20260930-unqualified-signatures",

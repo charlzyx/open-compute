@@ -484,7 +484,7 @@ pub(crate) async fn fixture() -> Fixture {
         open_files: 1024,
     };
     let contract = ProviderContract {
-        version: 2,
+        version: ProviderContract::VERSION,
         runtime: "docker".into(),
         engine_version: "test protocol fixture".into(),
         architecture: "arm64".into(),

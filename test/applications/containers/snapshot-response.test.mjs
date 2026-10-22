@@ -13,6 +13,8 @@ for (const [name, replacement] of Object.entries({
     "export class DurableObject { constructor(ctx) { this.ctx = ctx; } }",
   "./exec-options-lifecycle":
     "export const execOptionsLifecycle = () => { throw new Error('unexpected exec'); };",
+  "./exec-users-lifecycle":
+    "export const execUsersLifecycle = () => { throw new Error('unexpected exec user probe'); };",
   "./signals-lifecycle":
     "export const signalsLifecycle = () => { throw new Error('unexpected signals'); };",
 })) {
@@ -24,7 +26,7 @@ for (const [name, replacement] of Object.entries({
 }
 const { NamedImageContainer } = await import(url(code));
 
-function fixture(snapshotContainer) {
+function fixture(snapshotContainer, path = "/named/snapshot") {
   const native = {
     running: true,
     images: { base: "base", alternate: "alternate" },
@@ -46,10 +48,23 @@ function fixture(snapshotContainer) {
       },
     },
   });
-  const response = object.fetch(new Request("http://fixture/named/snapshot"));
+  const response = object.fetch(new Request(`http://fixture${path}`));
   response.phases = phases;
   return response;
 }
+
+test("default snapshot capture calls the native method with no arguments", async () => {
+  let calls = 0;
+  const handle = { id: "default-snapshot", size: 123 };
+  const response = await fixture((...args) => {
+    assert.equal(args.length, 0);
+    calls++;
+    return Promise.resolve(handle);
+  }, "/named/snapshot-default");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), handle);
+  assert.equal(calls, 1);
+});
 
 test("snapshot response headers precede completion, but its JSON waits for the real handle", async () => {
   let complete;
@@ -114,5 +129,57 @@ for (const synchronous of [false, true]) {
       { phase: "CAPTURE_REQUESTED", value: undefined },
       { phase: "CAPTURE_REJECTED", value: null },
     ]);
+  });
+}
+
+let mainCode = await compileRuntime(
+  "../../../test/applications/containers/src/index.ts",
+);
+for (const [name, replacement] of Object.entries({
+  "@cloudflare/containers":
+    "export class Container { constructor(ctx,env) { this.ctx=ctx; this.env=env; } async startAndWaitForPorts() {} } export class ContainerProxy {}",
+  "./exec-lifecycle": "export const execLifecycle = () => {};",
+  "./exec-users-lifecycle": "export const execUsersLifecycle = () => {};",
+  "./inactivity-lifecycle": "export class RawIdleContainer {}",
+  "./named-images": "export class NamedImageContainer {}",
+  "./network-lifecycle": "export const networkLifecycle = () => {};",
+})) {
+  assert.ok(mainCode.includes(JSON.stringify(name)), name);
+  mainCode = mainCode.replaceAll(
+    JSON.stringify(name),
+    JSON.stringify(url(replacement)),
+  );
+}
+const { FixtureContainer } = await import(url(mainCode));
+
+for (const [message, category] of [
+  ["Container operation failed.", "CONTAINER_OPERATION_FAILED"],
+  ["The Container is not running.", "CONTAINER_NOT_RUNNING"],
+  ["Container execution authority changed.", "CONTAINER_AUTHORITY_CHANGED"],
+  ["Container port connection closed unexpectedly.", "CONTAINER_PORT_CLOSED"],
+  ["Container port connection read aborted.", "CONTAINER_PORT_READ_ABORTED"],
+  ["private unexpected error with credentials and topology", null],
+]) {
+  test(`main HTTP diagnostic exposes only fixed category ${category}`, async () => {
+    const object = new FixtureContainer(
+      {
+        id: { equals: () => false },
+        storage: { sql: { exec() {} } },
+        container: {
+          getTcpPort: () => ({
+            fetch: async () => {
+              throw new Error(message);
+            },
+          }),
+        },
+      },
+      { OBJECTS: { idFromName: () => null } },
+    );
+    const response = await object.fetch(new Request("http://fixture/"));
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.equal(body.phase, "main-http");
+    assert.equal(body.nativeErrorCode, category);
+    assert.ok(!JSON.stringify(body).includes(message));
   });
 }

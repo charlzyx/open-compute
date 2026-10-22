@@ -34,13 +34,27 @@ func TestExecSupervisorHarness(t *testing.T) {
 	if os.Getenv("OC_EXEC_TEST_CLOSE") == "stderr" {
 		unix.Close(2)
 	}
-	code := runExecSupervisor(identity)
+	code := runExecSupervisor(identity, os.Getenv("OC_EXEC_TEST_USER"))
 
 	os.Exit(code)
 }
 
 func TestExecSupervisorPayload(t *testing.T) {
 	switch os.Getenv("OC_EXEC_TEST_PAYLOAD") {
+	case "root-credentials":
+		execSupervisorRootCredentialPayload(t)
+		return
+	case "credential-process":
+		if os.Geteuid() != 65534 || os.Getegid() != 65534 {
+			os.Exit(95)
+		}
+		header := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
+		var caps [2]unix.CapUserData
+		if unix.Capget(&header, &caps[0]) != nil || caps[0].Effective == 0 || caps[0].Effective != caps[0].Permitted || caps[1].Permitted != 0 {
+			os.Exit(96)
+		}
+		fmt.Fprint(os.Stdout, "credential-process")
+		os.Exit(0)
 	case "shellless":
 		fmt.Fprint(os.Stdout, "shellless-readonly")
 		os.Exit(0)
@@ -941,7 +955,7 @@ func TestExecSupervisorControlIOAndKernelFailuresNeverInventSuccess(t *testing.T
 	if response := (&execSupervisor{state: "running", pty: &execSupervisorPTY{master: master}}).handle(execControlRequest{Op: "resize", Rows: 1, Cols: 1}); response.OK || response.Code != "PTY_FAILED" {
 		t.Fatal("failed resize accepted")
 	}
-	if err := execSupervisorRun("bad", strings.NewReader(""), nil, nil); err == nil {
+	if err := execSupervisorRun("bad", "", strings.NewReader(""), nil, nil); err == nil {
 		t.Fatal("invalid identity accepted")
 	}
 }

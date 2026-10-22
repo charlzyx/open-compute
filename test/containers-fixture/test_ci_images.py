@@ -1,5 +1,6 @@
 """Check image preparation dependencies without starting CI or Docker."""
 from pathlib import Path
+import json
 import re
 import unittest
 
@@ -114,7 +115,14 @@ class ImageWorkflowTests(unittest.TestCase):
             self.assertIn('--binary "$PWD/target/debug/ocd"', body)
             self.assertIn('.temp/containers-ci-engine/', body)
         # Package coverage remains native ARM64; only virtualization jobs move to Intel.
-        self.assertIn('target: darwin-arm64\n            os: macos-15', job(source, 'package'))
+        matrix = re.search(r"^        include: (.+)$", job(source, 'package'), re.MULTILINE)
+        self.assertIsNotNone(matrix)
+        alternatives = re.findall(r"'(\[.*?\])'", matrix.group(1))
+        self.assertEqual(json.loads(alternatives[-1]), [
+            {"target": "darwin-arm64", "os": "macos-15"},
+            {"target": "linux-arm64", "os": "ubuntu-24.04-arm"},
+            {"target": "linux-x64", "os": "ubuntu-24.04"},
+        ])
 
     def test_intel_uses_locked_mbx_source_and_a_verified_colima_binary(self):
         source = (ROOT / '.github/actions/setup-open-compute/action.yml').read_text()

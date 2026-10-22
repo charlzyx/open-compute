@@ -24,6 +24,7 @@ impl ContainerService {
         let image = self.admitted_image(&lease.effective_image_sha256)?;
         Ok(BrokerLease {
             application_id: app.id,
+            scheduling_policy: app.scheduling_policy,
             owner_key: lease.identity.owner_key(self.instance_id()),
             max_instances: app.max_instances,
             lease_key: lease.opaque_engine_key.clone(),

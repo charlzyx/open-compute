@@ -30,6 +30,7 @@ impl Engine {
         let port = 39_001_u16;
         let key = hex::encode(Sha256::digest(uuid::Uuid::new_v4().as_bytes()));
         let lease = BrokerLease {
+            scheduling_policy: open_compute_storage::containers::ContainerSchedulingPolicy::Default,
             lease_key: key.clone(),
             owner_key: key.clone(),
             start_identity: key.clone(),

@@ -25,7 +25,7 @@ fn resources() -> ContainerResources {
 
 fn contract() -> ProviderContract {
     ProviderContract {
-        version: 2,
+        version: ProviderContract::VERSION,
         runtime: "docker".into(),
         engine_version: "29.4.0".into(),
         architecture: "amd64".into(),
@@ -43,6 +43,7 @@ fn contract() -> ProviderContract {
 
 fn lease() -> BrokerLease {
     BrokerLease {
+        scheduling_policy: open_compute_storage::containers::ContainerSchedulingPolicy::Default,
         lease_key: "a".repeat(64),
         owner_key: "9".repeat(64),
         startup: crate::container_broker::BrokerStartOptions {
@@ -97,6 +98,20 @@ fn container_broker_contract_rejects_unqualified_or_mutable_policy() {
     config().validate().unwrap();
     lease().validate(&contract()).unwrap();
     assert_eq!(contract().sha256().unwrap().len(), 64);
+    let mut old_contract = contract();
+    old_contract.version = 2;
+    assert!(lease().validate(&old_contract).is_err());
+    let mut missing_policy = serde_json::to_value(lease()).unwrap();
+    missing_policy
+        .as_object_mut()
+        .unwrap()
+        .remove("schedulingPolicy");
+    assert!(serde_json::from_value::<BrokerLease>(missing_policy).is_err());
+    for policy in [json!("regional"), json!(null), json!({"privileged":true})] {
+        let mut invalid_policy = serde_json::to_value(lease()).unwrap();
+        invalid_policy["schedulingPolicy"] = policy;
+        assert!(serde_json::from_value::<BrokerLease>(invalid_policy).is_err());
+    }
     for field in [
         "leaseKey",
         "startIdentity",

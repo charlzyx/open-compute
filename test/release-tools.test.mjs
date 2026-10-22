@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
+  link,
   mkdir,
   mkdtemp,
   readdir,
@@ -10,6 +11,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -1012,7 +1014,7 @@ test("installation qualification is a mandatory publication dependency", async (
     "debian-13-arm64",
     "macos-arm64",
   ]) {
-    assert.match(workflow, new RegExp(`- name: ${name}\\n`));
+    assert.ok(workflow.includes(`"name":"${name}"`));
   }
   assert.match(workflow, /for scope in user system/);
   assert.match(
@@ -1129,5 +1131,340 @@ test("compatibility build profile retains the formal Pyodide pin and provenance"
       },
     );
     assert.deepEqual(JSON.parse(stdout), formal.pyodideBundle);
+  }
+});
+
+test("manual native qualification preserves immutable inputs and cannot publish", async () => {
+  const { stdout } = await execFileAsync("bun", [
+    "-e",
+    "console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(process.argv[1]).text())))",
+    releaseWorkflowPath,
+  ]);
+  const workflow = JSON.parse(stdout);
+  assert.deepEqual(Object.keys(workflow.on), ["push", "workflow_dispatch"]);
+  assert.equal(workflow.jobs.failfast.if, "github.event_name == 'push'");
+  assert.equal(workflow.jobs.publish.if, "github.event_name == 'push'");
+  assert.deepEqual(workflow.jobs.publish.permissions, {
+    contents: "write",
+    actions: "read",
+  });
+  assert.deepEqual(workflow.permissions, { contents: "read", actions: "read" });
+  for (const name of ["package", "install-lifecycle"]) {
+    const matrices = [
+      ...workflow.jobs[name].strategy.matrix.include.matchAll(/'([\[{].*?)'/g),
+    ].map((match) => JSON.parse(match[1]));
+    assert.equal(matrices.length, 3);
+    assert.deepEqual(
+      matrices[0].map((item) => item.target),
+      ["darwin-arm64"],
+    );
+    assert.deepEqual(
+      matrices[1].map((item) => item.target),
+      name === "package" ? ["linux-x64"] : ["linux-x64", "linux-x64"],
+    );
+    assert.equal(matrices[2].length, name === "package" ? 3 : 5);
+  }
+  for (const name of ["package", "install-lifecycle", "stress"]) {
+    const job = workflow.jobs[name];
+    assert.match(job.if, /always\(\) && !cancelled\(\)/);
+    assert.equal(
+      job.steps.find((step) => step.uses === "actions/checkout@v7").with.ref,
+      "${{ inputs.candidate-revision || github.sha }}",
+    );
+  }
+  const step = workflow.jobs.package.steps.find(
+    (step) => step.id === "candidate",
+  );
+  const check = new (Object.getPrototypeOf(async function () {}).constructor)(
+    "github",
+    "context",
+    "core",
+    "process",
+    "require",
+    step.with.script,
+  );
+  const revision = (
+    await execFileAsync("git", ["rev-parse", "HEAD"])
+  ).stdout.trim();
+  const context = {
+    repo: { owner: "owner", repo: "repo" },
+    sha: "f".repeat(40),
+  };
+  const base = {
+    run: {
+      id: 123,
+      head_sha: revision,
+      status: "completed",
+      event: "push",
+      head_branch: "main",
+      path: ".github/workflows/ci.yml",
+      head_repository: { id: 42 },
+      repository: { id: 42 },
+    },
+    jobs: [
+      {
+        id: 456,
+        name: "fixture-images / images (ubuntu-24.04, amd64)",
+        status: "completed",
+        conclusion: "success",
+      },
+    ],
+    artifacts: [
+      {
+        id: 789,
+        name: "p23-images-amd64",
+        expired: false,
+        digest: "sha256:" + "a".repeat(64),
+        workflow_run: {
+          id: 123,
+          head_sha: revision,
+          repository_id: 42,
+          head_repository_id: 42,
+        },
+      },
+    ],
+  };
+  async function invoke(change = () => {}, env = {}) {
+    const root = await mkdtemp(join(tmpdir(), "oc-candidate-"));
+    const data = structuredClone(base);
+    change(data);
+    const methods = {
+      getWorkflowRun: "run",
+      listJobsForWorkflowRun: "jobs",
+      listWorkflowRunArtifacts: "artifacts",
+    };
+    const github = {
+      rest: { actions: methods },
+      paginate: async (method) => data[method],
+    };
+    github.rest.actions.getWorkflowRun = async () => ({ data: data.run });
+    const outputs = {};
+    try {
+      await check(
+        github,
+        context,
+        {
+          setOutput: (name, value) => {
+            outputs[name] = value;
+          },
+        },
+        {
+          env: {
+            CANDIDATE_REVISION: revision,
+            FIXTURE_RUN_ID: "123",
+            RUNNER_TEMP: root,
+            IMAGE_ARCHITECTURE: "amd64",
+            ...env,
+          },
+        },
+        createRequire(import.meta.url),
+      );
+      const proof = JSON.parse(
+        await readFile(join(root, "candidate-provenance.json"), "utf8"),
+      );
+      assert.equal(proof.candidateRevision, revision);
+      assert.equal(proof.workflowRevision, context.sha);
+      assert.equal(proof.publicationAuthorized, false);
+      assert.match(outputs.tag, /^v[0-9]+\.[0-9]+\.[0-9]+$/);
+      assert.equal(outputs.architecture, env.IMAGE_ARCHITECTURE ?? "amd64");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+  await invoke();
+  const nativeProducer = (data) => {
+    data.run.path = ".github/workflows/container-images.yml";
+    data.run.event = "workflow_dispatch";
+    data.run.head_sha = context.sha;
+    data.jobs[0].name = "images (ubuntu-24.04-arm, arm64)";
+    data.artifacts[0].name = "p23-images-arm64";
+    data.artifacts[0].workflow_run.head_sha = context.sha;
+  };
+  await invoke(nativeProducer, { IMAGE_ARCHITECTURE: "arm64" });
+  await assert.rejects(
+    invoke(
+      (data) => {
+        nativeProducer(data);
+        data.run.head_sha = "0".repeat(40);
+      },
+      { IMAGE_ARCHITECTURE: "arm64" },
+    ),
+  );
+  await assert.rejects(invoke(undefined, { IMAGE_ARCHITECTURE: "arm64" }));
+  await assert.rejects(invoke(undefined, { IMAGE_ARCHITECTURE: "unknown" }));
+  assert.match(workflow.jobs.stress.if, /inputs.target == 'linux-x64'/);
+  for (const change of [
+    (data) => {
+      data.run.head_sha = "0".repeat(40);
+    },
+    (data) => {
+      data.run.status = "in_progress";
+    },
+    (data) => {
+      data.run.head_repository.id = 7;
+    },
+    (data) => {
+      data.jobs[0].conclusion = "failure";
+    },
+    (data) => {
+      data.jobs.push(data.jobs[0]);
+    },
+    (data) => {
+      data.artifacts[0].expired = true;
+    },
+    (data) => {
+      data.artifacts.push(data.artifacts[0]);
+    },
+    (data) => {
+      data.artifacts[0].workflow_run.id = 8;
+    },
+    (data) => {
+      data.artifacts[0].workflow_run.head_sha = "0".repeat(40);
+    },
+    (data) => {
+      data.artifacts[0].digest = "not-a-digest";
+    },
+  ])
+    await assert.rejects(invoke(change));
+  await assert.rejects(invoke(undefined, { CANDIDATE_REVISION: "main" }));
+  await assert.rejects(invoke(undefined, { FIXTURE_RUN_ID: "123;false" }));
+});
+
+test("native ARM fixture provenance binds the exact source, tree and workflow", async () => {
+  const { stdout } = await execFileAsync("bun", [
+    "-e",
+    "console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(process.argv[1]).text())))",
+    fileURLToPath(
+      new URL("../.github/workflows/container-images.yml", import.meta.url),
+    ),
+  ]);
+  const images = JSON.parse(stdout);
+  const { stdout: releaseText } = await execFileAsync("bun", [
+    "-e",
+    "console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(process.argv[1]).text())))",
+    releaseWorkflowPath,
+  ]);
+  const release = JSON.parse(releaseText);
+  const matrices = [
+    ...images.jobs.images.strategy.matrix.include.matchAll(/'([\[{].*?)'/g),
+  ].map((match) => JSON.parse(match[1]));
+  assert.deepEqual(
+    matrices.map((matrix) => matrix.map((row) => row.architecture)),
+    [["arm64"], ["amd64", "arm64"], ["amd64"]],
+  );
+  assert.equal(
+    images.jobs.images.steps[0].with.ref,
+    "${{ inputs.candidate-revision || github.sha }}",
+  );
+  const extract = (source) => {
+    const python = source.match(/<<'PYTHON'\n([\s\S]*?)\nPYTHON/);
+    assert.ok(python);
+    return python[1];
+  };
+  const producer = extract(
+    images.jobs.images.steps.find(
+      (step) => step.name === "Record candidate source identity",
+    ).run,
+  );
+  const consumer = extract(
+    release.jobs.package.steps.find(
+      (step) =>
+        step.name ===
+        "Verify reused native fixture graphs against candidate sources",
+    ).run,
+  );
+  const root = await mkdtemp(join(tmpdir(), "oc-native-provenance-"));
+  const path = join(root, "candidate-source.json");
+  const repository = join(root, "repository");
+  await mkdir(repository);
+  await writeFile(join(repository, "source.ts"), "export {};\n");
+  await execFileAsync("git", ["init", "--quiet", repository]);
+  await execFileAsync("git", ["add", "source.ts"], { cwd: repository });
+  await execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "--quiet",
+      "-m",
+      "Source fixture",
+    ],
+    { cwd: repository },
+  );
+  const revision = (
+    await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repository })
+  ).stdout.trim();
+  const env = {
+    PATH: process.env.PATH,
+    CANDIDATE_REVISION: revision,
+    WORKFLOW_REVISION: "f".repeat(40),
+    GITHUB_RUN_ID: "123",
+    FIXTURE_RUN_ID: "123",
+  };
+  const run = (script) =>
+    execFileAsync("python3", ["-I", "-B", "-c", script, path], {
+      env,
+      cwd: repository,
+    });
+  try {
+    await run(producer);
+    await run(consumer);
+    const valid = JSON.parse(await readFile(path, "utf8"));
+    await rm(path);
+    await writeFile(
+      join(repository, "source.ts"),
+      "export const changed = true;\n",
+    );
+    await assert.rejects(run(producer), (error) =>
+      error.stderr.includes("AssertionError"),
+    );
+    await assert.rejects(stat(path), { code: "ENOENT" });
+    await writeFile(join(repository, "source.ts"), "export {};\n");
+    for (const change of [
+      (data) => {
+        data.schemaVersion = true;
+      },
+      (data) => {
+        data.sourceRevision = "0".repeat(40);
+      },
+      (data) => {
+        data.sourceTree = "0".repeat(40);
+      },
+      (data) => {
+        data.workflowRevision = "0".repeat(40);
+      },
+      (data) => {
+        data.runId = 124;
+      },
+      (data) => {
+        data.architecture = "amd64";
+      },
+      (data) => {
+        data.extra = "unexpected";
+      },
+    ]) {
+      const bad = structuredClone(valid);
+      change(bad);
+      await writeFile(path, JSON.stringify(bad));
+      await assert.rejects(run(consumer));
+    }
+    await writeFile(path, JSON.stringify(valid));
+    const alias = join(root, "proof-alias");
+    await link(path, alias);
+    await assert.rejects(run(consumer));
+    await rm(alias);
+    await writeFile(path, " ".repeat(5000) + JSON.stringify(valid));
+    await assert.rejects(run(consumer));
+    await rm(path);
+    await symlink(join(root, "other"), path);
+    await writeFile(join(root, "other"), JSON.stringify(valid));
+    await assert.rejects(run(consumer));
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

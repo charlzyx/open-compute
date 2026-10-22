@@ -168,44 +168,62 @@ async fn poststart_requires_exact_running_evidence_and_unknown_state_keeps_same_
 
 #[tokio::test]
 async fn failed_registration_is_durable_lost_and_recovery_does_not_create_replacement() {
-    let fixture = fixture().await;
-    let image = fixture.admit_image("main").await;
-    let authority = authority(&fixture.service, &fixture._artifacts, image, true);
-    let (auth, credential) = generation();
-    fixture.protocol.register_fail.store(true, Ordering::SeqCst);
-    assert!(
+    for durable_object in [false, true] {
+        let fixture = fixture().await;
+        let image = fixture.admit_image("main").await;
+        let authority = if durable_object {
+            do_authority(&fixture.service, &fixture._artifacts, image, true)
+        } else {
+            authority(&fixture.service, &fixture._artifacts, image, true)
+        };
+        let (auth, credential) = generation();
+        let mut startup = json!({"enableInternet":false});
+        if durable_object {
+            startup["image"] = json!(format!("app@sha256:{}", hex::encode(image)));
+        }
+        fixture.protocol.register_fail.store(true, Ordering::SeqCst);
+        assert!(
+            fixture
+                .service
+                .resolve(
+                    authority.request(true, Some(startup)),
+                    10,
+                    &auth,
+                    &credential
+                )
+                .await
+                .is_err()
+        );
+        let repo = ContainerAuthority::new(fixture.service.storage.db());
+        let lost = repo.existing_lease(&authority.object).unwrap().unwrap();
+        assert_eq!(lost.state, ContainerLeaseState::Lost);
         fixture
-            .service
-            .resolve(
-                authority.request(true, Some(json!({"enableInternet":false}))),
-                10,
-                &auth,
-                &credential
-            )
+            .protocol
+            .register_fail
+            .store(false, Ordering::SeqCst);
+        let recovered = fixture
+            .restart_service()
+            .resolve(authority.request(true, None), 11, &auth, &credential)
             .await
-            .is_err()
-    );
-    let repo = ContainerAuthority::new(fixture.service.storage.db());
-    let lost = repo.existing_lease(&authority.object).unwrap().unwrap();
-    assert_eq!(lost.state, ContainerLeaseState::Lost);
-    fixture
-        .protocol
-        .register_fail
-        .store(false, Ordering::SeqCst);
-    let recovered = fixture
-        .restart_service()
-        .resolve(authority.request(true, None), 11, &auth, &credential)
-        .await
-        .unwrap()
-        .lease
-        .unwrap();
-    assert_eq!(recovered.opaque_engine_key, lost.opaque_engine_key);
-    assert_eq!(recovered.state, ContainerLeaseState::Lost);
-    assert!(!recovered.enable_internet);
-    let identities = fixture.protocol.registrations.lock().await;
-    assert_eq!(identities.len(), 2);
-    assert_eq!(identities[0].lease_key, identities[1].lease_key);
-    assert_eq!(identities[0].startup, identities[1].startup);
+            .unwrap()
+            .lease
+            .unwrap();
+        assert_eq!(recovered.opaque_engine_key, lost.opaque_engine_key);
+        assert_eq!(recovered.state, ContainerLeaseState::Lost);
+        assert!(!recovered.enable_internet);
+        let identities = fixture.protocol.registrations.lock().await;
+        assert_eq!(identities.len(), 2);
+        assert_eq!(identities[0].lease_key, identities[1].lease_key);
+        assert_eq!(identities[0].startup, identities[1].startup);
+        assert_eq!(
+            identities[0].scheduling_policy,
+            authority.app.scheduling_policy
+        );
+        assert_eq!(
+            identities[0].scheduling_policy,
+            identities[1].scheduling_policy
+        );
+    }
 }
 
 #[tokio::test]

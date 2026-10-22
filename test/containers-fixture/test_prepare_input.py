@@ -18,7 +18,7 @@ spec.loader.exec_module(prepare)
 
 class Input(unittest.TestCase):
     def setUp(self):
-        self.contract = {'version': 2, 'runtime': 'docker', 'engineVersion': '29.4.0',
+        self.contract = {'version': 3, 'runtime': 'docker', 'engineVersion': '29.4.0',
                          'architecture': 'arm64', 'isolation': 'controlled-test-data',
                          'qualified': True, 'snapshots': True, 'sidecarImage': 'sha256:' + 'a' * 64,
                          'execHelperSha256': 'b' * 64,
@@ -52,6 +52,13 @@ class Input(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '^CONTRACT_NOT_QUALIFIED$'):
                     self.policy()
                 self.contract[name] = True
+
+    def test_old_or_invalid_provider_schema_is_rejected(self):
+        for version in (2, True, 4, '3'):
+            with self.subTest(version=version):
+                self.contract['version'] = version
+                with self.assertRaisesRegex(ValueError, '^CONTRACT_NOT_QUALIFIED$'):
+                    self.policy()
 
     def test_unrecognized_contract_field_is_rejected(self):
         self.contract['unexpected'] = 1

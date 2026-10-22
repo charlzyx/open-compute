@@ -2,22 +2,23 @@
 
 use super::*;
 use open_compute_artifacts::{
-    ARTIFACT_KEY_VERSION, ArtifactCache, ArtifactRef, ContainerImageLimits, GetOptions, MapEnv,
-    ObjectBackend, ObjectKey, resolve_s3_credentials_with, verify_container_image_archive,
+    ARTIFACT_KEY_VERSION, ArtifactRef, ContainerImageLimits, GetOptions, MapEnv, ObjectBackend,
+    ObjectKey, resolve_s3_credentials_with, verify_container_image_archive,
 };
 use open_compute_storage::containers::{
     CONTAINER_SNAPSHOT_RETENTION_MS, ContainerSnapshot, ContainerSnapshotState,
 };
 use sha2::{Digest as _, Sha256};
-use std::io::Read;
+use std::io::{Read, Seek as _};
 use std::path::Path;
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 pub(super) struct SavedSnapshot {
     id: ResourceId,
     artifact: [u8; 32],
     artifact_size: u64,
     pub(super) image: [u8; 32],
+    pub(super) unnamed_image: [u8; 32],
     image_size: u64,
     source: ContainerLease,
     expires_at_ms: i64,
@@ -32,7 +33,7 @@ fn artifact(snapshot: &ContainerSnapshot) -> ArtifactRef {
     .unwrap()
 }
 
-async fn persisted_artifact(config: &PlatformConfig, snapshot: &ContainerSnapshot) {
+async fn persisted_artifact(config: &PlatformConfig, snapshot: &ContainerSnapshot) -> fs::File {
     let artifact = artifact(snapshot);
     let s3 = config.object_storage.as_s3().unwrap();
     let credentials = resolve_s3_credentials_with(s3, &MapEnv::new()).unwrap();
@@ -43,6 +44,8 @@ async fn persisted_artifact(config: &PlatformConfig, snapshot: &ContainerSnapsho
         assert_eq!(object.metadata.size, artifact.size());
         assert!(object.range.is_none());
         let mut reader = object.body.into_async_read();
+        let file = tempfile::tempfile_in(config.data.path.parent().unwrap()).unwrap();
+        let mut file = tokio::fs::File::from_std(file);
         let mut buffer = vec![0_u8; 65_536];
         let mut digest = Sha256::new();
         let mut size = 0_u64;
@@ -54,15 +57,20 @@ async fn persisted_artifact(config: &PlatformConfig, snapshot: &ContainerSnapsho
             size = size.checked_add(count as u64).unwrap();
             assert!(size <= artifact.size());
             digest.update(&buffer[..count]);
+            file.write_all(&buffer[..count]).await.unwrap();
         }
         assert_eq!(size, artifact.size());
         assert_eq!(
             <[u8; 32]>::from(digest.finalize()),
             *artifact.sha256_bytes()
         );
+        file.flush().await.unwrap();
+        let mut file = file.into_std().await;
+        file.rewind().unwrap();
+        file
     })
     .await
-    .expect("persisted snapshot artifact must be read and verified within the bounded budget");
+    .expect("persisted snapshot artifact must be read and verified within the bounded budget")
 }
 
 async fn persisted_image_size(
@@ -133,13 +141,11 @@ async fn restored_artifact_excludes_helper(
     drop(db);
     assert_eq!(image.artifact_sha256, *artifact.sha256_bytes());
     assert_eq!(image.artifact_size, artifact.size());
-    let cache = ArtifactCache::inspect_existing(config.data.path.join("cache/artifacts")).unwrap();
+    // A disposable cache miss must not bypass verification of the authoritative archive.
+    let file = persisted_artifact(config, snapshot).await;
     tokio::task::spawn_blocking(move || {
-        let pin = tokio::runtime::Handle::current()
-            .block_on(cache.acquire_cached(&artifact))
-            .unwrap();
         let verified = verify_container_image_archive(
-            pin.file(),
+            &file,
             &artifact,
             image.manifest_sha256,
             &image.architecture,
@@ -156,7 +162,7 @@ async fn restored_artifact_excludes_helper(
         let layer = &verified.layers()[0];
         assert_eq!(verified.diff_ids(), image.diff_ids.as_slice());
         let path = format!("blobs/sha256/{}", hex::encode(layer.sha256));
-        let mut archive = tar::Archive::new(pin.file());
+        let mut archive = tar::Archive::new(&file);
         let mut found = 0;
         for entry in archive.entries().unwrap() {
             let mut entry = entry.unwrap();
@@ -284,6 +290,49 @@ pub(super) async fn capture_and_cross_restore(
     let after = provider.observe(&source.opaque_engine_key).await.unwrap();
     assert!(after.running && !after.late_operations_fenced);
     assert_eq!(after.start_identity, before.start_identity);
+    let unnamed_handle = tenant(
+        client,
+        public,
+        host,
+        "/named/snapshot-default?object=snapshot-source",
+    )
+    .await;
+    assert_eq!(unnamed_handle.as_object().unwrap().len(), 2);
+    assert!(unnamed_handle.get("name").is_none());
+    let unnamed_id: ResourceId = unnamed_handle["id"].as_str().unwrap().parse().unwrap();
+    assert_ne!(unnamed_id, id);
+    let unnamed = snapshot(data, instance, unnamed_id);
+    assert_eq!(unnamed.application_id, application);
+    assert_eq!(unnamed.source.identity, source.identity);
+    assert_eq!(unnamed.state, ContainerSnapshotState::Ready);
+    assert!(unnamed.name.is_none());
+    let unnamed_size = persisted_image_size(&config, instance, &unnamed, provider).await;
+    assert!(unnamed_size > 0);
+    assert_eq!(unnamed_handle["size"].as_u64(), Some(unnamed_size));
+    persisted_artifact(&config, &unnamed).await;
+    assert_eq!(
+        tenant(
+            client,
+            public,
+            host,
+            &format!("/named/restore?object=snapshot-default-target&id={unnamed_id}")
+        )
+        .await,
+        json!({"value":"saved","mode":416,"volatile":false})
+    );
+    let unnamed_target = restored(data, instance, application, unnamed_id).await;
+    assert_ne!(unnamed_target.identity.object_id, source.identity.object_id);
+    restored_artifact_excludes_helper(&config, instance, &unnamed).await;
+    assert_eq!(
+        tenant(
+            client,
+            public,
+            host,
+            "/named/stop?object=snapshot-default-target"
+        )
+        .await["running"],
+        false
+    );
     assert_eq!(
         tenant(
             client,
@@ -365,6 +414,7 @@ pub(super) async fn capture_and_cross_restore(
         artifact: saved.artifact_sha256.unwrap(),
         artifact_size: saved.artifact_size.unwrap(),
         image: saved.image_sha256.unwrap(),
+        unnamed_image: unnamed.image_sha256.unwrap(),
         image_size,
         source,
         expires_at_ms: saved.expires_at_ms,

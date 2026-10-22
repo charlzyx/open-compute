@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { execOptionsLifecycle } from "./exec-options-lifecycle";
+import { execUsersLifecycle } from "./exec-users-lifecycle";
 import { signalsLifecycle } from "./signals-lifecycle";
 
 type NativeContainer = NonNullable<DurableObjectState["container"]>;
@@ -155,8 +156,10 @@ export class NamedImageContainer extends DurableObject {
       ![
         "/named/start",
         "/named/exec-options",
+        "/named/exec-users",
         "/named/snapshot-write",
         "/named/snapshot",
+        "/named/snapshot-default",
         "/named/snapshot-state",
         "/named/restore",
       ].includes(path)
@@ -208,9 +211,10 @@ export class NamedImageContainer extends DurableObject {
       });
     diagnostic.phase = "named-ready-body-cancel";
     await response.body?.cancel();
+    if (path === "/named/exec-users") return execUsersLifecycle(native, true);
     if (path === "/named/exec-options") {
       try {
-        return await execOptionsLifecycle(native);
+        return await execOptionsLifecycle(native, diagnostic);
       } finally {
         await native.destroy();
       }
@@ -253,7 +257,7 @@ export class NamedImageContainer extends DurableObject {
         throw new Error("snapshot fixture write failed");
       return Response.json({ written: value });
     }
-    if (path === "/named/snapshot") {
+    if (path === "/named/snapshot" || path === "/named/snapshot-default") {
       this.ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS snapshot_diagnostic_phase (phase TEXT NOT NULL, native_error_code TEXT, response_bytes INTEGER)",
       );
@@ -266,9 +270,10 @@ export class NamedImageContainer extends DurableObject {
               "CAPTURE_REQUESTED",
             );
             try {
-              const snapshot = await native.snapshotContainer({
-                name: "fixture-saved",
-              });
+              const snapshot =
+                path === "/named/snapshot-default"
+                  ? await native.snapshotContainer()
+                  : await native.snapshotContainer({ name: "fixture-saved" });
               const body = new TextEncoder().encode(JSON.stringify(snapshot));
               this.ctx.storage.sql.exec(
                 "INSERT INTO snapshot_diagnostic_phase VALUES (?, NULL, ?)",

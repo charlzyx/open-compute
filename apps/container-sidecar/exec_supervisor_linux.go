@@ -38,6 +38,8 @@ type execSupervisor struct {
 	pty            *execSupervisorPTY
 	output, stderr *execSupervisorOutput
 	start          execSupervisorStart
+	credential     *syscall.Credential
+	ambient        []uintptr
 }
 
 // The duplicate is pollable; cancellation interrupts an already blocked write.
@@ -91,7 +93,7 @@ func (output *execSupervisorOutput) discard() {
 }
 
 // runExecSupervisor is selected by the sidecar's fixed, non-secret helper argv.
-func runExecSupervisor(identity string) int {
+func runExecSupervisor(identity, targetUser string) int {
 	output, err := execSupervisorOutputFile(os.Stdout)
 	if err != nil {
 		return 125
@@ -102,15 +104,28 @@ func runExecSupervisor(identity string) int {
 		return 125
 	}
 	defer stderr.file.Close()
-	if execSupervisorRun(identity, os.Stdin, output, stderr) != nil {
+	if execSupervisorRun(identity, targetUser, os.Stdin, output, stderr) != nil {
 		return 125
 	}
 	return 0
 }
 
-func execSupervisorRun(identity string, input io.Reader, output, stderr *execSupervisorOutput) error {
+func execSupervisorRun(identity, targetUser string, input io.Reader, output, stderr *execSupervisorOutput) error {
 	if !execSupervisorIdentity.MatchString(identity) {
 		return errors.New("INVALID_IDENTITY")
+	}
+	var credential *syscall.Credential
+	var ambient []uintptr
+	if targetUser != "" {
+		var err error
+		credential, err = containerCredentials(targetUser)
+		if err != nil {
+			return err
+		}
+		_, ambient, err = containerCapabilities()
+		if err != nil {
+			return err
+		}
 	}
 	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil {
 		return errors.New("PROCESS_HARDENING_FAILED")
@@ -123,7 +138,7 @@ func execSupervisorRun(identity string, input io.Reader, output, stderr *execSup
 	if execSupervisorWriteAll(output.file, []byte(execSupervisorReady)) != nil {
 		return errors.New("READY_FAILED")
 	}
-	supervisor := &execSupervisor{identity: identity, listener: listener, pidfd: -1, state: "starting", exited: make(chan struct{}), drained: make(chan struct{}), finished: make(chan struct{}), output: output, stderr: stderr}
+	supervisor := &execSupervisor{identity: identity, credential: credential, ambient: ambient, listener: listener, pidfd: -1, state: "starting", exited: make(chan struct{}), drained: make(chan struct{}), finished: make(chan struct{}), output: output, stderr: stderr}
 	if _, err := io.ReadFull(input, supervisor.key[:]); err != nil {
 		return errors.New("BOOTSTRAP_FAILED")
 	}
@@ -184,7 +199,7 @@ func (supervisor *execSupervisor) spawn(start execSupervisorStart, input io.Read
 	if err != nil {
 		return errors.New("SPAWN_FAILED")
 	}
-	attributes := &syscall.SysProcAttr{PidFD: &supervisor.pidfd}
+	attributes := &syscall.SysProcAttr{PidFD: &supervisor.pidfd, Credential: supervisor.credential, AmbientCaps: supervisor.ambient}
 	var files []*os.File
 	var childInput, childOutput, childError *os.File
 	var inputWrite, outputRead, errorRead *os.File

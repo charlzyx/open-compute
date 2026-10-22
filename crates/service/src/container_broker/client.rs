@@ -48,7 +48,7 @@ impl QualifiedContainerProvider {
         }
         let contract: ProviderContract = serde_json::from_value(value).map_err(|_| invalid())?;
         let contract_sha256 = contract.sha256()?;
-        if contract.version != 2
+        if contract.version != ProviderContract::VERSION
             || contract.runtime != "docker"
             || !contract.qualified
             || !super::contract::opaque(&contract.exec_helper_sha256)

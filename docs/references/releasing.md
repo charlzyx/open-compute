@@ -56,7 +56,15 @@ release PR 复用其 main head 已通过的 push check，不再重复执行相�
 concurrency group，取消过期运行；汇总 job `ci` 是 `release` 分支的 required check。
 `main` 是无分支保护的开发分支，`release` 是受保护的版本发布分支；默认分支仍为 `main`。
 
-`.github/workflows/release.yml` 只由 `v*` tag push 触发；工作流首先拒绝不满足以下全部条件的 tag：
+`.github/workflows/release.yml` 的手动入口验证指定完整 commit 的 Linux x64 或 macOS ARM64 候选。
+Linux x64 入口复用同 commit 的 main CI 中已成功构建的 amd64 镜像。
+macOS 入口先在 `container-images.yml` 的手动入口为同一候选构建原生 ARM64 镜像。
+两个手动 run 使用同一工作流 revision，并逐项核对候选 commit、Git tree、镜像来源和 OCI 图。
+工作流执行原生 package 和对应 OS 安装；Linux x64 另执行完整压力测试。
+候选源码与工作流各自的 revision 均保留。
+该入口不执行 SDK 发布、覆盖率、完整 workspace Gate、assemble 或 publish，不能替代正式 tag 资格。
+
+`v*` tag push 仍执行全部正式发布资格。工作流首先拒绝不满足以下全部条件的 tag：
 
 1. tag 是严格的 `vX.Y.Z`，且没有前导零或预发布/构建后缀；
 2. tag 是 annotated tag；

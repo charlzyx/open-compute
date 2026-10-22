@@ -5,7 +5,10 @@ Broker 执行受限的 Docker 操作。`ocd` 不启动 Docker 或 Broker，不�
 
 当前 [P23](../implemented/p23-cloudflare-containers.md) 已接入基础 13 个 Docker operation family；产品验收状态由结果页记录。
 当前全量验收目标包含 snapshot capture、snapshot restore 和 `setInactivityTimeout()`。
-R20 的 workspace coverage 和最终 Gate 已通过；完整成员资格仍为 `blocked`。
+2026-10-20（UTC），R21 输入下的 Linux ARM64 coverage 和最终 Gate 已通过。
+同日，macOS ARM64 的当前 P23 两项真实产品用例均通过。
+原完整 macOS 批次与两个失败目标的分批复验分别保留，详见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
+完整成员资格仍为 `blocked`。
 这些 stable 成员属于兼容目标，不属于 experimental。
 正式 workerd 输入由 [`workerd.lock.json`](../../packages/runtime/workerd.lock.json) 拥有。
 Provider 资格、产品 Gate 与成员资格是不同证据。
@@ -236,7 +239,8 @@ named images 边界见 [Scheduling Policies](https://developers.cloudflare.com/c
 
 ## 快照持久化与回收（验收中）
 
-本节说明当前源码的快照流程，不代表正式 runtime pin 或产品 Gate 已通过。
+本节定义当前本地快照流程；R21 的真实产品结果和原始报告由 [P23](../implemented/p23-cloudflare-containers.md) 记录。
+该结果不证明全部 65 个成员或正式发行资格。
 官方快照合同见 [Snapshots](https://developers.cloudflare.com/containers/guides/snapshots/)，于 2026-10-12 核对。
 快照保存文件系统，不保存内存、进程或挂载文件系统。
 快照只能在同一 application 和原始镜像版本内恢复，可跨 Durable Object 使用。
@@ -282,7 +286,8 @@ Engine 保留已导入的镜像缓存；快照到期或 application 删除不会
 snapshot 配额和 lease 的 `cleanupComplete` 不计入或回收 Engine 镜像缓存。
 operator 应单独预算 Engine 磁盘，并回收已不用的镜像缓存。
 托管结果尚未确定完整计量公式；该成员的兼容性保持 `blocked`。
-新增产品断言核对持久化大小、新快照镜像的 Engine 大小和重启后的同一数值，尚未执行。
+当前 P23 产品用例已核对持久化大小、新快照镜像的 Engine 大小和重启后的同一数值。
+这些本地不变量不证明托管计量公式相同。
 
 ### CF 对比证据与冲突
 
@@ -337,7 +342,7 @@ application 删除不证明 snapshot 字节已回收或计费停止。
 删除 application 后的 snapshot 保留行为未确定。
 证据标识为 `inspect-image-controlled-19-preparation/hosted-observations-review.json`。
 
-当前文档与托管结果存在两项未解决的运行行为冲突，兼容性声明保持 `blocked`：
+当前官方文档与固定版本、托管结果存在两项来源差异，兼容性声明保持 `blocked`：
 
 | 行为                             | 官方来源（文档更新于 2026-09-30） | 2026-10-12 托管结果             | 当前实现                                     |
 | -------------------------------- | --------------------------------- | ------------------------------- | -------------------------------------------- |
@@ -347,6 +352,9 @@ application 删除不证明 snapshot 字节已回收或计费停止。
 文档来源为 [Durable Object Container API](https://developers.cloudflare.com/containers/api/durable-object-container/)。
 固定 types 为 `@cloudflare/workers-types@5.20260930.2`。
 匹配 upstream workerd revision 为 `d99bc6b777e35d72d71c2f1fe2fd1db53284528a`。
+2026-09-21（UTC），上游 [PR #7453](https://github.com/cloudflare/workerd/pull/7453) 将 `snapshotContainer()` 的选项改为可省略。
+固定 R21 的上游基线包含该修复；修复不含 compatibility date 分支。
+该版本行为与已保留的托管成功观察一致，官方 API 文档仍声明选项必填。
 平台不按环境切换上述行为，也不增加兼容分支。
 
 官方文档另已说明 exec stream 的类型与运行值差异。
@@ -375,6 +383,12 @@ application 删除不证明 snapshot 字节已回收或计费停止。
 调查未取得可供 stable startup 恢复的合法目录句柄；九个目录成员继续保持 `blocked`。
 该结论只覆盖已查公开来源，不证明私有 API 或账号开关不存在。
 调查记录为 `.temp/p23-full64/directory-stable-input-investigation/report.json`。
+
+2026-10-20（UTC），只读复核补充了上游变更依据。
+上游于 2026-09-01（UTC）合入 [PR #7123](https://github.com/cloudflare/workerd/pull/7123)。
+该改动将 `snapshotDirectory()` 放回实验开关，并从稳定声明中移除该方法。
+固定 R21 的上游基线包含该改动；稳定声明仍保留九个目录快照和恢复成员。
+该来源不替代合法稳定句柄和正向恢复验收。
 
 2026-10-12，启动环境变量探针确认非空名称可包含 ASCII 字母、数字、下划线、点和连字符。
 257 字符名称启动成功；Unicode 和空名称被 `monitor()` 拒绝。
@@ -440,7 +454,8 @@ exec 的退出码应来自目标进程；helper 意外退出不能证明目标�
 目标进程退出后，后代进程仍可继续输出。
 `exitCode` 应在目标进程退出后完成；`output()` 应等待输出流结束。
 新增 helper 的源码、正式 runtime pin、Provider 资格和产品回归须使用同一组输入。
-当前 helper 改动尚未完成这些验收。
+R21 当前输入已完成 helper、Provider 资格与 P23 真实产品回归。
+完整 stable API 的成员资格仍未通过；当前输入和原始报告见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
 
 2026-10-12，维护中的 P23 场景新增独立对象的 exec 生命周期回归。
 回归核对真实子进程 PID，并在子进程退出后才释放后代进程的输出屏障。
@@ -448,7 +463,8 @@ exec 的退出码应来自目标进程；helper 意外退出不能证明目标�
 回归还删除该测试容器中的 `/bin/sh`，再以 `65534:65534` 在不可写目录执行程序。
 该输入使用官方文档要求的完整 `uid:gid`，回归同时核对 UID 和 GID。
 最后，回归要求 `destroy()` 中断仍活跃的 exec 输出，并核对 Broker 的正向清理证明。
-两个 strict TypeScript 检查与官方 cf build 均成功退出；真实产品执行仍待正式 R15 输入。
+该批当时通过两个 strict TypeScript 检查和官方 cf build；当时的真实产品仍待正式 R15 输入。
+后续 R21 产品结果见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
 
 P23 场景还包含真实 HTTPS 和 WebSocket 断言。
 HTTPS 客户端使用注入 CA，并验证主机名、请求、响应和 EOF。
@@ -459,13 +475,26 @@ named images 回归使用两个已准入的镜像，并核对 Version 声明、g
 该回归核对显式 image 的实际输出，以及默认 Lite、自定义资源和字符串 Lite 的资源证明。
 自定义资源为 `0.03125` vCPU、`128` MiB 内存和 `1000` MB 磁盘。
 三项数值都不同于 Lite，回归逐项核对 SQLite 和 Engine 的资源配置。
+这些数值仅为本机资源映射的回归输入。
+2026-10-20（UTC）复核的 [Cloudflare 托管限制](https://developers.cloudflare.com/containers/platform/limits/)要求自定义规格至少使用 1 vCPU。
+同一文档要求每 vCPU 至少配置 3 GiB 内存。
+本机夹具的成功不证明同一组数值可用于托管环境。
+2026-10-21（UTC）的五次托管对照确认了有限差异。
+前后两次 `1` vCPU、`3072` MiB、`4000` MB 均启动成功。
+本机组合、仅降低 CPU 至 `0.03125`、仅降低内存至 `128` MiB 均返回 readiness `Error`。
+另外两项资源在单字段对照中保留前后成功值。
+这些结果不确定具体校验谓词、完整下限或实际分配量。
+本机资源映射的成功不证明相同输入可用于托管环境。
+
 独立 DO 回归验证主进程数值信号 `10` 和 `34`、monitor 退出码、destroy 原因身份和 exec kill。
 快照回归直接读取持久化 artifact，核对字节数与 SHA-256。
 daemon 重启后，回归再次读取并核对同一 artifact。
 两次恢复后，回归复用 verified cache，扫描 OCI 的唯一 rootfs 层。
 回归拒绝 exec helper 文件、symlink、hardlink 和指向 helper 的 hardlink。
 该检查不另存 rootfs 或复制完整 artifact 到内存。
-这些产品断言尚未执行，不代表相应成员已通过验收。
+上述已维护的产品断言已通过 R21 输入的 Linux ARM64 整轮验证。
+macOS ARM64 的当前两项 P23 产品用例也已通过。
+这些结果不代表完整 65 成员资格通过。
 
 ## 日志设置
 

@@ -5,6 +5,8 @@
 mod cf;
 mod cleanup;
 mod exec_options;
+mod exec_options_probe;
+mod exec_users;
 mod http;
 mod images;
 mod inactivity;
@@ -421,6 +423,7 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
             "http":{"matched":"http-specific","unmatched":"http-fallback","closed":true}
         })
     );
+    exec_users::lifecycle(&client, &public, &host, false).await;
     assert_eq!(
         tenant(
             &client,
@@ -637,6 +640,7 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
     )
     .await;
     signals::lifecycle(&client, &public, &host).await;
+    exec_users::lifecycle(&client, &public, &host, true).await;
     exec_options::lifecycle(&client, &public, &host).await;
     named_images::assert_stopped(&data, instance, named_application, &provider).await;
     let saved = snapshots::capture_and_cross_restore(
@@ -649,11 +653,16 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
         &provider,
     )
     .await;
-    let cleanup_image = ContainerAuthority::new(
-        &ControlDb::open_readonly_wal_aware(&data.join("control.sqlite"), 1000).unwrap(),
-    )
-    .image(instance, &saved.image)
-    .unwrap();
+    let cleanup_images = {
+        let db = ControlDb::open_readonly_wal_aware(&data.join("control.sqlite"), 1000).unwrap();
+        let authority = ContainerAuthority::new(&db);
+        [saved.image, saved.unnamed_image]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|image| authority.image(instance, &image).unwrap())
+            .collect::<Vec<_>>()
+    };
     process.stop().await;
     process.restart(&config, &log);
     platform_process::ready(&client, admin.parse().unwrap(), &mut process).await;
@@ -699,13 +708,15 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
         );
     }
     process.stop().await;
-    eprintln!(
-        "p23-owned-image-cleanup={}",
-        json!({
-            "config": format!("sha256:{}", hex::encode(cleanup_image.config_sha256)),
-            "diffIds": cleanup_image.diff_ids.iter()
-                .map(|id| format!("sha256:{}", hex::encode(id)))
-                .collect::<Vec<_>>()
-        })
-    );
+    for cleanup_image in cleanup_images {
+        eprintln!(
+            "p23-owned-image-cleanup={}",
+            json!({
+                "config": format!("sha256:{}", hex::encode(cleanup_image.config_sha256)),
+                "diffIds": cleanup_image.diff_ids.iter()
+                    .map(|id| format!("sha256:{}", hex::encode(id)))
+                    .collect::<Vec<_>>()
+            })
+        );
+    }
 }

@@ -20,10 +20,181 @@ snapshot、原生 inactivity timeout、主进程日志采集与其他后续能�
 本页下列基础验收记录不证明后续源码已通过验收。
 第 4.1 节的表格保留 R9 历史范围，不代表当前 65 个成员的逐项结果。
 
-**后续扩展状态（2026-10-18）：R21 当前源码已通过 Linux ARM64 最终 Gate；发行资格仍待完成。**
+**后续扩展状态（2026-10-20 UTC）：exec 用户策略修复已通过当前 coverage 和 Linux ARM64 最终 Gate；发行资格仍待完成。**
 正式 pin 为 R21，revision 为 `204a75bcfcc35fdf15756bef03eea867711847a6`。
 [R21 四平台 CI](https://github.com/elliothux/workerd/actions/runs/39042535973) 的五个 job 均成功。
 十个 immutable Release asset 已校验；正式 lock 已更新。
+
+2026-10-19（UTC），exec 用户策略的集成修复完成 Linux ARM64 全轮验证。
+被测源码摘要为 `639499080ce14ed7a2a67a18fbcebf1941e788735229d3ea2061db329c9a6076`。
+原始 coverage 和最终 Gate 报告的 revision 字段均为 `cd78385a069f3a877c65adfd84ec8c783a336852`。
+报告按 runner 算法记录的源码摘要为 `cccb3af22051e1b3af18eb47edec5c39336c655080e4e4870473926fb0494917`。
+生产与 Rust 输入快照、原始报告和候选输入复核分别保留；输入等价复核不替代正式 tag 资格。
+原版 coverage 通过 63 个目标、2,053 项用例，环境为 4 GiB、2 CPU。
+行覆盖率为 90.761046%（168,202／185,324），使用 68 个 object 和 138 个新 profile。
+随后，原版未插桩最终 Gate 通过相同的 63 个目标和 2,053 项用例。
+最终 Gate 耗时 5,605.09 秒；P23 两项真实产品用例通过，耗时 426.21 秒。
+原始父进程记录的 UTC 完成时间为 `2026-10-19T18:15:32.152099+00:00`。
+Gate 目录名使用宿主本地时间 UTC+8，不代表 UTC 执行日期。
+
+额外文件守卫错误地要求可重建的测试程序保持文件身份不变；原失败报告保留。
+Gate 构建步骤记录了实际执行程序的摘要；两个程序与预编译版本的字节不同。
+独立复核确认 69 个实际构建程序的当前字节，以及全部目标的构建摘要。
+两处源码的 3,973 个持有文件均通过整轮文件身份和摘要检查。
+八项依赖输入、六项依赖观察、Provider、Engine、库存和原始资源配置检查均通过。
+快照镜像已按本轮标记精确回收；两个旧安装失败容器保持停止状态。
+原始报告为 `.temp/gate-run/20261020T004202-a2c31c90/report.json`。
+独立复核记录为 `.temp/p23-full64/r21-exec-user-policy-current-investigation/policy-integration/production-current-fixture-repair/formal-current/orb-management-disconnect-normal-final-current-v2/current-final-independent-terminal-review.json`。
+
+当前兼容合同仍为 `no_go`，不声明全部 65 个成员通过。
+本地兼容清单的类型来源已更正为固定的 `5.20260930.2`；65 个成员的状态未提升。
+九个目录成员仍缺少稳定生产入口和正向恢复证据。
+已保留的托管观测中，仅含 `mountPoint` 的启动失败。
+该观测的 `monitor` 拒绝，`inspect()` 返回 `null`。
+这组负向子集不证明目录快照生产或正向恢复。
+2026-09-01（UTC），上游 [PR #7123](https://github.com/cloudflare/workerd/pull/7123) 将 `snapshotDirectory()` 放回实验开关。
+固定稳定类型仍保留九个目录快照和恢复成员。
+2026-09-21（UTC），上游 [PR #7453](https://github.com/cloudflare/workerd/pull/7453) 将 `snapshotContainer()` 的选项改为可省略。
+两项改动均已进入固定 R21 的上游基线；可省略选项也与已保留的托管实测一致。
+当前官方文档仍声明省略选项应抛出 `TypeError`。
+恢复后的 `inspect().image` 也存在文档与托管实测差异；两项来源差异继续保留。
+2026-10-20（UTC），Linux ARM64 和 macOS ARM64 发行包均已构建。
+两个包均绑定 revision `8ee3babe5319d3001b3663c58475af970f16ddce`，并包含本次用户策略修复。
+Linux ARM64 的原四项 package 用例和两项 Dashboard 用例均通过。
+同一包在 Ubuntu 24.04、Debian 13 的 user、system 四个安装范围均通过。
+macOS ARM64 的原四项 package 用例已在普通账户下通过，耗时 274.87 秒。
+本批为四项通过、零项失败、零项 ignored。
+临时账号、home 和 staging 已回收；17 个对象的 ACL 已恢复。
+源码、原程序、Native 输入和原始 Orb 配置检查均通过。
+Linux x64 候选包也已构建，并通过原四项 package 用例。
+本批为四项通过、零项失败、零项 ignored，实际测试耗时 130.53 秒。
+同一 x64 包在 Ubuntu 24.04、Debian 13 的 user、system 四个安装范围均通过。
+不兼容的 0.3.0 升级按声明拒绝；原程序、receipt、密钥、配置和数据检查均通过。
+三个原生候选包均绑定上述 revision，尚不证明正式 tag 工作流资格。
+[x64 验收](https://github.com/elliothux/open-compute/actions/runs/39391746780)已在 2026-10-20（UTC）成功结束。
+五个完整压力档均通过；实际限制为 2 CPU、4 GiB。
+29 组性能测量共取得 1,113,500 个样本，记录 723 次请求错误；各组均满足原 SLO 阈值。
+本批没有降低负载、缩短观察或放宽阈值。
+恢复观察从 11:13:22 持续至 12:13:54（UTC），实际经过 3,632 秒。
+三次注入重启均通过 readiness 和后续状态一致性复核。
+报告保留候选 revision `8ee3babe5319d3001b3663c58475af970f16ddce`、x64 二进制摘要和正式 R21 lock 摘要。
+监控自然退出为 0；原监控进程已不存在，没有重启 CI。
+压力报告复核为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/linux-x64-stress-terminal-evidence/root-stress-terminal-review.json`。
+[macOS 安装验收](https://github.com/elliothux/open-compute/actions/runs/39398464481)已在干净宿主通过。
+该宿主构建的包通过原四项用例，耗时 137.23 秒；user、system 两个安装范围均通过。
+该包与前述本地普通账户包的字节不同；两组产物和证据分别保留。
+三平台共五个 OS／架构任务、十个安装范围的证据已收齐。
+当前被测源码的 Linux ARM64 受控出口三项也已在 2026-10-20（UTC）通过。
+原 Gate 共耗时 149.27 秒，其中准备耗时 111.54 秒，测试进程耗时 36.20 秒。
+本批使用 4 GiB、2 CPU；八项依赖 FD 和六项观察均保持原身份和摘要。
+Provider、Engine、源码、输入和原始 Orb 配置检查均通过。
+loopback 地址、hosts 原文与权限、三个监听端口和临时证书目录均已恢复。
+这项本地验证绑定前述被测源码，不证明正式 tag 工作流已经执行。
+复核记录为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/current-controlled-egress-preparation/root-current-controlled-egress-terminal-review.json`。
+2026-10-20（UTC），macOS ARM64 的原版最终 workspace Gate 完成 63 个目标、2,061 项 discovery。
+原批次通过 61 个目标，共 2,054 项用例；两个目标失败，原报告保持 `failed`。
+P23 两项真实产品用例均通过，耗时 430.00 秒。
+`single-binary` 使用了错误角色的二进制；`p22-browser-run` 缺少官方构建产物。
+修正输入角色并完成原有官方夹具构建后，仅复验这两个目标的原七项用例。
+七项全部通过，零项失败、零项 ignored；浏览器耗时 278.58 秒，单文件测试耗时 209.85 秒。
+两批报告均保留 revision `ff7dc6836829c177a2c2185082d2285fa4447af5`。
+两批的 Gate 源码摘要均为 `ce8ee9e6690c573d105b221205d748462c4c6c929d0a4fe71925f61f7fded9f7`。
+独立复核按原 discovery 去重，确认 63 个目标、2,061 项用例均有通过证据。
+原完整批次没有重跑；分批复核不把原报告改为 `passed`。
+源码、持有输入、Native 守卫、原始配置、库存和临时目录回收检查均通过。
+本轮快照镜像按原归属标记精确回收；旧容器保持原状态。
+原全量结束后，磁盘余量低于当批保守预留线；预算未通过的记录保留。
+两目标复验满足独立的固定空间门槛，门槛高于文档要求的 44 GiB。
+复核记录为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/local-macos-two-preparation-repairs-v3/root-terminal-and-full-diagnostics-review.json`。
+本地分批验证不替代正式 tag 工作流资格；正式发行报告仍待完成。
+前一 CI 的 S3 测试失败；当时测试 bucket 不存在，返回 HTTP 404。
+前一 CI 另有一项旧平台矩阵文本断言失败。
+本地修复保留正式发行的三个平台；100 项夹具工具测试均通过。
+2026-10-21（UTC），私有测试 bucket 已恢复为 Standard，公开访问关闭。
+其他 bucket 和凭据未变；本批没有恢复历史对象。
+通过本地真实用例后，修复已一次性快进推送 main。
+main revision 为 `b3b78bdd05337a6399d9d826ed804fa960a96909`。
+[本次 main CI](https://github.com/elliothux/open-compute/actions/runs/39534275671)已通过。
+九个 job 成功，三个条件 job 按路径跳过。
+本轮 CI 不替代 coverage、完整 workspace Gate 或正式 tag 资格。
+当前包的证据清单为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/current-release-evidence-inventory.json`。
+这些包检查不替代全部 65 个成员的兼容资格，也不证明发行流程已经通过。
+
+2026-10-20（UTC），本地候选补充零参数 `snapshotContainer()` 的真实成功回归。
+macOS ARM64 使用正式 R21 和独立的 4 GiB、2 CPU Engine，原 ordinary 用例通过，耗时 477.26 秒。
+本批发现三项用例，仅执行 ordinary；结果为一项通过、零项失败、零项 ignored、两项过滤。
+新增断言核对无 name 的新 handle、持久化状态、实际大小和跨对象恢复。
+原命名快照、S3 字节数与 SHA-256、helper 排除、保活和 daemon 重启恢复断言全部保留并通过。
+前一失败来自测试助手要求本地缓存命中；当时两个 snapshot 均为 Ready，零参数快照已恢复。
+共享助手现从 S3 读取归档并校验大小与 SHA-256，再用私有临时文件核对完整归档。
+原 180 秒读取期限和 1 GiB 缓存预算保持不变。
+本批持有文件、Native 输入、Provider、Engine、原始配置和库存检查均通过。
+本批自有进程、临时目录和一个快照镜像已回收；前一失败的数据库、日志和镜像导出归档保留。
+独立 exec 流与代码更新用例在前一测试候选中另批通过，耗时 96.28 秒。
+本批未执行新的完整 workspace Gate，也未提升 65 个成员的资格。
+当前单例复核为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/local-macos-omitted-snapshot-owner-v5/root-terminal-success-review.json`。
+助手断言复核为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/current-snapshot-authoritative-archive-test-repair/root-helper-preservation-and-source-review.json`。
+
+2026-10-21（UTC），五个串行托管动作取得八个稳定成员的有限观测。
+HTTP 指定主机规则和兜底规则均返回预期字节，HTTP 与 socket 关闭均已确认。
+预先取消的 exec 抛出 `AbortError`；实际 READY 后取消的 exec 以 137 退出。
+取消后的 stdout、stderr 均到达 EOF，主容器仍可执行下一条命令。
+实际 READY 后调用 `kill(9)` 的 exec 也以 137 退出，两条输出流均到达 EOF。
+`lite` 和 custom 两种启动均通过真实 readiness、running、image 和 label 核对。
+custom 输入为 `vcpu:1`、`memoryMib:3072` 和 `diskMb:4000`。
+本批没有测量实际分配量，也不证明其他数值、边界或完整成员语义。
+每次动作均销毁容器后再执行下一次动作；同时运行的容器最多一个。
+临时 Worker、Container 应用和命名空间均已删除，三份资源清单与执行前相同。
+临时 secret 仅经内存管道传入；本批没有创建 secret 文件或调用快照 API。
+托管记录现为 56 项正向子集、3 项负向子集、6 项未实测。
+九个目录成员仍缺稳定生产入口和正向恢复证据；全部 65 个成员的资格未提升。
+复核记录为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/authorized-external-execution-20261021/hosted-root-terminal-review.json`。
+
+2026-10-21（UTC），资源输入对照使用五次串行观测。
+前后两次 `1` vCPU、`3072` MiB、`4000` MB 均通过 readiness 和 inspection。
+中间三次输入分别为本机组合、仅降低 CPU、仅降低内存。
+本机组合为 `0.03125` vCPU、`128` MiB、`1000` MB。
+仅降低 CPU 的组合保留 `3072` MiB 和 `4000` MB。
+仅降低内存的组合保留 `1` vCPU 和 `4000` MB。
+三次请求均在 readiness 阶段返回受控 `Error`；容器销毁均成功。
+记录未捕获具体校验谓词，也未测量实际分配量。
+本机组合的本地成功与本次托管错误构成有限行为差异。
+本批不确定完整数值边界，也不提升成员资格。
+临时 Worker、应用和命名空间均已回收，执行前后的资源清单一致。
+复核记录为 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/current-custom-resource-differential-preparation/root-terminal-review.json`。
+
+以下段落保留各批次的历史输入和结果。
+
+2026-10-19（UTC），Ubuntu 24.04 ARM64 和 Debian 13 ARM64 的 user、system 安装范围均通过。
+四个范围保留原安装、服务生命周期和升级拒绝断言；0.3.0 的不兼容 Worker 仍被拒绝。
+原程序、receipt、密钥、配置和数据保持原值；本批容器均已回收。
+这些结果绑定候选 revision `fbe605015d484500d913b599a2d53a20226c250d`，不证明其他 revision 的发行包身份。
+当前 Linux 受控出口的三项原用例也已通过。
+构建准备改写了编译产物的元数据，外层守卫失败记录保留；独立只读复核确认用例结果和产物归属。
+
+同日，独立核查发现 exec 用户语义仍有缺陷。
+[官方 Container API](https://developers.cloudflare.com/containers/api/durable-object-container/)规定：裸 UID 使用 root，用户或组名称应使 exec 拒绝。
+当前 native 和 Broker 原样转发 `user`；真实 Engine 将裸 `65534` 按 UID 65534 执行，并接受 `root` 和 `nobody:nogroup`。
+五项 Engine 探针均取得结果；探针容器已回收，八个持有输入、六项观察和 73 个程序均保持原字节。
+本批只验证 Engine 行为和转发源码，不替代公开 Container API 复验。
+Broker 注册也未携带调度策略，尚不能区分两种策略的用户能力合同。
+官方文档要求 `durable_object` 策略中的非 root 用户保留 root 能力；默认策略中的非 root 用户不保留能力。
+裸 UID 和名称拒绝规则已在 Broker 修复。
+原实现的新增回归先失败；修复后六项 exec 单元用例全部通过，零项 ignored。
+本批发现 976 项单元用例，只执行 exec 模块六项；环境为 Linux ARM64、4 GiB、2 CPU。
+本批源码摘要为 `2a5ca50cb20ab721397eec476cf1ef9bffdc427bd357486891c95ca7b65c8830`。
+构建后内存已恢复为 4 GiB，原配置字节保持不变。
+临时凭据实现的四项单元用例已通过，零项跳过；测试使用 Linux ARM64、4 GiB、2 CPU。
+隔离 Engine 探针确认非 root 主进程和 exec 子进程可保留原能力上限；默认非 root 对照没有有效能力。
+探针未启用特权模式，也未增加能力；两只容器均已回收。
+持久化调度策略已接入 Broker 注册源码；私有 schema 更新为 3。
+当前 helper 的 42 项顶层测试、5 项子测试和隔离凭据验证均已通过；语句覆盖率为 90.2%。
+隔离验证使用 scratch 镜像，无基础镜像下载和宿主 root；本批镜像与容器均已回收。
+默认策略和 Durable Object 策略的公开回归已加入原普通产品用例；夹具 strict 与官方 cf build 已通过。
+该初始批次尚未完成新 Rust 编译、Provider 资格、真实产品、coverage、最终 Gate 和发行包资格。
+该批次使用旧 Provider；当时的公开 API、完整 65 成员和发行资格仍未通过。
+源码差异证据为 `.temp/p23-full64/r21-exec-user-policy-current-investigation/root-terminal-review.json`。
+单元结果为同一目录下 `numeric-user-candidate/green2-test-actual/result.json`。
 
 同日，Ubuntu 24 ARM64 的真实 user 安装／升级夹具发现升级缺陷。
 候选包首装和服务启停通过；0.3.0 升级命令成功退出，但旧 Worker 请求返回 HTTP 500。

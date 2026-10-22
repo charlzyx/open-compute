@@ -1,5 +1,6 @@
 import { Container } from "@cloudflare/containers";
 import { execLifecycle } from "./exec-lifecycle";
+import { execUsersLifecycle } from "./exec-users-lifecycle";
 import { RawIdleContainer } from "./inactivity-lifecycle";
 import { NamedImageContainer } from "./named-images";
 import { networkLifecycle } from "./network-lifecycle";
@@ -21,6 +22,13 @@ interface FixtureDiagnostic {
 
 function fixtureErrorCode(error: unknown): string | null {
   const message = error instanceof Error ? error.message : "";
+  const nativeMessages = [
+    ["Container operation failed.", "CONTAINER_OPERATION_FAILED"],
+    ["The Container is not running.", "CONTAINER_NOT_RUNNING"],
+    ["Container execution authority changed.", "CONTAINER_AUTHORITY_CHANGED"],
+    ["Container port connection closed unexpectedly.", "CONTAINER_PORT_CLOSED"],
+    ["Container port connection read aborted.", "CONTAINER_PORT_READ_ABORTED"],
+  ] as const;
   return (
     [
       "DO_RUNTIME_EXCEPTION",
@@ -29,7 +37,9 @@ function fixtureErrorCode(error: unknown): string | null {
       "DO_INTERNAL_PROTOCOL_ERROR",
       "SERVICE_BINDING_DENIED",
       "DO_RPC_UNSUPPORTED",
-    ].find((code) => message === code) ?? null
+    ].find((code) => message === code) ??
+    nativeMessages.find(([text]) => message === text)?.[1] ??
+    null
   );
 }
 
@@ -177,6 +187,7 @@ export class FixtureContainer extends Container<Env> {
       cancellationOptions: { portReadyTimeoutMS: 20000, waitInterval: 50 },
     });
     if (path === "/exec-lifecycle") return execLifecycle(native);
+    if (path === "/exec-users") return execUsersLifecycle(native, false);
     if (path === "/network-lifecycle")
       return networkLifecycle(
         native,

@@ -130,6 +130,9 @@ pub struct ProviderContract {
 }
 
 impl ProviderContract {
+    /// Current required lease schema, including trusted scheduling policy.
+    pub const VERSION: u32 = 3;
+
     /// Digest the canonical contract bytes without private host topology.
     pub fn sha256(&self) -> Result<String, PlatformError> {
         let bytes = serde_json::to_vec(self).map_err(|_| invalid())?;
@@ -147,6 +150,8 @@ pub struct BrokerLease {
     pub owner_key: String,
     /// Immutable startup options decrypted and validated by the daemon authority.
     pub startup: super::startup::BrokerStartOptions,
+    /// Persisted application policy; native requests cannot select process capabilities.
+    pub scheduling_policy: open_compute_storage::containers::ContainerSchedulingPolicy,
     /// Registered nonce authenticated in engine labels; process identity is observed separately.
     pub start_identity: String,
     /// Immutable OCI manifest identity.
@@ -168,7 +173,8 @@ pub struct BrokerLease {
 impl BrokerLease {
     /// Bind a registration to a qualified contract and its exact resource limits.
     pub fn validate(&self, contract: &ProviderContract) -> Result<(), PlatformError> {
-        if !contract.qualified
+        if contract.version != ProviderContract::VERSION
+            || !contract.qualified
             || !opaque(&contract.exec_helper_sha256)
             || !opaque(&self.lease_key)
             || !opaque(&self.owner_key)

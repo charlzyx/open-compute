@@ -162,7 +162,7 @@ impl Engine {
             (false, false)
         };
         Ok(ProviderContract {
-            version: 2,
+            version: ProviderContract::VERSION,
             runtime: "docker".into(),
             engine_version: version.into(),
             architecture: architecture.into(),
