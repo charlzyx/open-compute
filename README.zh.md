@@ -41,6 +41,27 @@
 
 从 [GitHub Releases](https://github.com/charlzyx/open-compute/releases) 下载 CentOS 8 二进制。主线项目见 [elliothux/open-compute](https://github.com/elliothux/open-compute)。
 
+### 上游同步
+
+`.github/workflows/sync-upstream-centos8.yml` 把 `elliothux/open-compute` 的 `main` 合并进 `centos8-compat`。
+
+工作流在每天 01:17、09:17、17:17（UTC）运行。手动运行时，打开 Actions 页，选择 **Sync upstream into centos8-compat**，再选择 **Run workflow**。把 `dry_run` 设为 true 时，运行器只做合并，不推送。
+
+GitHub 只从默认分支读取 `schedule` 和 `workflow_dispatch`。本 fork 的默认分支是 `main`（2026-10-22 核对）。`main` 和 `centos8-compat` 上都应保留该工作流文件。
+
+合并成功时，工作流向 `centos8-compat` 推送一个合并提交。推送不使用 `--force`。合并提交说明含有 `[skip ci]`，所以该 push 不启动构建。合并改动了打包输入时，工作流启动 **CentOS 8 ocd compatibility**。打包输入包括：
+
+- `crates/`、`packages/`、`apps/`、`scripts/`、`share/`、`third_party/`
+- `test/glibc-compat/` 和 `.github/actions/`
+- `Cargo.toml`、`Cargo.lock`、`rust-toolchain.toml`、`package.json`、`bun.lock`
+- `docs/references/single-binary.md` 和 `.github/workflows/centos8-ocd.yml`
+
+合并只改动其他文件时，不启动该构建。
+
+**警告：** 出现冲突时，先在 `centos8-compat` 上解决冲突，再等待下一次同步。工作流不会选定上游或本 fork 的一侧。冲突时 `centos8-compat` 保持不变，ocd 构建不启动，工作流打开一个 issue，并且该 job 失败。
+
+推送使用 `GITHUB_TOKEN`。如果分支保护拒绝该 token，把 fine-grained personal access token 存为 Actions secret `UPSTREAM_SYNC_TOKEN`。该 token 只应拥有 `charlzyx/open-compute` 的 Contents 读写权限。该 token 不应拥有 `elliothux/open-compute` 的写权限。
+
 ## Workers 平台，跑在你自己的硬件上
 
 如果你已经会写 Cloudflare Workers，就可以直接使用 open-compute。标准 module Worker、常用 binding 配合当前 cf 工作流，只是运行位置换成了你自己的机器。

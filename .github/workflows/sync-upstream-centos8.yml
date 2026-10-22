@@ -1,0 +1,73 @@
+name: Sync upstream into centos8-compat
+
+# Merge elliothux/open-compute main into centos8-compat.
+#
+# GitHub runs schedule, workflow_dispatch, and repository_dispatch only from
+# the default branch. This fork's default branch is main (checked 2026-10-22).
+# Keep this file on main and on centos8-compat. The job checks out
+# centos8-compat and runs .github/sync-upstream-centos8.sh from that branch.
+#
+# Schedule: 01:17, 09:17, and 17:17 UTC.
+# Manual: Actions → Sync upstream into centos8-compat → Run workflow.
+# Set dry_run to merge on the runner and skip the push and the ocd build.
+# Optional repository_dispatch event type: sync-upstream-centos8.
+# Upstream does not send that event. The schedule does not need it.
+#
+# A clean merge pushes one merge commit. The push does not use --force.
+# The commit message contains [skip ci], so the push does not start workflows.
+# A GITHUB_TOKEN push also does not start workflows. When the merge changes a
+# package input, this job starts centos8-ocd.yml with workflow_dispatch.
+# Package inputs are listed in .github/sync-upstream-centos8.sh.
+# A docs-only merge does not start the build.
+# A conflict does not push, does not start the build, opens or updates an
+# issue, and fails the job. The job does not choose upstream or the fork.
+#
+# Push token: GITHUB_TOKEN with contents: write. If branch protection rejects
+# that token, store a fine-grained personal access token as the Actions secret
+# UPSTREAM_SYNC_TOKEN. The token needs Contents read and write on
+# charlzyx/open-compute only. The token must not be able to write to
+# elliothux/open-compute. Issue comments and workflow_dispatch use GITHUB_TOKEN.
+
+on:
+  schedule:
+    - cron: "17 1,9,17 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Merge on the runner. Do not push. Do not start the ocd build.
+        required: false
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [sync-upstream-centos8]
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: sync-upstream-centos8-compat
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out centos8-compat
+        uses: actions/checkout@v7
+        with:
+          ref: centos8-compat
+          fetch-depth: 0
+          # An empty UPSTREAM_SYNC_TOKEN falls back to GITHUB_TOKEN.
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          persist-credentials: true
+
+      - name: Merge upstream main into centos8-compat
+        env:
+          # An empty UPSTREAM_SYNC_TOKEN falls back to GITHUB_TOKEN.
+          PUSH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true && 'true' || 'false' }}
+        run: bash .github/sync-upstream-centos8.sh

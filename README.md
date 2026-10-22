@@ -41,6 +41,27 @@
 
 Download the CentOS 8 binary from [GitHub Releases](https://github.com/charlzyx/open-compute/releases). Read the mainline project at [elliothux/open-compute](https://github.com/elliothux/open-compute).
 
+### Upstream sync
+
+`.github/workflows/sync-upstream-centos8.yml` merges `main` from `elliothux/open-compute` into `centos8-compat`.
+
+The workflow runs at 01:17, 09:17, and 17:17 UTC. To run it manually, open the Actions tab, select **Sync upstream into centos8-compat**, then select **Run workflow**. Set `dry_run` to merge on the runner and skip the push.
+
+GitHub reads `schedule` and `workflow_dispatch` from the default branch only. The default branch of this fork is `main` (checked 2026-10-22). Keep this workflow file on `main` and on `centos8-compat`.
+
+A clean merge pushes one merge commit to `centos8-compat`. The push does not use `--force`. The merge commit message contains `[skip ci]`, so that push does not start a build. When the merge changes a package input, the workflow starts **CentOS 8 ocd compatibility**. Package inputs are:
+
+- `crates/`, `packages/`, `apps/`, `scripts/`, `share/`, `third_party/`
+- `test/glibc-compat/` and `.github/actions/`
+- `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `package.json`, `bun.lock`
+- `docs/references/single-binary.md` and `.github/workflows/centos8-ocd.yml`
+
+A merge that changes only other files does not start that build.
+
+**Warning:** Resolve conflicts on `centos8-compat` before the next sync. The workflow does not choose upstream or the fork. On a conflict, `centos8-compat` stays unchanged, the ocd build does not start, the workflow opens an issue, and the job fails.
+
+The push uses `GITHUB_TOKEN`. If branch protection rejects that token, store a fine-grained personal access token as the Actions secret `UPSTREAM_SYNC_TOKEN`. The token must have Contents read and write on `charlzyx/open-compute` only. The token must not have write access to `elliothux/open-compute`.
+
 ## The Workers platform, running on your hardware
 
 You already know how to write Cloudflare Workers. **open-compute runs the compatible Workers programming model** — module workers, familiar bindings, and cf workflows — on a single machine you own.
