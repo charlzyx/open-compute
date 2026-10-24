@@ -1,0 +1,97 @@
+name: Retain qualified CentOS runtime
+
+on:
+  push:
+    branches: [centos8-compat, upgrade/upstream-r22-glibc228-20261024]
+    paths:
+      - '.github/workflows/centos8-retain-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: centos8-retain-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  retain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select the currently qualified artifact
+        id: source
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, re
+          inputs = json.load(open('packages/runtime/workerd-glibc228.lock.json'))['source']['buildInputs']
+          run = re.fullmatch(r'https://github.com/charlzyx/open-compute/actions/runs/([0-9]+)', inputs['compatibilityWorkflowRun'])
+          assert run is not None
+          artifact = inputs['compatibilityArtifactId']
+          assert re.fullmatch(r'[0-9]+', artifact)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'run-id={run[1]}\nartifact-id={artifact}\n')
+          PYTHON
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          repository: charlzyx/open-compute
+          run-id: ${{ steps.source.outputs.run-id }}
+          artifact-ids: ${{ steps.source.outputs.artifact-id }}
+          path: .temp/glibc-ocd/workerd
+      - name: Verify exact bytes and retain the original build proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B -m unittest discover -s test/glibc-compat -p test_verify_workerd.py
+          python3 -B - <<'PYTHON'
+          import hashlib, importlib.util, json, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          directory = root / '.temp/glibc-ocd/workerd'
+          pin = json.loads((root / 'packages/runtime/workerd-glibc228.lock.json').read_text())
+          formal = json.loads((root / 'packages/runtime/workerd.lock.json').read_text())
+          inputs = pin['source']['buildInputs']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/charlzyx/open-compute/{path}'], text=True))
+          artifact = api(f'actions/artifacts/{inputs["compatibilityArtifactId"]}')
+          run = api(f'actions/runs/{artifact["workflow_run"]["id"]}')
+          spec = importlib.util.spec_from_file_location('verify_workerd', root / 'test/glibc-compat/verify-workerd.py')
+          verifier = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(verifier)
+          digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          verifier.verify_evidence(pin, formal, artifact, run, directory,
+              digest(root / 'test/glibc-compat/Dockerfile'),
+              digest(root / 'test/glibc-compat/build-workerd.sh'))
+          proof_path = directory / 'build-provenance.json'
+          if 'compatibilityBuildProvenanceSha256' not in inputs:
+              proof = {
+                  'schemaVersion': 1, 'pin': pin,
+                  'run': {key: run[key] for key in ('id', 'html_url', 'head_sha', 'path', 'status', 'conclusion')},
+                  'artifact': {key: artifact[key] for key in ('id', 'name', 'expired')},
+              }
+              for key in ('repository', 'head_repository'):
+                  proof['run'][key] = {'full_name': run[key]['full_name']}
+              proof['artifact']['workflow_run'] = {key: artifact['workflow_run'][key] for key in ('id', 'head_sha')}
+              with proof_path.open('x') as stream:
+                  stream.write(json.dumps(proof, indent=2) + '\n')
+          print(json.dumps({'operation': 'verified-copy', 'buildProvenanceSha256': digest(proof_path),
+              'binarySha256': pin['targets']['linux-x64']['binarySha256'],
+              'archiveSha256': pin['targets']['linux-x64']['archiveSha256']}))
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        id: retained
+        with:
+          name: workerd-linux-x64-glibc228-qualified
+          path: .temp/glibc-ocd/workerd/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Record the actual retention deadline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.retained.outputs.artifact-id }}
+        run: |
+          gh api "repos/charlzyx/open-compute/actions/artifacts/$ARTIFACT_ID" \
+            --jq '{id, name, expired, expires_at, digest, workflow_run}'
