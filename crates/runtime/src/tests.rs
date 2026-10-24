@@ -77,6 +77,19 @@ async fn read_pid_file(path: &Path, timeout: Duration) -> i32 {
     }
 }
 
+fn packaged_runtime_lock_path() -> PathBuf {
+    let name = if option_env!("OPEN_COMPUTE_BUILD_PROFILE") == Some("linux-x64-glibc228") {
+        "workerd-glibc228.lock.json"
+    } else {
+        "workerd.lock.json"
+    };
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/runtime")
+        .join(name)
+        .canonicalize()
+        .expect("packaged runtime lock must exist")
+}
+
 fn host_target() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => "darwin-arm64",

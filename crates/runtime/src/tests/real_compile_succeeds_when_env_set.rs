@@ -9,7 +9,7 @@ async fn real_compile_succeeds_when_env_set() {
         .join("../../packages/runtime")
         .canonicalize()
         .unwrap();
-    let lock_path = assets.join("workerd.lock.json");
+    let lock_path = packaged_runtime_lock_path();
     let runtime = verify_runtime_binary(
         &lock_path,
         &binary,

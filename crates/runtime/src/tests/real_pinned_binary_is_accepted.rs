@@ -6,8 +6,7 @@ async fn real_pinned_binary_is_accepted() {
         .expect("OPEN_COMPUTE_TEST_WORKERD must name the verified stock runtime");
     let path = PathBuf::from(path);
     assert!(path.is_absolute());
-    let lock_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/runtime/workerd.lock.json");
+    let lock_path = packaged_runtime_lock_path();
     let verified = verify_runtime_binary(
         &lock_path.canonicalize().unwrap(),
         &path,
