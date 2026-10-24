@@ -18,7 +18,6 @@ printf '%s\n' "${allocator_options[@]}" > "$evidence/allocator-bazel-option.txt"
 uname -sr > "$evidence/build-kernel.txt"
 sha256sum test/glibc-compat/Dockerfile > "$evidence/builder.sha256"
 sha256sum test/glibc-compat/build-workerd.sh > "$evidence/build-script.sha256"
-printf '%s\n' cxx > "$evidence/io-backend.txt"
 test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.28'
 getconf GNU_LIBC_VERSION > "$evidence/build-glibc.txt"
 clang --version > "$evidence/clang.txt"
@@ -47,7 +46,7 @@ CONFIG
 cp .local/bazelrc "$evidence/compat.bazelrc"
 if [ "$allocator" = system ]; then
   bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel cquery \
-    'deps(//src/workerd/server:workerd)' --config=release_linux --strip=always --//:io_backend=cxx \
+    'deps(//src/workerd/server:workerd)' --config=release_linux --strip=always \
     --incompatible_enable_proto_toolchain_resolution=false \
     --@rules_rust//:extra_exec_rustc_flags=-Cstrip=none \
     "${allocator_options[@]}" --output=label > "$evidence/configured-dependencies.txt"
@@ -57,10 +56,16 @@ import sys
 labels = [line.split()[0] for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
 if any(label.partition('//')[2] == 'tcmalloc:tcmalloc' for label in labels):
     raise SystemExit('System malloc diagnostic must not depend on the tcmalloc allocator target')
+required = {'//src/workerd/util:setup-async-io', '//src/rust/cxx/kj-rs-io:kj-rs-io'}
+if not required.issubset(labels):
+    raise SystemExit('The pinned runtime must use its configured Rust/Tokio I/O backend')
+if any(label.partition('//')[2] == 'src/kj:kj-async-os' for label in labels):
+    raise SystemExit('The Tokio runtime must not link the competing KJ event loop')
 PYQUERY
+  printf '%s\n' rust-tokio > "$evidence/io-backend.txt"
 fi
 bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel build \
-  //src/workerd/server:workerd --config=release_linux --strip=always --//:io_backend=cxx \
+  //src/workerd/server:workerd --config=release_linux --strip=always \
   --disk_cache=/var/tmp/open-compute-glibc228/action-cache \
   --repository_cache=/var/tmp/open-compute-glibc228/repository-cache \
   --experimental_disk_cache_gc_max_size=6G \
