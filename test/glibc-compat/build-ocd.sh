@@ -64,5 +64,5 @@ npx --version
   --archive "$OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE" | tee "$evidence/package.json"
 python test/glibc-compat/check-elf.py "$evidence/ocd-linux-x64-glibc228" > "$evidence/ocd-elf.json"
 bun test/conformance/check.ts | tee "$evidence/conformance.json"
-bash test/glibc-compat/check-runtime-tests.sh
+bash test/glibc-compat/check-runtime-tests.sh build
 sha256sum "$evidence/ocd-linux-x64-glibc228" > "$evidence/SHA256SUMS"

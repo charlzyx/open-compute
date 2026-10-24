@@ -10,6 +10,13 @@ symbols, and a real Worker in CentOS 8.2 userspace. The ocd workflow also runs
 conformance checks, the complete runtime and storage library suites, and the
 Worker, KV, assets-only Cron and restart smoke test.
 
+The library test executables build in glibc 2.28 and pass the ELF checks. They run
+as the non-root Ubuntu CI user with the pinned Chrome fixture and native sandbox.
+The evidence records the library test host's glibc version separately. The real
+daemon smoke runs in CentOS 8.2 as a non-root user. The root build container is not
+a runtime test host: its permissions and coreutils shell wrappers differ from a
+normal installation. Browser library tests do not qualify Browser Run on CentOS.
+
 CentOS containers share the GitHub runner's modern Linux kernel. These checks do
 not qualify an old CentOS kernel, the complete Container product, workspace
 coverage, or every release platform. Artifact creation does not publish a Release

@@ -26,7 +26,8 @@ jobs:
       arm64: false
   package:
     needs: fixture-images
-    runs-on: ubuntu-24.04
+    # The non-root browser fixture uses the runner's unchanged native sandbox.
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
@@ -95,6 +96,28 @@ jobs:
             ocd-glibc228 bash test/glibc-compat/build-ocd.sh
       - name: Exercise the complete daemon and Worker in CentOS 8.2
         run: python3 -B test/glibc-compat/ocd-smoke.py
+      - name: Return build outputs to the non-root test owner
+        run: sudo chown -R "$(id -u):$(id -g)" .temp/glibc-ocd
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Prepare the pinned native browser fixture without sandbox overrides
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          lock="$PWD/test/browser-fixture.lock.json"
+          platform=$(jq -er '.targets["linux-x64"].platform' "$lock")
+          url=$(jq -er '.targets["linux-x64"].url' "$lock")
+          sha256=$(jq -er '.targets["linux-x64"].sha256' "$lock")
+          fixture=$(mktemp -d "$PWD/.temp/browser-fixture-XXXXXXXX")
+          curl --fail --location --output "$fixture/archive.zip" "$url"
+          printf '%s  %s\n' "$sha256" "$fixture/archive.zip" | sha256sum --check
+          unzip -q "$fixture/archive.zip" -d "$fixture/source"
+          bun scripts/prepare-browser.ts \
+            --source "$fixture/source/chrome-headless-shell-$platform/chrome-headless-shell" \
+            --dest "$fixture/prepared" >> "$GITHUB_ENV"
+      - name: Run complete glibc-built library suites as the non-root host user
+        run: bash test/glibc-compat/check-runtime-tests.sh run
       - name: Prepare owned Cargo cache and build evidence
         if: always()
         run: |
