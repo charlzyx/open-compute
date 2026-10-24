@@ -50,3 +50,7 @@ Operations that `ocd` supports but the pinned official SDK does not implement ar
 Failures throw the official SDK error classes (`APIError` and its subclasses), re-exported from the package.
 
 Browser Run public routes and fixed browser clients do not imply generated management methods. The current facade does not expose Browser management methods; see [Browser Run](/docs/browser-run/) for configuration, the public route subset and limits.
+
+## Container management boundary
+
+The fixed official `cloudflare@7.2.0` SDK has no methods for the Container management routes used by cf. The generated facade therefore has no Container management methods. `packages/sdk/surface.json` records these exclusions. The management capability inventory lists the implemented routes separately from the 65-member tenant runtime API. Use the pinned project-local cf workflow described in [Containers](/docs/containers/); a supported runtime member does not imply a generated SDK method.

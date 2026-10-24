@@ -125,9 +125,7 @@ pub(super) async fn dispatch(
         if name.ends_with("-proxy") {
             return delete_proxy(&state, entry, name).await;
         }
-        entry.fenced = true;
-        entry.generation_cancel.cancel();
-        entry.relay = None;
+        directory_start::fence_main_removal(&state, entry).await?;
     }
 
     let existing = if let (Some(lease), Some(name)) = (&lease, operation.identity())
@@ -171,6 +169,9 @@ pub(super) async fn dispatch(
     } else {
         false
     };
+    if let Some(entry) = guard.as_deref_mut() {
+        directory_start::before(&state, entry, &operation).await?;
+    }
     let engine_response = state.engine.send(method, &uri, body, upgrade).await?;
     let status = engine_response.status().as_u16();
     if status == 101 {
@@ -221,18 +222,9 @@ pub(super) async fn dispatch(
     if !accepted_status(&operation, status) {
         return Err(invalid());
     }
-    helper::created(&state, &operation, status, lease.as_ref(), startup.as_ref()).await?;
-    if let Operation::Create(name) = &operation
-        && status == 201
-        && name.ends_with("-proxy")
-    {
-        let entry = guard.as_mut().ok_or_else(invalid)?;
-        let credentials = entry.credentials.clone().ok_or_else(invalid)?;
-        state.journal.begin(&entry.lease.lease_key)?;
-        entry.fenced = true;
-        super::super::credentials::install(&state.engine, name, &credentials).await?;
-        state.journal.clear(&entry.lease.lease_key)?;
-        entry.fenced = false;
+    helper::created(&state, &operation, status, guard.as_deref_mut()).await?;
+    if let Some(entry) = guard.as_deref_mut() {
+        directory_start::after(&state, entry, &operation, status).await?;
     }
 
     if let Operation::ExecCreate(_) = operation

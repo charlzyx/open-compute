@@ -109,6 +109,8 @@ pub struct ContainerLease {
     pub enable_internet: bool,
     /// Validated startup identity and overrides; secret-bearing values are never stored here.
     pub startup: ContainerLeaseStartup,
+    /// Immutable directory clones selected for this execution, including empty mounts.
+    pub directory_snapshots: Vec<ContainerDirectoryRestore>,
     /// AEAD envelope bound to this instance, object owner and exact provider key.
     pub startup_envelope: Vec<u8>,
     /// Opaque provider identity; never expose it to tenants or public status.
@@ -317,6 +319,8 @@ pub struct ContainerExecutionSpec {
     pub enable_internet: bool,
     /// Closed startup metadata.
     pub startup: ContainerLeaseStartup,
+    /// Application-authorized directory clone plan, frozen atomically with capacity.
+    pub directory_snapshots: Vec<ContainerDirectoryRestore>,
     /// Encrypted runtime options; plaintext never enters SQLite.
     pub startup_envelope: Vec<u8>,
 }

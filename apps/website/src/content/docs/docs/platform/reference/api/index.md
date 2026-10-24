@@ -32,4 +32,6 @@ Release identity comes from `ocd capabilities --json` on the running binary.
 
 ## Management API and SDK
 
-The Cloudflare-compatible management API is served under `/client/v4`. Use the [Management SDK](/docs/platform/reference/sdk/) for the typed TypeScript client. The committed `openapi/open-compute-sdk.json` and `packages/sdk/surface.json` files are the authoritative generated route and SDK inventories; this page is the human-readable product index.
+The Cloudflare-compatible management API is served under `/client/v4`. Use the [Management SDK](/docs/platform/reference/sdk/) for the typed TypeScript client. The committed `openapi/open-compute-sdk.json` and `packages/sdk/surface.json` files describe the generated SDK surface. `ocd capabilities --json` also lists implemented management routes outside that surface. This page is the human-readable product index.
+
+The `clientObservedOperations` list in `openapi/cloudflare-subset-manifest.json` owns the Container management inventory. The generator projects that list into `ocd capabilities --json`. They are outside the pinned upstream OpenAPI subset and the generated SDK method surface. See [Containers](/docs/containers/) for the implemented route subset and limits.

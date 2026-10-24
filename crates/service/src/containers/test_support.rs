@@ -341,6 +341,8 @@ pub(crate) struct LeaseProtocol {
     pub(crate) import_proof_absent: std::sync::atomic::AtomicBool,
     pub(crate) observation:
         tokio::sync::Mutex<Option<crate::container_broker::ProviderLeaseObservation>>,
+    pub(crate) observation_key: tokio::sync::Mutex<Option<String>>,
+    pub(crate) directory_archives: tokio::sync::Mutex<Vec<(String, usize, Vec<u8>)>>,
     pub(crate) register_fail: std::sync::atomic::AtomicBool,
     pub(crate) terminate_fail: std::sync::atomic::AtomicBool,
     pub(crate) terminated: tokio::sync::Mutex<Vec<String>>,
@@ -436,8 +438,22 @@ impl Fixture {
             .last()
             .unwrap()
             .clone();
+        let staged = self.protocol.directory_archives.lock().await;
+        assert!(
+            registration
+                .directory_snapshots
+                .iter()
+                .enumerate()
+                .all(|(index, directory)| directory.archive.is_none()
+                    || staged
+                        .iter()
+                        .any(|(key, position, _)| key == &registration.lease_key
+                            && *position == index))
+        );
+        *self.protocol.observation_key.lock().await = Some(registration.lease_key.clone());
         *self.protocol.observation.lock().await =
             Some(crate::container_broker::ProviderLeaseObservation {
+                directories_prepared: true,
                 start_identity: "c".repeat(64),
                 image: registration.image,
                 manifest_sha256: registration.manifest_sha256,
@@ -510,6 +526,7 @@ pub(crate) async fn fixture() -> Fixture {
     let image_protocol = Arc::clone(&protocol);
     let load_protocol = Arc::clone(&protocol);
     let snapshot_protocol = Arc::clone(&protocol);
+    let directory_protocol = Arc::clone(&protocol);
     let app = Router::new()
         .route(
             "/open-compute/v1/contract",
@@ -518,6 +535,20 @@ pub(crate) async fn fixture() -> Fixture {
                 async move { axum::Json(value) }
             }),
         )
+        .route("/open-compute/v1/leases/{key}/directories/{index}",axum::routing::post(move |
+            axum::extract::Path((key,index)): axum::extract::Path<(String,usize)>, request: Request| {
+            let protocol=Arc::clone(&directory_protocol);
+            async move {
+                let bytes=to_bytes(request.into_body(),8<<20).await.unwrap().to_vec();
+                let registrations=protocol.registrations.lock().await;
+                let registration=registrations.iter().rev().find(|entry|entry.lease_key==key).unwrap();
+                let expected=registration.directory_snapshots[index].archive.as_ref().unwrap();
+                assert_eq!(expected.bytes,bytes.len() as u64);
+                assert_eq!(expected.sha256,hex::encode(Sha256::digest(&bytes)));
+                protocol.directory_archives.lock().await.push((key,index,bytes));
+                StatusCode::NO_CONTENT
+            }
+        }))
         .route("/open-compute/v1/leases/{key}/snapshot", axum::routing::post(move |
             axum::extract::Path(key): axum::extract::Path<String>,
             axum::Json(value): axum::Json<Value>,
@@ -545,11 +576,21 @@ pub(crate) async fn fixture() -> Fixture {
                 if protocol.register_fail.load(std::sync::atomic::Ordering::SeqCst) {StatusCode::SERVICE_UNAVAILABLE} else {StatusCode::CREATED}
             }
         }))
-        .route("/open-compute/v1/leases/{key}",axum::routing::get(move || {
+        .route("/open-compute/v1/leases/{key}",axum::routing::get(move |axum::extract::Path(key):axum::extract::Path<String>| {
             let protocol=Arc::clone(&observe_protocol);
             async move {
-                match protocol.observation.lock().await.clone() {
-                    Some(value)=>axum::response::IntoResponse::into_response(axum::Json(value)),
+                if protocol.observation_key.lock().await.as_ref().is_none_or(|observed|observed==&key)
+                    && let Some(value)=protocol.observation.lock().await.clone() {
+                    return axum::response::IntoResponse::into_response(axum::Json(value));
+                }
+                let registrations=protocol.registrations.lock().await;
+                match registrations.iter().rev().find(|entry|entry.lease_key==key && !entry.directory_snapshots.is_empty()) {
+                    Some(registration)=>axum::response::IntoResponse::into_response(axum::Json(crate::container_broker::ProviderLeaseObservation {
+                        directories_prepared:false,start_identity:registration.start_identity.clone(),
+                        image:registration.image.clone(),manifest_sha256:registration.manifest_sha256.clone(),
+                        provider_contract_sha256:registration.provider_contract_sha256.clone(),
+                        running:false,terminated:false,cleanup_complete:false,late_operations_fenced:false,
+                    })),
                     None=>axum::response::IntoResponse::into_response(StatusCode::SERVICE_UNAVAILABLE),
                 }
             }

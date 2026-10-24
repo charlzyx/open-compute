@@ -3,7 +3,10 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import resource
 import subprocess
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +16,22 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('with_ci_broker', HERE / 'with-ci-broker.py')
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
+
+
+class Events(unittest.TestCase):
+    def test_output_limit_bounds_the_child_without_changing_the_parent(self):
+        parent = HERE.parent.parent / '.temp/engine-event-tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        limits = resource.getrlimit(resource.RLIMIT_FSIZE)
+        with tempfile.TemporaryDirectory(dir=parent) as directory:
+            output = Path(directory) / 'bounded.log'
+            with output.open('xb') as log:
+                done = subprocess.run([sys.executable, '-I', '-B', '-c',
+                    'import sys; sys.stdout.buffer.write(b"x" * (2 << 20)); sys.stdout.flush()'],
+                    stdout=log, stderr=subprocess.DEVNULL, preexec_fn=fixture.event_file_limit)
+            self.assertNotEqual(done.returncode, 0)
+            self.assertEqual(output.stat().st_size, 1 << 20)
+        self.assertEqual(resource.getrlimit(resource.RLIMIT_FSIZE), limits)
 
 
 class Pipeline(unittest.TestCase):
@@ -90,10 +109,30 @@ class Pipeline(unittest.TestCase):
                 self.inventory['containers'].append('controlled-remains')
             return subprocess.CompletedProcess(args, self.main_exit)
 
+        class Observer:
+            pid = 12345
+
+            def __init__(self, args, **kwargs):
+                owner.calls.append(tuple(args))
+                owner.assertEqual(args[-4:-2], ['--filter', 'type=container'])
+                owner.assertIs(kwargs['preexec_fn'], fixture.event_file_limit)
+                owner.assertEqual(kwargs['stderr'], subprocess.DEVNULL)
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def wait(self, **kwargs):
+                return self.returncode
+
         self.patches = [patch.object(fixture.platform, 'machine', return_value='arm64'),
                         patch.object(fixture.shutil, 'which', return_value='/controlled/docker'),
                         patch.object(fixture.helper, 'Engine', Engine),
                         patch.object(fixture.helper, 'materialize', materialize),
+                        patch.object(fixture.subprocess, 'Popen', Observer),
                         patch.object(fixture.subprocess, 'run', run)]
         for value in self.patches:
             value.start()
@@ -116,6 +155,8 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(self.inventory['volumes'], [])
         self.assertEqual(len(self.inventory['images']), 2)
         self.assertFalse(result['fullWorkspaceQualifiedByWrapper'])
+        self.assertTrue(result['eventObserverCleanup']['reaped'])
+        self.assertEqual(result['engineProfile']['ServerVersion'], '29.4.0')
         config = self.output / 'broker/broker.toml'
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
         self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
@@ -163,6 +204,7 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(result['failureCode'], 'BROKER_OR_COMMAND_FAILED')
         self.assertTrue(result['ownedHelperVolumeAbsent'])
         self.assertEqual(self.inventory['volumes'], [])
+        self.assertTrue(result['eventObserverCleanup']['reaped'])
 
     def test_container_leak_retains_volume_and_reports_cleanup_failure(self):
         self.main_exit = 1

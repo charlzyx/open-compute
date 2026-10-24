@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { validateCommitted } from "./p6-contract.mjs";
+import { buildCapability, validateCommitted } from "./p6-contract.mjs";
 import { assertSanitizedTrace, sanitizeTrace } from "./p6-trace.mjs";
 
 const capability = JSON.parse(
@@ -164,7 +164,7 @@ test("settings surfaces, asset upload variants, and old routes are classified ex
     capability.managementApi.routes.filter(
       (item) => item.status === "supported_with_deviation",
     ).length,
-    13,
+    26,
   );
   assert.equal(
     capability.managementApi.routes.filter((item) => item.status === "planned")
@@ -259,6 +259,7 @@ test("settings surfaces, asset upload variants, and old routes are classified ex
     "OC-D1-001",
     "OC-AI-SEARCH-TOKEN-001",
     "OC-OBSERVABILITY-001",
+    "OC-CONTAINERS-MGMT-001",
   ]);
   assert.deepEqual(
     [
@@ -337,4 +338,57 @@ test("trace sanitizer removes credentials, multipart boundaries, and secret JSON
     "multipart/form-data; boundary=<boundary>",
   );
   assertSanitizedTrace(sanitized);
+});
+
+test("Container management inventory records the implemented cf subset and SDK boundary", () => {
+  const routes = capability.managementApi.routes.filter((route) =>
+    route.path.includes("/containers/"),
+  );
+  assert.equal(routes.length, 13);
+  assert.equal(new Set(routes.map((route) => route.id)).size, routes.length);
+  for (const route of routes) {
+    assert.equal(route.status, "supported_with_deviation");
+    assert.equal(route.source, "cf-1.0.0-beta.12-containers");
+    assert.deepEqual(route.deviations, ["OC-CONTAINERS-MGMT-001"]);
+    assert.equal(
+      route.requestMediaType,
+      ["POST", "PATCH"].includes(route.method) ? "json" : "none",
+    );
+  }
+  const ids = new Set(routes.map((route) => route.id));
+  for (const operation of [
+    "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+    "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+    "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+    "POST /accounts/{account_id}/containers/image-preparations",
+  ])
+    assert.ok(ids.has(operation));
+});
+
+test("management authority rejects a duplicate observed Container route", () => {
+  const read = (path) =>
+    JSON.parse(readFileSync(new URL(path, import.meta.url)));
+  const manifest = read("../../openapi/cloudflare-subset-manifest.json");
+  const container = manifest.clientObservedOperations.find((entry) =>
+    entry.operation.includes("/containers/"),
+  );
+  assert.ok(container);
+  assert.throws(
+    () =>
+      buildCapability(
+        read("../../openapi/cloudflare-v4-subset.json"),
+        {
+          ...manifest,
+          clientObservedOperations: [
+            ...manifest.clientObservedOperations,
+            container,
+          ],
+        },
+        read("../../openapi/p6-capability-source.json"),
+        "1.0.0-beta.12",
+        "unused",
+        {},
+      ),
+    /duplicate management capability route/,
+  );
 });

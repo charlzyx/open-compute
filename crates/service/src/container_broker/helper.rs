@@ -6,8 +6,10 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use std::io::Read as _;
 
-pub(super) const DIRECTORY: &str = "/opt/open-compute/exec";
-pub(super) const PATH: &str = "/opt/open-compute/exec/helper";
+pub(super) const DIRECTORY: &str = "/.open-compute-exec";
+pub(super) const PATH: &str = "/.open-compute-exec/helper";
+// The Broker resolves the native protocol path to its qualified mount.
+pub(super) const NATIVE_EXEC_PATH: &str = "/opt/open-compute/exec/helper";
 pub(super) const MAX_BYTES: u64 = 16 << 20;
 
 pub(super) fn volume_name(name: &str) -> bool {

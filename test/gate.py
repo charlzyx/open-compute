@@ -2,6 +2,8 @@
 """Build once; run every selected case once, then repeat only audited timing cases."""
 
 import argparse
+import errno
+import fcntl
 from collections import namedtuple
 import concurrent.futures
 from contextlib import nullcontext
@@ -13,7 +15,9 @@ from pathlib import Path
 import platform
 import re
 import resource
+import select
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -588,6 +592,53 @@ def verify_selected_inputs(targets, *, probe_version=True):
     }
 
 
+def compilation_phase_barrier(report):
+    """Wait for the resource owner before any test process can start."""
+    event = os.environ.pop('OPEN_COMPUTE_GATE_BUILD_EVENT_FD', None)
+    resume = os.environ.pop('OPEN_COMPUTE_GATE_RUN_CONTINUE_FD', None)
+    if event is None and resume is None:
+        return
+    if (event is None or resume is None
+            or not re.fullmatch('[0-9]{1,10}', event)
+            or not re.fullmatch('[0-9]{1,10}', resume)):
+        raise ValueError('compilation handoff requires two pipe descriptors')
+    event_fd, resume_fd = int(event), int(resume)
+    if min(event_fd, resume_fd) < 3 or event_fd == resume_fd:
+        raise ValueError('compilation handoff requires distinct dedicated pipes')
+    try:
+        for fd, access in ((event_fd, os.O_WRONLY), (resume_fd, os.O_RDONLY)):
+            if (not stat.S_ISFIFO(os.fstat(fd).st_mode)
+                    or fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE != access):
+                raise ValueError('compilation handoff requires a writable and a readable pipe')
+        source = report['source_sha256']
+        if not re.fullmatch('[0-9a-f]{64}', source):
+            raise ValueError('compilation handoff requires the current source digest')
+        report['compilation_handoff'] = {'resumed': False, 'source_sha256': source}
+        message = json.dumps({'phase': 'compiled', 'source_sha256': source,
+                              'targets': len(report['targets'])}).encode() + b'\n'
+        if os.write(event_fd, message) != len(message):
+            raise RuntimeError('compilation handoff notification was incomplete')
+        expected = f'RUN {source}\n'.encode()
+        response = b''
+        deadline = time.monotonic() + 120
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([resume_fd], [], [], remaining)[0]:
+                raise TimeoutError('compilation handoff did not restore the test resource limits')
+            part = os.read(resume_fd, len(expected) + 1 - len(response))
+            if not part:
+                break
+            response += part
+            if len(response) > len(expected):
+                raise RuntimeError('compilation handoff response was too long')
+        if response != expected:
+            raise RuntimeError('compilation handoff did not authorize the current source')
+        report['compilation_handoff']['resumed'] = True
+    finally:
+        os.close(event_fd)
+        os.close(resume_fd)
+
+
 def build_targets(targets, directory, workspace):
     cargo_targets = {name: target for name, target in targets.items()
                      if not isinstance(target, TypedTarget)}
@@ -697,9 +748,8 @@ def execute_target(name, executable, directory, target, *, list_only=False):
     cwd = str(directory.resolve()) if name == 'runtime' else target.cwd
     # Keep pathname-based Unix sockets below SUN_LEN even with long target labels.
     # Retained evidence is moved beside the log only after the process has exited.
-    temporary_root = ROOT / '.temp/gate-tmp'
-    temporary_root.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix='', dir=temporary_root)).resolve()
+    # Respect TMPDIR so local-storage tests do not inherit a shared repository filesystem.
+    temporary = Path(tempfile.mkdtemp(prefix='oc-gate-')).resolve()
     if isinstance(target, TypedTarget):
         env = {key: os.environ[key] for key in target.env_allowlist if key in os.environ}
         env.update(TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
@@ -713,6 +763,7 @@ def execute_target(name, executable, directory, target, *, list_only=False):
     # Repetition belongs only to this runner, including when a test spawns its own fixture.
     env.pop('OPEN_COMPUTE_GATE_ROUNDS', None)
     start = time.monotonic()
+    retained_temporary = None
     try:
         # JSON targets own stdout; compiler diagnostics must not become protocol data.
         with (directory / 'output.log').open('x') as output, \
@@ -738,12 +789,21 @@ def execute_target(name, executable, directory, target, *, list_only=False):
             destination = directory / 'tmp'
             if destination.exists() or destination.is_symlink():
                 raise RuntimeError(f'refusing to overwrite retained evidence: {destination}')
-            temporary.rename(destination)
+            try:
+                temporary.rename(destination)
+            except OSError as error:
+                if error.errno != errno.EXDEV:
+                    raise
+                # Keep original failure metadata on its filesystem; copy only for the report.
+                shutil.copytree(temporary, destination, symlinks=True)
+                retained_temporary = str(temporary)
         else:
             temporary.rmdir()
     result = {'target': name, 'exit_code': process.returncode,
               'seconds': time.monotonic() - start, 'log': str(directory / 'output.log'),
               'cwd': cwd}
+    if retained_temporary is not None:
+        result['retained_temporary'] = retained_temporary
     if process.returncode == 0 and leftovers:
         result['exit_code'] = 1
         result['error'] = 'test left temporary files behind; retained beside its output log'
@@ -1011,6 +1071,7 @@ def main():
     cpu_start = resource.getrusage(resource.RUSAGE_CHILDREN)
     try:
         artifacts, report['build'] = build_targets(targets, directory, args.workspace)
+        compilation_phase_barrier(report)
         preparation_start = time.monotonic()
         prepared = run_round(
             {name: target._replace(exclusive=False) for name, target in targets.items()},

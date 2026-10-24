@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Own an isolated macOS CI Engine around the canonical Broker and one command."""
 import argparse
+import ctypes
 import importlib.util
 import json
 import os
@@ -9,6 +10,8 @@ import platform
 import re
 import signal
 import shutil
+import socket as unix_sockets
+import stat
 import subprocess
 import sys
 
@@ -48,6 +51,38 @@ df -B1 / /var/lib/docker /mnt/oc-ci-docker
 '''
 
 
+def agent_forwarding(home):
+    path = home / '_lima/colima-fixture/ha.stderr.log'
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return {'available': False}
+    with os.fdopen(fd, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.getuid(),
+                'OWNED_AGENT_LOG_REQUIRED')
+        stream.seek(max(0, metadata.st_size - (256 << 10)))
+        lines = stream.read(256 << 10).decode('utf8', errors='replace').lower().splitlines()
+    return {'available': True, 'truncated': metadata.st_size > 256 << 10,
+            'sshVsockFallback': sum('ssh server does not seem to be running on vsock' in l for l in lines),
+            'tcpForwardFailures': sum('failed to set up forwarding tcp' in l for l in lines),
+            'tcpForwards': sum('forwarding tcp ' in l and 'not forwarding tcp ' not in l
+                               and 'failed to set up forwarding tcp ' not in l for l in lines)}
+
+
+def engine_peer_identity(path):
+    uid, gid = ctypes.c_uint(), ctypes.c_uint()
+    query = ctypes.CDLL(None, use_errno=True).getpeereid
+    query.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint)]
+    query.restype = ctypes.c_int
+    with unix_sockets.socket(unix_sockets.AF_UNIX, unix_sockets.SOCK_STREAM) as stream:
+        stream.settimeout(2)
+        stream.connect(str(path))
+        require(query(stream.fileno(), ctypes.byref(uid), ctypes.byref(gid)) == 0,
+                'ENGINE_PEER_ID_READ_FAILED')
+    return {'uid': uid.value, 'gid': gid.value}
+
+
 def run(images, binary, root, evidence, command):
     require(os.environ.get('GITHUB_ACTIONS') == 'true' and platform.system() == 'Darwin'
             and platform.machine() == 'x86_64' and os.getuid() != 0,
@@ -62,6 +97,8 @@ def run(images, binary, root, evidence, command):
     root.mkdir(mode=0o700)
     evidence.mkdir(mode=0o700, parents=True)
     home = root / 'colima'
+    # Colima ignores COLIMA_HOME unless that directory already exists.
+    home.mkdir(mode=0o700)
     docker_config = root / 'docker-config'
     docker_config.mkdir(mode=0o700)
     environment = dict(os.environ, COLIMA_HOME=str(home), DOCKER_CONFIG=str(docker_config))
@@ -94,6 +131,10 @@ def run(images, binary, root, evidence, command):
         call('xfs', [*colima, 'ssh', '--', 'sh', '-s'], input=GUEST_SETUP.encode(), timeout=300)
         socket = home / 'fixture/docker.sock'
         require(socket.is_socket(), 'COLIMA_ENGINE_SOCKET_REQUIRED')
+        try:
+            result['engineSocketPeer'] = engine_peer_identity(socket)
+        except Exception as error:
+            result['enginePeerDiagnosticFailureClass'] = type(error).__name__
         with (evidence / 'pipeline.log').open('xb') as log:
             child = subprocess.Popen([sys.executable, '-I', '-B', str(HERE / 'with-ci-broker.py'),
                 '--images', str(images), '--engine-socket', str(socket.resolve()),
@@ -115,6 +156,10 @@ def run(images, binary, root, evidence, command):
         code = str(error) if isinstance(error, ValueError) else ''
         result['failureCode'] = code if re.fullmatch('[A-Z_]+', code) else None
     finally:
+        try:
+            result['agentForwarding'] = agent_forwarding(home)
+        except Exception as error:
+            result['agentDiagnosticFailureClass'] = type(error).__name__
         # Never address the default profile, global Docker context, or another VM.
         if started:
             try:
@@ -125,6 +170,7 @@ def run(images, binary, root, evidence, command):
                 result['success'] = False
                 result['cleanupFailureClass'] = type(error).__name__
         for source, destination in ((root / 'fixture/result.json', 'pipeline-result.json'),
+                (root / 'fixture/engine-events.jsonl', 'engine-events.jsonl'),
                 (root / 'fixture/broker/evidence/result.json', 'broker-result.json'),
                 (root / 'fixture/broker/evidence/command.log', 'wrapped-command.log'),
                 (root / 'fixture/broker/evidence/broker.stdout', 'broker.stdout'),

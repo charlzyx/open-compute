@@ -226,13 +226,10 @@ async fn fixed_clients_actions_public_cf_and_restart_use_real_browser() {
 }
 
 async fn exercise(playwright: bool) {
-    let purpose = repo().join(".temp/p22-product");
-    fs::create_dir_all(&purpose).unwrap();
-    let root = tempfile::Builder::new()
-        .prefix("run-")
-        .tempdir_in(purpose)
-        .unwrap()
-        .keep();
+    let evidence = platform_process::Evidence(Some(
+        tempfile::Builder::new().prefix("run-").tempdir().unwrap(),
+    ));
+    let root = evidence.0.as_ref().unwrap().path().to_owned();
     let chrome_dir = root.join("chrome");
     fs::create_dir(&chrome_dir).unwrap();
     let (chrome, endpoint) = native::native_fixture(&chrome_dir).await;

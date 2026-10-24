@@ -5,10 +5,15 @@ import { compileRuntime } from "../../../packages/runtime/tests/compiled-runtime
 
 const url = (code) =>
   `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const directoryCode = await compileRuntime(
+  "../../../test/applications/containers/src/directory-snapshots.ts",
+);
+const { directoryAction, directoryHandle } = await import(url(directoryCode));
 let code = await compileRuntime(
   "../../../test/applications/containers/src/named-images.ts",
 );
 for (const [name, replacement] of Object.entries({
+  "./directory-snapshots": directoryCode,
   "cloudflare:workers":
     "export class DurableObject { constructor(ctx) { this.ctx = ctx; } }",
   "./exec-options-lifecycle":
@@ -25,6 +30,167 @@ for (const [name, replacement] of Object.entries({
   );
 }
 const { NamedImageContainer } = await import(url(code));
+
+test("directory fixture rejects malformed handles and preserves captured metadata", () => {
+  const handle = {
+    id: "snapshot",
+    size: 8192,
+    dir: "/tmp/state",
+    name: "saved",
+  };
+  assert.deepEqual(directoryHandle(handle), handle);
+  for (const value of [
+    null,
+    [],
+    {},
+    { ...handle, id: "" },
+    { ...handle, size: -1 },
+    { ...handle, size: 0.1 },
+    { ...handle, size: Number.MAX_SAFE_INTEGER + 1 },
+    { ...handle, dir: "relative" },
+    { ...handle, dir: "/nul\0path" },
+    { ...handle, name: 1 },
+    { ...handle, unexpected: "field" },
+  ]) {
+    assert.throws(() => directoryHandle(value), {
+      message: "Invalid directory fixture handle",
+    });
+  }
+});
+
+test("directory fixture forwards capture and restore parameters for both policies", async () => {
+  const handle = {
+    id: "captured",
+    size: 8192,
+    dir: "/tmp/p23-directory-state",
+  };
+  let captured;
+  const capturing = {
+    running: true,
+    async snapshotDirectory(options) {
+      captured = options;
+      return handle;
+    },
+  };
+  const capture = await directoryAction(
+    capturing,
+    "declared-image",
+    new Request("http://fixture/named/directory/capture?unnamed=1"),
+  );
+  assert.deepEqual(await capture.json(), handle);
+  assert.deepEqual(captured, { dir: "//tmp/./p23-directory-state/" });
+  await assert.rejects(
+    directoryAction(
+      { running: true },
+      undefined,
+      new Request("http://fixture/named/directory/capture"),
+    ),
+    { message: "Native directory capture is required" },
+  );
+  for (const image of [undefined, "declared-image"]) {
+    let startup;
+    const native = {
+      running: false,
+      start(options) {
+        startup = options;
+        this.running = true;
+      },
+      async exec(command, options) {
+        assert.deepEqual(command.slice(0, 2), ["python3", "-c"]);
+        assert.deepEqual(options, { user: "0:0", cwd: "/" });
+        return {
+          async output() {
+            return {
+              exitCode: 0,
+              stdout: new TextEncoder().encode('{"read":true}').buffer,
+              stderr: new ArrayBuffer(0),
+            };
+          },
+        };
+      },
+    };
+    const request = () =>
+      new Request("http://fixture/named/directory/restore", {
+        method: "POST",
+        body: JSON.stringify(handle),
+      });
+    const response = await directoryAction(native, image, request());
+    assert.deepEqual(await response.json(), { read: true });
+    assert.deepEqual(startup, {
+      ...(image === undefined ? {} : { image, instance: "lite" }),
+      enableInternet: false,
+      directorySnapshots: [
+        { snapshot: handle },
+        { snapshot: handle, mountPoint: "/tmp/p23-directory-copy" },
+        { mountPoint: "/tmp/p23-directory-empty" },
+        { mountPoint: "/tmp/p23-directory-copy/child" },
+      ],
+    });
+    await assert.rejects(directoryAction(native, image, request()), {
+      message: "Directory restore requires a stopped fixture",
+    });
+  }
+});
+
+test("directory replay requires the running start rejection and preserves directory reads", async () => {
+  const handle = {
+    id: "captured",
+    size: 8192,
+    dir: "/tmp/p23-directory-state",
+  };
+  const tree = { source: "mutated", copy: "saved", empty: [] };
+  const request = () =>
+    new Request("http://fixture/named/directory/replay", {
+      method: "POST",
+      body: JSON.stringify(handle),
+    });
+  for (const rejected of [true, false]) {
+    let starts = 0;
+    let reads = 0;
+    const native = {
+      running: true,
+      start() {
+        starts++;
+        if (rejected) throw new Error("Container is already running");
+      },
+      async exec() {
+        reads++;
+        return {
+          async output() {
+            return {
+              exitCode: 0,
+              stdout: new TextEncoder().encode(JSON.stringify(tree)).buffer,
+              stderr: new ArrayBuffer(0),
+            };
+          },
+        };
+      },
+    };
+    if (rejected) {
+      const response = await directoryAction(
+        native,
+        "declared-image",
+        request(),
+      );
+      assert.deepEqual(await response.json(), { ...tree, startRejected: true });
+      assert.equal(reads, 1);
+    } else {
+      await assert.rejects(
+        directoryAction(native, "declared-image", request()),
+        {
+          message: "Running fixture start must reject",
+        },
+      );
+      assert.equal(reads, 0);
+    }
+    assert.equal(starts, 1);
+    native.running = false;
+    await assert.rejects(directoryAction(native, "declared-image", request()), {
+      message: "Directory replay requires a running fixture",
+    });
+    assert.equal(starts, 1);
+  }
+});
 
 function fixture(snapshotContainer, path = "/named/snapshot") {
   const native = {

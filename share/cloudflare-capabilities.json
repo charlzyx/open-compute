@@ -1716,6 +1716,136 @@
         "requestMediaType": "none"
       },
       {
+        "id": "GET /accounts/{account_id}/containers/applications",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/applications",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/applications",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/me",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/me",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/image-preparations",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/image-preparations",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/registries/{domain}/credentials",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "PATCH /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "PATCH",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "DELETE /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "DELETE",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
         "id": "GET /open-compute/capabilities",
         "method": "GET",
         "path": "/open-compute/capabilities",
@@ -2135,7 +2265,8 @@
       "OC-DEPLOY-001",
       "OC-D1-001",
       "OC-AI-SEARCH-TOKEN-001",
-      "OC-OBSERVABILITY-001"
+      "OC-OBSERVABILITY-001",
+      "OC-CONTAINERS-MGMT-001"
     ],
     "legacyRoutes": [
       {
@@ -63921,8 +64052,9 @@
       "deviations": []
     },
     "containers": {
-      "status": "blocked",
+      "status": "supported",
       "kind": "target",
+      "capability_version": 1,
       "members": [
         {
           "id": "containers::Container::destroy:method#0",
@@ -63936,9 +64068,13 @@
           "static": false,
           "signature": "destroy(error?: any): Promise<void>;",
           "signature_sha256": "7c4c89a8618a2afef891896de4de5259df070e1d206ae4650374b29625d28091",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -63953,9 +64089,13 @@
           "static": false,
           "signature": "exec(cmd: string[], options?: ContainerExecOptions): Promise<ExecProcess>;",
           "signature_sha256": "bbe8a1ac24bcf91ded53516bf0659b9558f813fd23a46d67af0296c68c075f88",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -63970,9 +64110,13 @@
           "static": false,
           "signature": "getTcpPort(port: number): Fetcher;",
           "signature_sha256": "1b0a89d219a5891bbf2383c7d4c45f9278b6abb6c683ce6655d313f9e68bf109",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -63987,9 +64131,13 @@
           "static": false,
           "signature": "get images(): Record<string, string>;",
           "signature_sha256": "b8ec6c30a82c6ce7fb5d38fe12b2314aee43b420f31cab5c659c68b2c978c0ad",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64004,9 +64152,13 @@
           "static": false,
           "signature": "inspect(): Promise<ContainerInfo | null>;",
           "signature_sha256": "4c1cd24209bafa93ced0f76bad9734a90ccf1cb3b57e04cb2cde588885e888c6",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64021,9 +64173,13 @@
           "static": false,
           "signature": "interceptAllOutboundHttp(binding: Fetcher): Promise<void>;",
           "signature_sha256": "2f3adf2f3660c54df63b3706e25eb70ea597ccccb1ea9c5c0ac5c0f3a9ab6347",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64038,9 +64194,13 @@
           "static": false,
           "signature": "interceptOutboundHttp(addr: string, binding: Fetcher): Promise<void>;",
           "signature_sha256": "54b0a39d809b3b5aa6e7b099c81a0d0ee537bb1da207a019ed75604548116cd7",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64055,9 +64215,13 @@
           "static": false,
           "signature": "interceptOutboundHttps(addr: string, binding: Fetcher): Promise<void>;",
           "signature_sha256": "9bea6ba10103f6c21defe89f16e8c0eaab364ff80afe68e55ed56d092375235f",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64072,9 +64236,13 @@
           "static": false,
           "signature": "monitor(): Promise<void>;",
           "signature_sha256": "d15b873b6a1b623e5d932d93b4c91c9a458e44e5ef6ff598926951dca889440c",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64089,9 +64257,13 @@
           "static": false,
           "signature": "get running(): boolean;",
           "signature_sha256": "df15bf941add2a80be4c7cd3350f43ac34e46af4e2024b9a9a842089111a529f",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64106,9 +64278,13 @@
           "static": false,
           "signature": "setInactivityTimeout(durationMs: number | bigint): Promise<void>;",
           "signature_sha256": "395b7c45bfca744e4212b83650945bb88c72e84da38b8e8a98f3a96048de089c",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64123,9 +64299,13 @@
           "static": false,
           "signature": "signal(signo: number): void;",
           "signature_sha256": "0525d7d279361f2c38dadfac52dc531e9080f5ffa8de1141ebcca664bd65882a",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64140,9 +64320,13 @@
           "static": false,
           "signature": "snapshotContainer( options?: ContainerSnapshotOptions, ): Promise<ContainerSnapshot>;",
           "signature_sha256": "1130ed6e4de76b338242133a3df759d58b06981b9b4e38cee49d85f07f120ce9",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64157,9 +64341,13 @@
           "static": false,
           "signature": "start(options?: ContainerStartupOptions): void;",
           "signature_sha256": "72eeb07ed76c866c266a40ed00fed1dbbfb11dfd181a7c2221d43c5bbde95a95",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64174,9 +64362,13 @@
           "static": false,
           "signature": "dir: string;",
           "signature_sha256": "fc45d34b75a84fda8ff01496713d4f48aae85464d00e63ba57e19ad6e6b67c48",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64191,9 +64383,13 @@
           "static": false,
           "signature": "id: string;",
           "signature_sha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64208,9 +64404,13 @@
           "static": false,
           "signature": "name?: string;",
           "signature_sha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64225,9 +64425,13 @@
           "static": false,
           "signature": "size: number;",
           "signature_sha256": "e67f216782c35b2b5ed092bb85956ae8a28f9608a9899976c11d78305a637452",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64242,9 +64446,13 @@
           "static": false,
           "signature": "mountPoint?: string;",
           "signature_sha256": "547569b229d9ef63599dc57e353ce55128af14bb5af651b793853629b2b1edea",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64259,9 +64467,13 @@
           "static": false,
           "signature": "mountPoint: string;",
           "signature_sha256": "7cd2c260c21746139dd22defa06360ed10100d686901a733da9e38559ff9285a",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64276,9 +64488,13 @@
           "static": false,
           "signature": "snapshot: ContainerDirectorySnapshot;",
           "signature_sha256": "e521b70b5c265e36b24ff93e00d6d2c9c4d4786ab263e2f3d152fa5b5618dfe1",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64293,9 +64509,13 @@
           "static": false,
           "signature": "snapshot?: undefined;",
           "signature_sha256": "ed18cfe0c085cb02137310c6818ae4aef6dd706a267aeae49661ebdf8c61bc93",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64310,9 +64530,13 @@
           "static": false,
           "signature": "cwd?: string;",
           "signature_sha256": "e322ddd7484fd1939491f30420f349d766722cf91c10b7f95e4442f7dc3ce6c6",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64327,9 +64551,13 @@
           "static": false,
           "signature": "env?: Record<string, string>;",
           "signature_sha256": "86aca1d87e92fdab1942a94d97e68c9c716b193a232291839da4577ccacb5777",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64344,9 +64572,13 @@
           "static": false,
           "signature": "pty?: boolean | ContainerExecPtyOptions;",
           "signature_sha256": "d342a6a20a7d243f139cf89bfbff3faeb42e8b63ec4d01d469e42bbc4c6504d9",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64361,9 +64593,13 @@
           "static": false,
           "signature": "signal?: AbortSignal;",
           "signature_sha256": "1f78e1308c166981ca5caa2c22c7da18923f1fd468a11e2bbfefa6f19308a5fd",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64378,9 +64614,13 @@
           "static": false,
           "signature": "stderr?: \"pipe\" | \"ignore\" | \"combined\";",
           "signature_sha256": "a9185a87c56a25c4852080af3001c013cbc4dbb2176738a61c71eab748b63644",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64395,9 +64635,13 @@
           "static": false,
           "signature": "stdin?: ReadableStream | \"pipe\";",
           "signature_sha256": "5ddf57ba480f19c954ba6a9203f70a5844316a30b99eb772db7b883b9efa9ea4",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64412,9 +64656,13 @@
           "static": false,
           "signature": "stdout?: \"pipe\" | \"ignore\";",
           "signature_sha256": "6cf003f9aa43a5d64926b158f6d6e3340ee6e68acb95e9555465260c343b364f",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64429,9 +64677,13 @@
           "static": false,
           "signature": "user?: string;",
           "signature_sha256": "ac8df97d41eb17f83a28682fb2526f690760f16cb1aece362c0ac26a8a87992c",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64446,9 +64698,13 @@
           "static": false,
           "signature": "cols?: number;",
           "signature_sha256": "33684d6ce973c013f462009eee6d512d224ffeb2b490669f8971d4597e8ce4e3",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64463,9 +64719,13 @@
           "static": false,
           "signature": "rows?: number;",
           "signature_sha256": "ccd150ab3d27f43da209c89eedcab100ed178a7f12e4f10730c72c4214d27220",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64480,9 +64740,13 @@
           "static": false,
           "signature": "image: string;",
           "signature_sha256": "f4faf349c97c570e8f456f769e67b8136ff7deba44124795619ccfce54b203c5",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64497,9 +64761,13 @@
           "static": false,
           "signature": "labels: Record<string, string>;",
           "signature_sha256": "30c7132dd931e10a6ec30325ddb586da589cd60e4267ddbf5ff491157b37a6bf",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64514,9 +64782,13 @@
           "static": false,
           "signature": "id: string;",
           "signature_sha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64531,9 +64803,13 @@
           "static": false,
           "signature": "name?: string;",
           "signature_sha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64548,9 +64824,13 @@
           "static": false,
           "signature": "size: number;",
           "signature_sha256": "e67f216782c35b2b5ed092bb85956ae8a28f9608a9899976c11d78305a637452",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64565,9 +64845,13 @@
           "static": false,
           "signature": "name?: string;",
           "signature_sha256": "df314c785750f838217c13d19855decc1476f02f4cd986b0c2460b3faee02686",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64582,9 +64866,13 @@
           "static": false,
           "signature": "id: string;",
           "signature_sha256": "7d1c10a675b804345b6bba6ded4b26ae4558652dc77ada0ba92f1c69dd615508",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64599,9 +64887,13 @@
           "static": false,
           "signature": "diskMb: number;",
           "signature_sha256": "9c6f72cf30f5964070170ca444c9c7fd6129918a267fe6cf4f4b1d7958620b84",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64616,9 +64908,13 @@
           "static": false,
           "signature": "memoryMib: number;",
           "signature_sha256": "0249201df54605705568d397ed7018355079eaba33c2dd2888c6afb8b279f33b",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64633,9 +64929,13 @@
           "static": false,
           "signature": "vcpu: number;",
           "signature_sha256": "294047398eca52d4613fe59a40f73c47ffd5f70374395ce376f9c704982b919f",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64650,9 +64950,13 @@
           "static": false,
           "signature": "containerSnapshot?: never;",
           "signature_sha256": "9c26fcd938d8338fd9f1ae1cd7882ff465f67841cda1db8394011a1e4cf218a3",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64667,9 +64971,13 @@
           "static": false,
           "signature": "containerSnapshot?: ContainerSnapshotRestoreParams;",
           "signature_sha256": "10a2bee6681f7f71fc13386c270d2547e6b3a384beda15670b500a68209da67e",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64684,9 +64992,13 @@
           "static": false,
           "signature": "directorySnapshots?: ContainerDirectorySnapshotRestoreParams[];",
           "signature_sha256": "f2783260a3d4ef79060f82e40cdac7aa425dda7db9c32ab9be869f18c0b73238",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64701,9 +65013,13 @@
           "static": false,
           "signature": "enableInternet: boolean;",
           "signature_sha256": "21d16b807ca3e308b3c39d60ee237a26eaf89ed181bd508d63f13fdc48422925",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64718,9 +65034,13 @@
           "static": false,
           "signature": "entrypoint?: string[];",
           "signature_sha256": "aa88b8989a87d779637a874c556d9b94abaaeb979f8f8a795bea4829688109f6",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64735,9 +65055,13 @@
           "static": false,
           "signature": "env?: Record<string, string>;",
           "signature_sha256": "86aca1d87e92fdab1942a94d97e68c9c716b193a232291839da4577ccacb5777",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64752,9 +65076,13 @@
           "static": false,
           "signature": "image: string;",
           "signature_sha256": "f4faf349c97c570e8f456f769e67b8136ff7deba44124795619ccfce54b203c5",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64769,9 +65097,13 @@
           "static": false,
           "signature": "image?: never;",
           "signature_sha256": "673188aa18fc6adddbadc0d72308ff8bcd32c4be84478abf805dda5e867aaff9",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64786,9 +65118,13 @@
           "static": false,
           "signature": "instance?: | \"lite\" | \"standard-1\" | \"standard-2\" | \"standard-3\" | \"standard-4\" | ContainerStartResources;",
           "signature_sha256": "0a93b1be717ce31a82a47352af98c126e29e018b5b28a7f87ec9bbba996fe9d6",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64803,9 +65139,13 @@
           "static": false,
           "signature": "labels?: Record<string, string>;",
           "signature_sha256": "4e25413c63a43826036d048eb5777b00c500b074c0b62c1c89d7bb644d170f56",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64820,9 +65160,13 @@
           "static": false,
           "signature": "container?: Container;",
           "signature_sha256": "aaac9e863bac31d59af279eeba94a22579681d172546782d4c2114325e138d56",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64837,9 +65181,13 @@
           "static": false,
           "signature": "readonly exitCode: number;",
           "signature_sha256": "0ad2b8bb10c9e52fd81e971882be90aec077719a780266ee855c7187d7e84a4e",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64854,9 +65202,13 @@
           "static": false,
           "signature": "readonly stderr: ArrayBuffer;",
           "signature_sha256": "0aa1864a9e11cf6c17951d4f071ddf6cf5eac804a15923001a7f52663b7df8ff",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64871,9 +65223,13 @@
           "static": false,
           "signature": "readonly stdout: ArrayBuffer;",
           "signature_sha256": "121d15e1c8d0e0eecde18db400ec7cb83ddcdf6e212c41a3cf8457e88a0b1e18",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64888,9 +65244,13 @@
           "static": false,
           "signature": "readonly exitCode: Promise<number>;",
           "signature_sha256": "519631f878a0cd9dc85d5248c084f40fb0da048211356ceb8a8448e7997cfe00",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64905,9 +65265,13 @@
           "static": false,
           "signature": "readonly isPty: boolean;",
           "signature_sha256": "0c8a7105e4914e87c97bf070b48f019fd02217ffb16d5320e0fd49ae83c63b6f",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64922,9 +65286,13 @@
           "static": false,
           "signature": "kill(signal?: number): void;",
           "signature_sha256": "c7b8aef435367ff4dfa8dadebdf057e07142a8c7220be833f9f221f5b0f05191",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64939,9 +65307,13 @@
           "static": false,
           "signature": "output(): Promise<ExecOutput>;",
           "signature_sha256": "9ee74fb9891d3c5ecb9a0ac558ee7a1b70d3813b1da9dcdbd1d277033e0e6109",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64956,9 +65328,13 @@
           "static": false,
           "signature": "readonly pid: number;",
           "signature_sha256": "de5b16932df7b0a8cf490015954c325b2e13849c09bacc89e8ef4dc9a7209dd4",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64973,9 +65349,13 @@
           "static": false,
           "signature": "resize(cols: number, rows: number): void;",
           "signature_sha256": "d26f5e0277b0b3a0442ca94dfa2b5fcc18ce38114db3e4dae979d819d398e980",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -64990,9 +65370,13 @@
           "static": false,
           "signature": "readonly stderr: ReadableStream | null;",
           "signature_sha256": "e902dcaef7de54cf36d37d7769175a4c350eace67e233bd21468f0313c91eebf",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -65007,9 +65391,13 @@
           "static": false,
           "signature": "readonly stdin: WritableStream | null;",
           "signature_sha256": "72b281917163b3044c4bb9a0a57424ff3cd1fd95c27a395040cbb5a1b5cff559",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         },
         {
@@ -65024,9 +65412,13 @@
           "static": false,
           "signature": "readonly stdout: ReadableStream | null;",
           "signature_sha256": "6dcdcebb5c2560b69ec94594ce8b1369d66a0bc503de22d7c82c77ade908b4a0",
-          "status": "blocked",
-          "compile_cases": [],
-          "runtime_cases": [],
+          "status": "supported",
+          "compile_cases": [
+            "ts::test/conformance/fixtures/containers-surface.ts"
+          ],
+          "runtime_cases": [
+            "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+          ],
           "deviations": []
         }
       ],

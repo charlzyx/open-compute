@@ -7,7 +7,8 @@
       "OC-DEPLOY-001",
       "OC-D1-001",
       "OC-AI-SEARCH-TOKEN-001",
-      "OC-OBSERVABILITY-001"
+      "OC-OBSERVABILITY-001",
+      "OC-CONTAINERS-MGMT-001"
     ],
     "vendorRoutes": [
       "GET /open-compute/capabilities",

@@ -15,6 +15,7 @@ mod retirement;
 pub(crate) struct SnapshotRequest {
     pub source: StopRequest,
     pub name: Option<String>,
+    pub directory: Option<open_compute_core::containers::ContainerDirectoryPath>,
 }
 
 #[derive(Serialize)]
@@ -30,6 +31,8 @@ pub(crate) struct SnapshotMetadata {
     pub size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir: Option<open_compute_core::containers::ContainerDirectoryPath>,
 }
 
 struct CaptureGuard {
@@ -90,8 +93,9 @@ impl ContainerService {
             authority.namespace_resource_id,
             &request.source.application_name,
         )?;
-        if app.scheduling_policy
-            != open_compute_storage::containers::ContainerSchedulingPolicy::DurableObject
+        if request.directory.is_none()
+            && app.scheduling_policy
+                != open_compute_storage::containers::ContainerSchedulingPolicy::DurableObject
         {
             return Err(wire::invalid());
         }
@@ -138,6 +142,7 @@ impl ContainerService {
                 repo.reserve_snapshot(
                     &authority,
                     &NewContainerSnapshot {
+                        directory: request.directory.clone(),
                         id,
                         source: source.clone(),
                         name: request.name,
@@ -177,22 +182,36 @@ impl ContainerService {
             Ok::<_, PlatformError>(configuration)
         });
         let capture = async {
-            let captured = self
-                .provider
-                .capture_snapshot(
-                    &source.opaque_engine_key,
-                    &source.start_identity,
-                    rootfs_budget,
-                    &temporary,
-                )
-                .await?;
+            let captured = match &request.directory {
+                Some(directory) => {
+                    self.provider
+                        .capture_directory_snapshot(
+                            &source.opaque_engine_key,
+                            &source.start_identity,
+                            rootfs_budget,
+                            &temporary,
+                            directory,
+                        )
+                        .await?
+                }
+                None => {
+                    self.provider
+                        .capture_snapshot(
+                            &source.opaque_engine_key,
+                            &source.start_identity,
+                            rootfs_budget,
+                            &temporary,
+                        )
+                        .await?
+                }
+            };
             #[cfg(feature = "test-support")]
             diagnostic_phase("rootfs-capture-ready");
             Ok::<_, PlatformError>(captured)
         };
         // Both operations own resources that must finish before the reservation is released.
         let (configuration, captured) = tokio::join!(configuration, capture);
-        let (rootfs, _) = captured?;
+        let (rootfs, captured_bytes) = captured?;
         let (verified, configuration) = configuration.map_err(|_| unavailable())??;
         let (image, output) = tokio::task::spawn_blocking(move || {
             let output = tempfile::tempfile_in(&temporary).map_err(|_| unavailable())?;
@@ -280,7 +299,11 @@ impl ContainerService {
         // Capture files are closed; image materialization reserves its own transport space.
         drop(capture_disk);
         self.ensure_active().await?;
-        let image_size = self.materialize_image(&image.manifest_sha256).await?;
+        let size = if request.directory.is_some() {
+            captured_bytes
+        } else {
+            self.materialize_image(&image.manifest_sha256).await?
+        };
         #[cfg(feature = "test-support")]
         diagnostic_phase("snapshot-image-materialized");
         let snapshot = auth
@@ -289,7 +312,7 @@ impl ContainerService {
                     &authority,
                     id,
                     &source,
-                    image_size,
+                    size,
                     open_compute_core::wall_time_ms(),
                 )
             })
@@ -300,6 +323,7 @@ impl ContainerService {
                 id: snapshot.id,
                 size: snapshot.image_size.ok_or_else(unavailable)?,
                 name: snapshot.name,
+                dir: snapshot.directory,
             },
         })
     }

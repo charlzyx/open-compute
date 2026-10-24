@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import resource
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,18 @@ consumer = load('consume_images', 'consume-images.py')
 helper = load('materialize_helper', 'materialize-helper.py')
 broker = load('with_broker', 'with-broker.py')
 require = consumer.oci.require
+
+
+def event_projection(config):
+    return ('{"timeNano":{{.TimeNano}},"action":{{json (index (split (printf "%%s" .Action) ":") 0)}},'
+            '"role":{{if eq (index .Actor.Attributes "image") %s}}"qualification"'
+            '{{else if eq (index .Actor.Attributes "image") %s}}"sidecar"{{else}}"other"{{end}},'
+            '"exitCode":{{json (index .Actor.Attributes "exitCode")}}}'
+            % (json.dumps(config['qualification_image']), json.dumps(config['sidecar_image'])))
+
+
+def event_file_limit():
+    resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20))
 
 
 def configuration(root, engine_socket, report, volume, policy):
@@ -100,8 +113,12 @@ def run(directory, engine_socket, binary, root, command):
     env = {'PATH': os.environ.get('PATH', os.defpath), 'HOME': str(root),
            'DOCKER_CONFIG': str(root / 'docker-config')}
     result = {'success': False, 'scope': 'Fixture image/helper/Broker lifecycle and explicit command',
-              'fullWorkspaceQualifiedByWrapper': False, 'mainExecuted': False}
+              'fullWorkspaceQualifiedByWrapper': False, 'mainExecuted': False,
+              'engineProfile': {k: anchor[k] for k in ('OSType', 'Architecture', 'Driver',
+                  'DriverStatus', 'CgroupDriver', 'CgroupVersion', 'ServerVersion')}}
     materialized = False
+    observer = None
+    event_output = None
     try:
         for name in ('sidecar', 'qualification'):
             archive = directory / (name + '.docker.tar')
@@ -137,6 +154,11 @@ def run(directory, engine_socket, binary, root, command):
         with path.open('x') as stream:
             os.fchmod(stream.fileno(), 0o600)
             stream.write(text + '\n')
+        event_output = (root / 'engine-events.jsonl').open('xb')
+        # Select fields before writing; exec commands, IDs, names and labels never enter the log.
+        observer = subprocess.Popen([docker, '--host', 'unix://' + str(engine_socket),
+            'events', '--filter', 'type=container', '--format', event_projection(config)],
+            env=env, stdout=event_output, stderr=subprocess.DEVNULL, preexec_fn=event_file_limit)
         with (root / 'broker-command.log').open('xb') as log:
             done = subprocess.run([sys.executable, '-I', '-B', str(HERE / 'with-broker.py'),
                 '--binary', str(binary), '--binary-sha256', binary_sha, '--config', str(path),
@@ -153,6 +175,15 @@ def run(directory, engine_socket, binary, root, command):
         code = str(error) if isinstance(error, ValueError) else ''
         result['failureCode'] = code if re.fullmatch('[A-Z_]+', code) else None
     finally:
+        if observer is not None:
+            try:
+                result['eventObserverCleanup'] = broker.stop_child(observer)
+            except Exception as error:
+                result['success'] = False
+                result['eventObserverCleanupFailureClass'] = type(error).__name__
+        if event_output is not None:
+            event_output.close()
+            result['engineEventLogBytes'] = (root / 'engine-events.jsonl').stat().st_size
         try:
             after = engine.inventory()
             require(not after['containers'] and after['networks'] == before['networks'],

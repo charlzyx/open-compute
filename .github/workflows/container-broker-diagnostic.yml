@@ -1,0 +1,53 @@
+name: Container Broker diagnosis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+concurrency:
+  group: container-broker-diagnosis-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fixture-images:
+    uses: ./.github/workflows/container-images.yml
+    with:
+      arm64: false
+
+  diagnose:
+    needs: fixture-images
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - uses: ./.github/actions/setup-open-compute
+      - uses: ./.github/actions/prepare-container-fixture-images
+        id: images
+      - uses: ./.github/actions/setup-container-fixture-engine
+      - name: Build the current ordinary Broker
+        run: |
+          bun run build
+          mbx build --locked -p open-compute-service --bin ocd
+      - name: Observe only Broker qualification and owned cleanup
+        run: |
+          python3 -I -B test/containers-fixture/with-ci-macos-engine.py \
+            --images '${{ steps.images.outputs.directory }}' \
+            --binary "$PWD/target/debug/ocd" \
+            --root /private/tmp/oc-ci-diagnostic \
+            --evidence "$PWD/.temp/containers-ci-engine" \
+            --command python3 -I -B -c 'print("Broker qualification only; no product Gate")'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: broker-diagnostic-evidence
+          include-hidden-files: true
+          path: .temp/containers-ci-engine/
+          if-no-files-found: error

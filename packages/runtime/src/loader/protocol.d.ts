@@ -47,6 +47,7 @@ export interface NativeWorkerLoaderFactory {
     capture: (
       expectedLeaseKey: string,
       name: string | undefined,
+      directory: string | undefined,
     ) => Promise<NativeContainerSnapshot>,
     images: Readonly<Record<string, string>>,
   ): NativeHostContainer;
@@ -97,6 +98,7 @@ export interface NativeContainerSnapshot {
   id: string;
   size: number;
   name?: string;
+  dir?: string;
 }
 export interface RuntimeContainerClass {
   className: string;

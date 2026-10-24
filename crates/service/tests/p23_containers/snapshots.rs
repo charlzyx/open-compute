@@ -14,7 +14,7 @@ use std::path::Path;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 pub(super) struct SavedSnapshot {
-    id: ResourceId,
+    pub(super) id: ResourceId,
     artifact: [u8; 32],
     artifact_size: u64,
     pub(super) image: [u8; 32],
@@ -33,7 +33,10 @@ fn artifact(snapshot: &ContainerSnapshot) -> ArtifactRef {
     .unwrap()
 }
 
-async fn persisted_artifact(config: &PlatformConfig, snapshot: &ContainerSnapshot) -> fs::File {
+pub(super) async fn persisted_artifact(
+    config: &PlatformConfig,
+    snapshot: &ContainerSnapshot,
+) -> fs::File {
     let artifact = artifact(snapshot);
     let s3 = config.object_storage.as_s3().unwrap();
     let credentials = resolve_s3_credentials_with(s3, &MapEnv::new()).unwrap();
@@ -113,11 +116,11 @@ fn rootfs_excludes_helper(reader: impl Read) -> bool {
     for entry in archive.entries().unwrap() {
         let mut entry = entry.unwrap();
         let kind = entry.header().entry_type();
-        if normalized_archive_path(&entry.path_bytes()) == b"opt/open-compute/exec/helper"
+        if normalized_archive_path(&entry.path_bytes()) == b".open-compute-exec/helper"
             && !kind.is_dir()
             || kind.is_hard_link()
                 && entry.link_name_bytes().is_some_and(|path| {
-                    normalized_archive_path(&path) == b"opt/open-compute/exec/helper"
+                    normalized_archive_path(&path) == b".open-compute-exec/helper"
                 })
         {
             return false;
@@ -181,7 +184,7 @@ async fn restored_artifact_excludes_helper(
     .unwrap();
 }
 
-fn snapshot(data: &Path, instance: InstanceId, id: ResourceId) -> ContainerSnapshot {
+pub(super) fn snapshot(data: &Path, instance: InstanceId, id: ResourceId) -> ContainerSnapshot {
     let db = ControlDb::open_readonly_wal_aware(&data.join("control.sqlite"), 1000).unwrap();
     ContainerAuthority::new(&db)
         .snapshots(instance)
@@ -524,7 +527,7 @@ fn snapshot_rootfs_excludes_helper_entities_and_hardlink_references() {
 
     for (path, kind, link) in [
         (
-            "./opt/open-compute/exec/helper/",
+            "./.open-compute-exec/helper/",
             tar::EntryType::Directory,
             None,
         ),
@@ -534,30 +537,22 @@ fn snapshot_rootfs_excludes_helper_entities_and_hardlink_references() {
         assert!(rootfs_excludes_helper(archive(path, kind, link).as_slice()));
     }
     for (path, kind, link) in [
+        (".open-compute-exec/helper", tar::EntryType::Regular, None),
+        ("./.open-compute-exec/helper", tar::EntryType::Regular, None),
         (
-            "opt/open-compute/exec/helper",
-            tar::EntryType::Regular,
-            None,
-        ),
-        (
-            "./opt/open-compute/exec/helper",
-            tar::EntryType::Regular,
-            None,
-        ),
-        (
-            "./opt/open-compute/exec/helper",
+            "./.open-compute-exec/helper",
             tar::EntryType::Symlink,
             Some("/operator/helper"),
         ),
         (
-            "opt/open-compute/exec/helper",
+            ".open-compute-exec/helper",
             tar::EntryType::Link,
             Some("tmp/saved"),
         ),
         (
             "tmp/alias",
             tar::EntryType::Link,
-            Some("./opt/open-compute/exec/helper"),
+            Some("./.open-compute-exec/helper"),
         ),
     ] {
         assert!(!rootfs_excludes_helper(

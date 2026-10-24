@@ -4,5 +4,5 @@ RUN printf '%s\n' https://dl-cdn.alpinelinux.org/alpine/v3.21/main https://dl-cd
     && mkdir -p /run/open-compute \
     && chmod 0700 /run/open-compute
 COPY container-sidecar /proxy-everything
-COPY container-sidecar /opt/open-compute/exec/helper
+COPY container-sidecar /.open-compute-exec/helper
 ENTRYPOINT ["/proxy-everything"]

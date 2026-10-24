@@ -18,7 +18,7 @@ spec.loader.exec_module(prepare)
 
 class Input(unittest.TestCase):
     def setUp(self):
-        self.contract = {'version': 3, 'runtime': 'docker', 'engineVersion': '29.4.0',
+        self.contract = {'version': 4, 'runtime': 'docker', 'engineVersion': '29.4.0',
                          'architecture': 'arm64', 'isolation': 'controlled-test-data',
                          'qualified': True, 'snapshots': True, 'sidecarImage': 'sha256:' + 'a' * 64,
                          'execHelperSha256': 'b' * 64,
@@ -54,7 +54,7 @@ class Input(unittest.TestCase):
                 self.contract[name] = True
 
     def test_old_or_invalid_provider_schema_is_rejected(self):
-        for version in (2, True, 4, '3'):
+        for version in (2, 3, True, 5, '4'):
             with self.subTest(version=version):
                 self.contract['version'] = version
                 with self.assertRaisesRegex(ValueError, '^CONTRACT_NOT_QUALIFIED$'):

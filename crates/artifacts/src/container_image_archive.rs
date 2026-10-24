@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 use std::io::Write;
 
 /// Write a deterministic OCI image-layout archive for offline provider materialization.

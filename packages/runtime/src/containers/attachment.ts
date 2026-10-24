@@ -16,6 +16,25 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function containerDirectoryPath(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.includes("\0") ||
+    new TextEncoder().encode(value).length > 4096
+  )
+    throw bindingError("VERSION_INVARIANT_VIOLATION");
+  const parts: string[] = [];
+  for (const part of value.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (parts.pop() === undefined)
+        throw bindingError("VERSION_INVARIANT_VIOLATION");
+    } else parts.push(part);
+  }
+  return `/${parts.join("/")}`;
+}
+
 function containerInspectionFromWire(
   value: unknown,
 ): NativeContainerLease["inspection"] {
@@ -54,13 +73,14 @@ function containerInspectionFromWire(
 /** Admit only snapshot metadata; private archive and execution identity stay in the daemon. */
 export function containerSnapshotFromWire(
   value: unknown,
+  directory?: string,
 ): NativeContainerSnapshot {
   if (!record(value) || !record(value.snapshot))
     throw bindingError("VERSION_INVARIANT_VIOLATION");
   const snapshot = value.snapshot;
   if (
     Object.keys(snapshot).some(
-      (key) => !["id", "size", "name"].includes(key),
+      (key) => !["id", "size", "name", "dir"].includes(key),
     ) ||
     typeof snapshot.id !== "string" ||
     snapshot.id.length === 0 ||
@@ -68,13 +88,17 @@ export function containerSnapshotFromWire(
     snapshot.id.includes("\0") ||
     !Number.isSafeInteger(snapshot.size) ||
     Number(snapshot.size) < 0 ||
-    (snapshot.name !== undefined && typeof snapshot.name !== "string")
+    (snapshot.name !== undefined && typeof snapshot.name !== "string") ||
+    (directory === undefined
+      ? Object.hasOwn(snapshot, "dir")
+      : snapshot.dir !== directory)
   )
     throw bindingError("VERSION_INVARIANT_VIOLATION");
   return {
     id: snapshot.id,
     size: Number(snapshot.size),
     ...(snapshot.name === undefined ? {} : { name: snapshot.name }),
+    ...(directory === undefined ? {} : { dir: directory }),
   };
 }
 
@@ -232,8 +256,26 @@ export function containerStartupFromWire(
   if (value.directorySnapshots !== undefined) {
     if (!Array.isArray(value.directorySnapshots))
       throw bindingError("VERSION_INVARIANT_VIOLATION");
-    if (value.directorySnapshots.length !== 0)
-      throw bindingError("CONTAINER_UNAVAILABLE");
+    startup.directorySnapshots = value.directorySnapshots.map(
+      (entry: unknown) => {
+        if (
+          !record(entry) ||
+          (entry.snapshotId !== undefined &&
+            (typeof entry.snapshotId !== "string" ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+                entry.snapshotId,
+              )))
+        )
+          throw bindingError("VERSION_INVARIANT_VIOLATION");
+        const mountPoint = containerDirectoryPath(entry.restorePath);
+        if (mountPoint === "/")
+          throw bindingError("VERSION_INVARIANT_VIOLATION");
+        return {
+          snapshotId: entry.snapshotId ?? null,
+          mountPoint,
+        };
+      },
+    );
   }
   return startup;
 }
@@ -375,7 +417,9 @@ export function containerAttachment(
       }
       return nativeLease;
     },
-    async (expectedLeaseKey, name) => {
+    async (expectedLeaseKey, name, directory) => {
+      const path =
+        directory === undefined ? undefined : containerDirectoryPath(directory);
       if (!/^[0-9a-f]{64}$/.test(expectedLeaseKey))
         throw bindingError("VERSION_INVARIANT_VIOLATION");
       await readLease(false, false, undefined, expectedLeaseKey);
@@ -387,9 +431,10 @@ export function containerAttachment(
       const response = await request("snapshot", {
         source: { ...frozen, ...stopIdentity },
         ...(name === undefined ? {} : { name }),
+        ...(path === undefined ? {} : { directory: path }),
       });
       const body: unknown = await response.json();
-      return containerSnapshotFromWire(body);
+      return containerSnapshotFromWire(body, path);
     },
     declaration.images,
   );

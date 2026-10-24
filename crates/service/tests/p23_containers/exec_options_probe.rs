@@ -9,11 +9,9 @@ async fn native_exec_streams_and_code_updates_preserve_owned_processes() {
         .await
         .unwrap();
     provider.ensure_active().await.unwrap();
-    let purpose = repo().join(".temp/p23-product");
-    fs::create_dir_all(&purpose).unwrap();
     let directory = tempfile::Builder::new()
         .prefix("exec-options-")
-        .tempdir_in(&purpose)
+        .tempdir()
         .unwrap();
     let root = directory.path().to_owned();
     let _evidence = platform_process::Evidence(Some(directory));

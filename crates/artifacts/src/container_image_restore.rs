@@ -64,6 +64,70 @@ pub fn write_container_docker_archive<W: io::Write>(
     )
 }
 
+/// Stream one verified, flattened directory backup as its original uncompressed tar.
+/// The complete artifact, architecture, layer digest and byte bounds are checked.
+/// The caller must discard partial output on failure; no host files are extracted.
+pub fn write_container_directory_archive<W: io::Write>(
+    file: &File,
+    artifact: &ArtifactRef,
+    expected_manifest: [u8; 32],
+    architecture: &str,
+    limits: ContainerImageLimits,
+    mut output: W,
+) -> Result<W, PlatformError> {
+    let (image, members) = verify_archive(file, artifact, expected_manifest, architecture, limits)?;
+    if image.layers.len() != 1 || image.diff_ids.len() != 1 {
+        return Err(integrity_error());
+    }
+    let manifest: Manifest = serde_json::from_slice(&read_member(
+        file,
+        &members,
+        &blob_path(&expected_manifest),
+        limits.json_bytes,
+    )?)
+    .map_err(|_| integrity_error())?;
+    let blob = &image.layers[0];
+    let (offset, size) = members
+        .get(&blob_path(&blob.sha256))
+        .ok_or_else(integrity_error)?;
+    let mut compressed = CheckedReader::new(FileReader::new(file, *offset)?.take(*size), *size);
+    {
+        let reader: Box<dyn Read + '_> = match manifest.layers[0].media_type.as_str() {
+            "application/vnd.oci.image.layer.v1.tar" => Box::new(&mut compressed),
+            "application/vnd.oci.image.layer.v1.tar+gzip"
+            | "application/vnd.docker.image.rootfs.diff.tar.gzip" => {
+                Box::new(MultiGzDecoder::new(&mut compressed))
+            }
+            _ => return Err(integrity_error()),
+        };
+        let mut unpacked = CheckedReader::new(reader, image.unpacked_bytes);
+        verify_container_directory_archive(
+            CopyReader {
+                input: &mut unpacked,
+                output: &mut output,
+            },
+            image.unpacked_bytes,
+            limits.entries,
+        )?;
+        unpacked.verify(&image.diff_ids[0])?;
+    }
+    compressed.verify(&blob.sha256)?;
+    Ok(output)
+}
+
+struct CopyReader<R, W> {
+    input: R,
+    output: W,
+}
+
+impl<R: Read, W: io::Write> Read for CopyReader<R, W> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        let count = self.input.read(bytes)?;
+        self.output.write_all(&bytes[..count])?;
+        Ok(count)
+    }
+}
+
 type ArchiveMembers = BTreeMap<String, (u64, u64)>;
 
 fn verify_archive(

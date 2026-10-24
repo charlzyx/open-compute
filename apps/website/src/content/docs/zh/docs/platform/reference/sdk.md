@@ -50,3 +50,7 @@ await client.openCompute.system.status();
 失败抛出官方 SDK 错误类（`APIError` 及其子类），已从 package re-export。
 
 Browser Run 的公开路由与固定 browser 客户端不代表管理 facade 已生成对应全部方法。当前 facade 不提供 Browser management 方法；配置、公开路由子集和限制见 [Browser Run](/zh/docs/browser-run/)。
+
+## Container management boundary
+
+固定官方 `cloudflare@7.2.0` SDK 未提供 cf 使用的 Container 管理路由方法。因此，生成的 facade 不暴露 Container 管理方法。`packages/sdk/surface.json` 记录这些排除项。管理能力清单与 tenant 运行时的 65 项 API 分开登记。部署流程见 [Containers](/zh/docs/containers/)；运行时成员可用不代表 SDK 已生成管理方法。

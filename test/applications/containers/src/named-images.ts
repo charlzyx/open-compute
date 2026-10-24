@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { directoryAction } from "./directory-snapshots";
 import { execOptionsLifecycle } from "./exec-options-lifecycle";
 import { execUsersLifecycle } from "./exec-users-lifecycle";
 import { signalsLifecycle } from "./signals-lifecycle";
@@ -80,6 +81,10 @@ export class NamedImageContainer extends DurableObject {
     const base = images.base;
     if (base === undefined || images.alternate === undefined)
       throw new Error("both named images are required");
+    if (path.startsWith("/named/directory/")) {
+      diagnostic.phase = "directory-action";
+      return directoryAction(native, base, request);
+    }
     if (path === "/named/images") {
       const first = native.images;
       const second = native.images;

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { directoryAction } from "./directory-snapshots";
 
 // This class deliberately has no SDK constructor, monitor(), or waitUntil().
 export class RawIdleContainer extends DurableObject {
@@ -7,6 +8,13 @@ export class RawIdleContainer extends DurableObject {
     if (native === undefined)
       throw new Error("native container attachment is required");
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/inactivity/directory/")) {
+      url.pathname = url.pathname.replace(
+        "/inactivity/directory/",
+        "/named/directory/",
+      );
+      return directoryAction(native, undefined, new Request(url, request));
+    }
     if (url.pathname === "/inactivity/start") {
       const duration = url.searchParams.get("duration");
       if (duration !== "1000" && duration !== "120000")

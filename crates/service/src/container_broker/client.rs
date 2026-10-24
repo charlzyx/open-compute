@@ -11,6 +11,9 @@ use serde_json::Value;
 #[path = "client_snapshot.rs"]
 mod snapshot;
 
+#[path = "client_directory.rs"]
+mod directory;
+
 /// Qualified provider handle. Only validated preflight can construct this type.
 #[derive(Clone)]
 pub struct QualifiedContainerProvider {
@@ -307,9 +310,10 @@ impl QualifiedContainerProvider {
         let response = self
             .engine
             .send_archive(
+                Method::POST,
                 "/open-compute/v1/images/load",
                 tokio::fs::File::from_std(archive),
-                size,
+                0..size,
             )
             .await?;
         if response.status().as_u16() != 200 {

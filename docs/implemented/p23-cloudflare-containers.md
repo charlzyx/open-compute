@@ -1,13 +1,231 @@
 # P23：Cloudflare Containers 基础实现
 
-状态：**implemented，基础 13 family 范围已验证**（2026-10-12）。基础 13 个 Docker operation family 已接入源码。
-本页记录本轮实现范围，不声明完整 Container API 或发布验收通过。
-以下基础验收段落保留 R9 历史结果；当前 R21 状态见后续扩展状态。
+状态：**implemented，本地发版前验收完成；正式 tag 资格失败，公开发布未完成**（2026-10-24，UTC）。
+本页保留各批次的原始范围和结果；成员清单声明不替代发行验收。
+以下基础验收段落保留 R9 历史结果；当前 R22 状态见下文 2026-10-23 记录。
 正式 R9 的 exact3 已 verified；workspace coverage 已按生产字节等价复用证据。
 最终 workspace Gate 为 failed；Linux 两平台本次 package 范围完成。
 Darwin Q10 原四项 package 用例 4/4 PASS；测试进程已回收。
 两组 ACL 已恢复；临时账号、home 和 staging 已删除，账号进程为零。
 基础验收时的 capability inventory 包含 64 个稳定 Container 成员，成员资格均为 `blocked`。
+
+## 2026-10-24 Intel Broker 单项诊断
+
+修订后的正式工作流 [40054104614](https://github.com/elliothux/open-compute/actions/runs/40054104614) 绑定提交 `c89b6766991e7f7e1d494f7309c796cd4d6a19c8`。
+三平台打包与十项安装验收通过。
+两个 Intel macOS 任务均通过 Engine、XFS 与 helper 准备，但 Broker 启动资格失败。
+两份报告仍为 `mainExecuted = false`，Broker 输出为 `CONFIG_INVALID`。
+coverage 与最终 workspace Gate 均未启动；具体拒绝条件尚未捕获。
+剩余压力任务已取消，原始失败和成功结果分别保留。
+
+本地 ARM64 探针使用 Colima 0.10.3、Lima 2.2.0 与 Docker 29.5.2。
+VM 保持 2 CPU、4 GiB 内存、8 GiB 系统盘及 16 GiB 数据盘。
+真实 Broker 资格、快照能力握手和退出清理通过。
+探针使用 `d37501b87aa997bffea8e6be767b78441f1d81b1` 的 Darwin ARM64 包。
+当前 Broker Rust 源码与该候选相同；当前 tag 的二进制身份仍由正式打包任务验证。
+原有 Docker、Lima 与 Colima 目录身份保持不变，探针的 VM 和子进程均已回收。
+本地探针未执行产品 Gate，也不证明 Intel CI 资格。
+
+CI 诊断记录仅包含事件时间、动作类别、镜像角色和退出码。
+子进程的事件文件上限为 1 MiB，不记录命令、容器 ID、名称或标签。
+诊断另记录 socket 对端 UID／GID，以及已过滤的转发计数；原 Rust 身份检查继续执行。
+真实 exec canary 检查取得 25 条事件，共 2190 字节；事件文件没有 canary。
+本地文件上限回归确认子进程受限，父进程的上限不变。
+单项 Intel 诊断入口只运行 Broker 资格和清理，不运行产品 Gate、coverage 或发布。
+该入口用于取得缺失的拒绝证据，不能替代正式资格。
+
+报告组装器原来读取旧 macOS 目录名，与 Intel 工作流上传名称不一致。
+新增回归先复现目录缺失；修复后 35 项发布工具检查通过。
+Container 执行源码、R22 pin、原用例断言和资源上限均未改变。
+当前版本尚未创建 GitHub Release 或 Draft，也未执行 npm 发布。
+
+## 2026-10-24 正式发布环境修复
+
+正式工作流 [40047706451](https://github.com/elliothux/open-compute/actions/runs/40047706451) 的 macOS workspace 与 coverage 任务均在环境前置阶段失败。
+两份原始报告均为 `mainExecuted = false`，错误为 `COLIMA_ENGINE_SOCKET_REQUIRED`；主 Gate 与 coverage 均未启动。
+固定 Colima 0.10.3 仅在 `COLIMA_HOME` 目录已存在时采用该路径。
+启动器未创建目录，导致 Colima 使用默认目录，而守卫检查原定私有目录中的 socket。
+
+修复在首次调用 Colima 前创建 mode `0700` 的私有目录。
+原回归先得到 3 项失败与 3 项错误；修复后 9 项全部通过。
+5 项调用方检查与 24 项发布契约检查通过。
+固定 ARM64 与 x86_64 Colima 的真实本地命令均选中私有目录，宿主原有目录身份不变。
+x86_64 命令使用已安装的 Rosetta；本地探针未创建虚拟机、Engine 或执行 Gate。
+资源上限、原断言、退出清理、Container 执行源码与 R22 pin 均未改变。
+旧失败日志和报告原样保留；正式版本与 Draft 均未创建。
+修复提交仍需通过 main 检查与修订 tag 的正式资格，不能用本地探针替代。
+
+## 2026-10-24 产品展示面更新
+
+本批同步双语 Container 指南、README、架构图、实例配置、CLI 与内嵌运维入口。
+固定 cf 使用的 13 条管理路由已纳入能力清单，并标注本机管理限制。
+固定官方 SDK 未提供对应方法；生成的 SDK 报告明确登记排除项。
+65 项 tenant API、Container 执行源码与 R22 pin 未变。
+以下候选测量保留原 revision；本批变更后的正式资格由 tag 工作流重新绑定。
+2026-10-24，本地 SDK 严格类型检查、构建、19 项测试和四种隔离消费者检查均通过。
+P6 管理契约回归 7 项通过；能力清单的五项定向一致性检查通过。
+官网完整构建通过，双语文档各 72 页，静态输出共 147 页，内部链接有效。
+HAI 检查保留旧文档提示；新增与修改行没有硬规则问题。
+
+## 2026-10-23 当前验收
+
+R22 正式输入下，未插桩的最终 workspace Gate 成功退出。
+本批次执行 63 个目标，2087 项通过，零失败。
+P23 三项真实产品用例全部通过，零忽略，耗时 600.44 秒。
+用例覆盖 exec、普通容器完整流程和 rootfs 实体排除。
+目录恢复、快照和重启断言均通过。
+运行器在全部用例期间保持 4 GiB 内存、2 核 CPU。
+
+外层运行器仍以退出码 1 结束，原始失败记录保留。
+原因是依赖检查保留了编译前的文件描述符。
+构建替换了三个依赖文件；旧描述符的链接数变为零。
+最后一次替换早于首项用例 524.23 秒。
+独立补查确认八个依赖的 SHA-256 均与原固定值相同。
+已有 BLAKE3 固定值的六个依赖也全部匹配。
+补查验证 3380 个源码与正式输入文件的身份和摘要。
+原检查另确认 68 个当前程序、349 个宿主保留文件及历史归档保持不变。
+补查没有改写旧文件身份，也没有重跑编译或用例。
+这些证据分别证明最终用例结果和补充输入核对，不将外层失败改为成功。
+
+最终 Gate 报告为 `.temp/gate-run/20261023T175731-7f3ea228/report.json`。
+报告的 SHA-256 为 `38d4cdb63d0a76baa3721e3b9362472984651f89d3c6174fcbed73d215951fd9`。
+补充复核位于下文证据目录内的 `canonical-coverage-seven-gib-compiler/workspace-final-current-preparation/final-execution/retained-dependency-failure-readonly/root-canonical-and-completion-review.json`。
+同一候选的三平台包和十项安装验收已通过。
+原 x64 压力恢复测试已成功结束；正式 tag 工作流尚未执行。
+
+候选源码为 `d37501b87aa997bffea8e6be767b78441f1d81b1`。
+Darwin ARM64、Linux ARM64 和 Linux x64 均通过原四项单文件用例。
+ARM64 Dashboard 的原运行器成功退出。
+运行器要求两项用例、进程回收和资源后置检查全部通过。
+原始子进程报告已丢失；命令历史保留原退出码和摘要一致的运行器源码。
+上述回读不重建原文件身份，也没有重跑用例。
+
+macOS、Ubuntu 24 和 Debian 13 的 user／system 安装矩阵为 10／10 通过。
+四项 ARM64 安装范围取得 630 次资源采样，全部为 4 GiB、2 核 CPU。
+原安装器验证首装、服务生命周期、KV／Worker 数据保留和预期升级拒绝。
+本轮测试容器均已回收，输入、Engine 库存和资源配置保持不变。
+
+证据为 `.temp/p23-release-current-recovery/root-ten-scope-installation-review.json`、
+`root-current-three-binary-and-installation-review.json` 和
+`root-historical-package-dashboard-readback-review.json`。
+[macOS 候选资格](https://github.com/elliothux/open-compute/actions/runs/39953290637)与
+[x64 候选资格](https://github.com/elliothux/open-compute/actions/runs/39955711933)绑定同一源码。
+这些候选结果不替代正式 tag 工作流，也不证明公开发布已完成。
+
+x64 压力测试在 2 CPU、4 GiB 下完成五档检查。
+`smoke`、`p0-2c4g`、`scenario`、`p1-2c4g-peak` 和 `p1-2c4g-soak` 均通过。
+完整强度档保持 scale 为 1，全部 stack 的原错误率和延迟门槛均通过。
+测量共记录 1228944 个请求样本及 683 个错误；结果不代表零错误。
+报告中的全局异常为零。
+一小时恢复档实际完成 3632 秒，并完成三次注入重启后的恢复核对。
+原报告绑定上述候选源码和 x64 包摘要，没有重跑压力测试。
+报告归档的 SHA-256 为 `1f368751c14d6b113944c9cf6f1a85c3a757e5eb5b741f312dbebc724a870681`。
+指标复核为 `.temp/p23-release-current-recovery/original-stress-terminal/root-terminal-stress-review.json`。
+
+R22 正式输入下，完整 coverage 批次通过。
+本批次执行 63 个目标，2087 项通过，零失败。
+Rust 行覆盖率为 170010 / 187312（90.763%）。
+运行器以 7 GiB 内存、2 核 CPU 编译，并在用例前恢复 4 GiB 内存、2 核 CPU。
+原编译参数、用例断言和时限均保留；编译阶段没有新增 OOM。
+用例清单核对、源码与输入检查、进程库存和资源后置检查均通过。
+
+P23 整组为 3 项通过，零失败、零忽略，耗时 864.81 秒。
+原用例覆盖普通容器完整流程、exec 和 rootfs 实体排除。
+普通流程中的目录恢复、快照和重启断言均通过。
+此前第二次目录恢复的具体拒绝条件仍未捕获。
+两处固定阶段日志只作为诊断记录，不作为唯一根因修复的证明。
+
+`containers.native` 合同为 `passed`。
+平台级合同报告仍为 `no_go`，保留其他产品缺口和未执行的托管对照。
+该平台级状态不改变已接受的两项快照兼容性差异。
+本 coverage 批次不替代上述未插桩最终 Gate 或三宿主发行包验收。
+
+证据：下文所列证据目录内的 `canonical-coverage-seven-gib-compiler/root-terminal-full-coverage-review.json`。
+原始报告为 `.temp/gate-run/20261023T141040-342adf2c/report.json`。
+覆盖率报告为 `.temp/coverage/run-3p6V9rgj/reports/summary.json`。
+
+## 2026-10-22 当前验收
+
+R22 正式输入下，完整 coverage 批次执行 63 个目标。
+运行器在编译阶段使用 8 GiB 内存、2 核 CPU。
+运行器在首项用例前恢复 4 GiB 内存、2 核 CPU。
+本批次耗时 4049.01 秒：47 组通过，16 组失败。
+报告计入 2059 项通过；批次未生成合格覆盖率报告。
+
+P23 三个真实用例均通过，耗时 877.79 秒。
+这三项覆盖 exec、普通容器完整流程和 rootfs 实体排除。
+测试留下空的 `p23-product` 目录，所以运行器仍将 P23 组判为失败。
+其余 15 个失败目标在共享 FUSE 目录触发本地数据库检查。
+原始失败报告、剖析数据和 68 个编译产物均保留。
+
+本批次后，9 个测试文件改用验收器指定的本地临时目录。
+浏览器用例复用既有证据所有者，清理成功状态并保留失败证据。
+生产代码、运行时资产、固定 65 成员和正式 R22 输入均未改变。
+16 组定向复验已结束：14 组通过，2 组失败，耗时 3494.37 秒。
+运行器计入 23 项通过；全部 16 组均完成用例清单检查。
+`workflow-recovery` 为 3 项通过、2 项失败。
+两个失败的次级夹具仍强制使用共享目录，现已改为继承本地 `TMPDIR`。
+两处修复的后续真实复验已通过：5 项通过、零失败、零忽略。
+
+本轮 P23 的 exec 和 rootfs 用例通过，普通用例失败。
+第一次具名快照捕获完成；第二次省略参数的快照捕获遭拒绝。
+底层事件记录两次暂停和恢复；第二次捕获未进入发布阶段。
+失败边界包括恢复后的校验和归档回传，唯一原因尚未确定。
+原始响应解析断言、捕获校验、限额和时限均保留。
+该组为 2 项通过、1 项失败；固定字段诊断仅保留为候选。
+批次后置检查记录资源不足：VM 剩余配额约 2.55 GB，宿主约 37 GB。
+资源不足是否导致第二次捕获失败，现有证据不能确定。
+闲置缓存已清理，两份自有快照镜像均已完整保存后退出 Engine。
+原始数据库、密钥、日志、唯一数据和现用产物均保留。
+2026-10-22（UTC）的独立复核通过原资源门禁。
+VM 剩余配额为 6,986,211,328 字节，宿主可用空间为 65,641,197,568 字节。
+后续复验将只读记录配额与内存，不改变产品限额或时限。
+后续复验的 P23 组仍为 2 项通过、1 项失败。
+两次整容器快照和三份目录备份均已就绪。
+第一次目录恢复、重放和停止的断言均通过。
+第二次目录恢复返回 HTTP 500，新租约记录为 `lost`。
+失败窗口内没有第二次 Engine 容器创建记录，具体拒绝原因尚未确定。
+本批配额采样最低余量为 657,043,456 字节。
+原资源后置检查通过；批后 VM 余量为 4,192,133,120 字节。
+宿主可用空间为 54,493,622,272 字节。
+本批保留全部原始失败报告、数据与剖析记录。
+
+为定位拒绝阶段，生产代码仅新增两处固定阶段日志。
+日志仅记录阶段、稳定错误码和编译期运维消息。
+登记、目录准备、租约隔离和对外错误保持原有语义。
+新日志通过六组静态检查与 Linux ARM64 本地构建。
+新 Broker 的 v4 资格检查通过，旧进程已按身份退出。
+这些记录尚不证明当前生产源码通过真实容器复验。
+完整 coverage、最终 workspace Gate、三宿主发行包仍待通过。
+后续前序验收段落保留前一批次的原始结果。
+
+本批次证据目录为 `.temp/p23-full64/workerd-release-r22/local-filesystem-fixture-repair/helper-command-mapping-repair/coverage-current-preparation/current-api-production-build/compile-run-phase-handoff-repair/`。
+`canonical-phase-controlled-after-digest-rebuild/root-terminal-failed-batch-review.json` 保存完整批次结果。
+`current-failed-target-readonly/native-fixture-candidate-v2/root-apply-result.json` 保存夹具修复记录。
+`scoped-fixture-revalidation/root-scoped-compilation-runtime-handoff-live-review.json` 保存内存交接记录。
+
+## 2026-10-22 前序验收
+
+R22 输入下的普通真实容器用例通过，耗时 497.82 秒。
+该用例为 1 项通过、零失败、零忽略，另两项未选中。
+固定 65 个成员均已绑定固定 types 的编译夹具和该真实容器用例。
+目录恢复覆盖两种调度策略、三种挂载形式、文件元数据和重启恢复。
+省略快照参数与恢复后的空 `image` 继续采用已接受的官方方向。
+本地证据不声明逐项复刻托管观察，也不证明发行包通过。
+
+同日，完整 coverage 批次实际执行 63 个目标。
+原批次结果为 24 项通过、39 项失败，未生成合格覆盖率报告。
+运行器将临时目录放在共享 FUSE 挂载，导致本地存储和数据库检查失败。
+Provider 另在前次编译 OOM 的同一时刻记录 headers 阶段超时。
+Provider 进程仍存活，但合同接口返回 `503`；底层资源机制尚未确定。
+临时目录修复、Provider 重新资格检查和失败目标复验不改写原失败报告。
+完整 coverage、最终 workspace Gate、三宿主发行包仍待通过。
+
+成员核对证据：`.temp/p23-full64/workerd-release-r22/local-filesystem-fixture-repair/helper-command-mapping-repair/coverage-current-preparation/compatibility-current65-readonly/current65-assertion-review.json`。
+产品证据：同一 helper 目录下的 `ordinary-directory-replay-current/root-terminal-product-review.json`。
+完整失败批次：`coverage-current-preparation/canonical-execution-after-service-lib-repair/root-terminal-failed-batch-review.json`。
+
+## 基础范围与后续批次记录
 
 2026-10-10，用户将本轮验收范围限定为基础 13 family。
 snapshot、原生 inactivity timeout、主进程日志采集与其他后续能力由 [P25](../p25-platform-follow-ups.md) 跟进。
@@ -19,6 +237,161 @@ snapshot、原生 inactivity timeout、主进程日志采集与其他后续能�
 当前快照流程、托管对比和证据冲突见 [快照持久化与回收](../references/containers.md#快照持久化与回收验收中)。
 本页下列基础验收记录不证明后续源码已通过验收。
 第 4.1 节的表格保留 R9 历史范围，不代表当前 65 个成员的逐项结果。
+
+**2026-10-21（UTC）范围确认：保留完整 65 项，补齐目录恢复能力。**
+用户确认按固定 API 合同和本地真实行为验收，不必逐项复刻托管实测。
+托管差异保留为诊断记录，不再等待托管服务复现相同结果。
+用户另接受[两项快照兼容性差异](../references/containers.md#已接受的快照兼容性差异)。
+`snapshotContainer()` 允许省略参数；快照恢复后的 `inspect().image` 返回空字符串。
+前者遵循已合并的上游改动，后者遵循官方明确写出的恢复语义。
+文档与托管观察不一致或没有明确对照，不再阻止这两项的验收。
+这项决定不提升其他成员资格，也不替代本地功能、coverage、最终 Gate 或发行包检查。
+`snapshotDirectory()` 继续属于实验接口；九个稳定目录成员仍需真实恢复证据。
+本批追加 V18 迁移，保存不可变的目录路径，保留现有快照权限和配额检查。
+目录备份与整容器备份分开校验；目录备份不能用作启动镜像。
+本地通过 1 项路径测试、19 项存储测试、14 项快照服务测试和 11 项 Broker 测试。
+目录捕获复用私有进程权限、归档校验和持久化流程；整容器捕获回归也通过。
+后续实现将目录恢复清单与执行预留写入同一事务，并冻结备份 ID 和目标路径。
+启动重试不能追加、删除或改换清单；daemon 重启后保留原清单。
+已有执行可继续读取其保留的过期备份；新的恢复请求仍拒绝过期备份。
+应用删除期间，artifact 引用检查保留存活执行使用的目录备份。
+只有执行终止、资源回收和后续操作隔离均获确认后，平台才释放引用。
+当前实现通过 55 项存储回归和 14 项快照服务回归，零失败、零忽略。
+目录捕获的服务回归覆盖两种调度策略；整容器快照仍限定 `durable_object` 策略。
+这些检查使用 macOS 本地 Unix fixture，不证明真实 Docker 目录恢复或完整 65 项资格。
+本批证据位于 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/directory-restore-api-contract-implementation/restore-authority/`。
+2026-10-21（UTC），真实 Linux ARM64 Engine 进一步通过目录 helper fixture。
+恢复文件的内容、权限、硬链接和相对符号链接均保留；整容器 export 排除目录挂载。
+目录与根文件系统共用 32 MiB 限额，截断根文件可释放目录写入容量。
+未过滤的目录所有者可改写 project 属性；新增内核过滤后，同一改写返回 `EPERM`。
+目录 helper 不增加 capability；主进程与 exec 入口安装同步到全部线程的过滤。
+受影响的 46 项 exec 回归通过；新增过滤专项和真实 root 用户权限 fixture 也通过。
+exec helper 的 Go statement coverage 为 90.2%；该数值不代表 workspace coverage。
+ARM64 helper 已在实际 Engine 执行；AMD64 helper 仅通过交叉构建。
+后续归档与暂存回归通过：25 项 artifact、62 项 Broker 和 1 项匿名文件单元检查。
+Broker 的 62 项由原批次 61 项和更新负例后的 1 项组成；失败原报告保留。
+快照服务另通过 14 项回归；P23 的 helper 归档排除单元检查通过，两个真实产品用例未运行。
+Broker 冻结恢复清单，校验每份 tar 的摘要与大小，并为每个执行保留一个匿名暂存文件。
+暂存追加前写入持久 marker；取消或失败继续隔离该执行，不能签发新的启动权限。
+
+真实探针复现了旧 helper 路径的父目录替换风险。
+helper 已改为根目录只读挂载，三个入口均检查目录和文件所在的只读文件系统。
+真实容器通过父目录替换拒绝、配额防绕过和恢复文件检查。
+更新后的 exec helper Go statement coverage 为 90.3%；该数值仍不代表 workspace coverage。
+Broker 私有协议升为 v4；旧合同拒绝检查和消费者 schema 的 12 项单元检查通过。
+新 helper 的 ARM64 程序已实际运行，AMD64 程序仅通过交叉构建。
+旧 Provider 尚未重新构建或资格检查，不能作为新源码的运行证明。
+该 helper 批次不提升九个目录成员资格；当时公开启动流程尚未接入。
+
+**2026-10-21（UTC）目录恢复公开流程已接入，真实产品验收仍待完成。**
+公开启动参数映射为冻结的备份 ID 和目录路径。
+存储事务拒绝追加、删除或改换已有恢复清单。
+daemon 按当前权限读取备份，校验完整 artifact，再传输原始目录归档。
+Broker 独立校验目录归档；完成恢复后，启动重试不再写入目录。
+清理流程只读取原租约持有的备份元数据，不授予新的启动权限。
+本地 Unix fixture 的 69 项 Broker 回归通过。
+存储批次为 54 项通过、1 项失败；服务快照批次为 14 项通过、1 项失败。
+两项失败分别来自测试数据的内容 ID 冲突和遗漏 DO 启动镜像。
+修正测试数据后，3 项存储目录测试和新增服务恢复用例通过。
+原失败报告保留；这些分批结果不改写原批次状态。
+
+真实 Docker 29.4.0 探针复现了归档跨目录写入。
+目录 1 的软链接指向 `../10`；随后一个归档成员写入了目录 10。
+Engine 返回 HTTP 200；探针确认目录 10 新增了该文件。
+两个临时容器和 11 个卷均已确认删除；原 Provider 和 Engine 状态未变。
+目录归档校验现拒绝文件或链接节点下面的成员路径与硬链接目标。
+校验保留独立的绝对、相对软链接和普通硬链接，不在宿主机解压文件。
+daemon 与 Broker 均在目录归档交付 Engine 前执行这项校验。
+修复后的 macOS 本地回归为 26 项归档、70 项 Broker、2 项目录服务测试通过。
+这些检查均为零失败、零忽略；正式 R21 pin 未变。
+证据位于 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/directory-filesystem-implementation/archive-confinement-engine-qualification/`。
+新版 Broker 的真实容器恢复、完整 65 项、coverage、最终 Gate 和发行包仍待验收。
+
+2026-10-21（UTC），新版 Broker 完成 Linux ARM64 本地构建和 v4 资格检查。
+资源限制、整容器快照、helper 和三次健康检查均通过。
+两个资格探针均有删除事件和 HTTP 404 证明。
+两份启动镜像的大小均与实际 Engine 一致。
+编译结束后，环境恢复为 4 GiB、2 CPU，原始配置字节保持一致。
+旧 Provider 已按原进程身份精确退休。
+
+真实 Broker 拒绝了四种跨目录写入归档，均返回 HTTP 503。
+每个负例均确认 Engine 库存不变，执行清理完成。
+合法恢复随后在主容器创建阶段失败，原失败报告保留。
+Docker 29.4.0 的挂载回显省略 `ReadOnly: false`。
+旧校验逐字比较请求和回显，因此拒绝了合法的可写目录。
+[Moby 类型定义](https://github.com/moby/moby/blob/master/api/types/mount/mount.go) 也声明该字段省略零值。
+该上游链接解释编码规则，不证明已安装 Engine 的源码 revision。
+两个挂载生产者现使用同一回显格式；helper 也明确生成空日志配置。
+Broker 仍逐项校验卷身份、目录位置和实际读写属性。
+两项新增回归先在旧源码失败，修复后的 72 项 Broker 回归全部通过。
+这些本地回归均为零失败、零忽略；正式 R21 pin 未变。
+本次专属主容器、代理容器和三个目录卷已确认删除。
+随后，实际 Engine 拒绝了 Docker 数据目录内的 `rprivate` bind 挂载。
+返回错误的摘要和长度与 [Moby 校验规则](https://github.com/moby/moby/blob/master/daemon/volumes_linux.go) 完全匹配。
+helper 改用只读 `rslave` 挂载；宿主机仍不接收 helper 发出的挂载传播。
+新增回归拒绝 `rprivate`、`rshared` 和可写根目录；73 项 Broker 回归全部通过。
+真实 Engine 已接受新挂载，但旧 helper 因嵌套挂载的空目录骨架而退出。
+新版 helper 仅接纳纯目录骨架，为每层目录设置根文件系统的 project 配额。
+文件、软链接、非零旧 project、外部文件系统和非 root 目录均继续拒绝。
+每个卷最多遍历十万个目录节点，遍历不累积打开的文件描述符。
+两个目录单元检查已在 Linux ARM64 实际通过，Go vet 也通过。
+新版 ARM64 helper 在真实只读容器中正常退出，未增加 capability。
+AMD64 helper 仅通过交叉构建；完整 Broker 恢复流程尚未通过。
+修复后的真实目录恢复、完整 65 项和最终发行验收仍待完成。
+证据位于 `.temp/p23-full64/package-r21-main-8ee3-current-preparation/directory-filesystem-implementation/broker-v4-native-build/`。
+
+2026-10-22（UTC），嵌套目录批次完成 Linux ARM64 Broker 构建和 v4 资格检查。
+空间后置检查失败的原记录保留；缓存回收后的独立只读复核通过。
+真实恢复随后在归档写入阶段失败，配额 helper 已正常退出。
+Docker 拒绝独立的 `../elsewhere` 符号链接，返回 HTTP 500。
+错误响应的长度与摘要均与固定错误模板完全匹配。
+
+隔离写入探针保留了文件内容、UID/GID、权限、时间戳和两种链接。
+空目录和嵌套挂载也通过检查；归档接收容器从未启动。
+执行代码的配额 helper 仍使用只读根目录，未增加 capability。
+所有临时容器和卷均已确认删除，其他 Engine 库存不变。
+
+正式接入复用同一个 helper 名称，分开校验配额与归档用途。
+配额 helper 删除后，Broker 创建不能启动的归档接收容器。
+归档只写入固定前缀下的自有目录卷，写入后先删除接收容器。
+维护回归先复现旧路径的 HTTP 503；接入后的 78 项 Broker 检查通过。
+本批检查在 macOS 本地 fixture 执行，零失败、零忽略。
+检查包含归档边界、长路径、PAX 元数据、禁止启动、失败回收和重启恢复。
+新源码仍需完成真实 Broker 恢复、完整 65 项、coverage、最终 Gate 和发行包验收。
+接入证据位于上述目录的 `mount-echo-rebuild/current-helper-integration/archive-view-production-repair/`。
+
+最终测试语法修正后，本地 78 项 Broker 和 44 项容器所属检查通过。
+检查均为零失败、零忽略。
+测试与 fixture 两组 Clippy 及 MSRV 全目标检查也通过。
+生产源码未变的三组 Clippy 和无默认特性检查复用前一批记录。
+本轮证据位于同一目录的 `current-owning-v5/`、`static-v3/` 和 `failed-static-test-groups-v4/`。
+
+**2026-10-22（UTC）目录恢复已通过 Broker 实测，公开 API 验收尚未完成。**
+真实 Linux ARM64 Broker 通过六项目录恢复检查。
+检查覆盖文件元数据、硬链接、符号链接、空目录、嵌套挂载和重复恢复。
+Broker 重启后保留恢复清单；自有资源回收获得 HTTP 404 证明。
+原后置检查失败报告保留，后续独立只读复核通过。
+这组实测只证明当时的 Broker 输入，不证明当前完整 65 项资格。
+
+workerd 已通过现有弱引用回调传递目录参数，私有 Container 协议更新为 v4。
+本地四个原生目标分两批通过 108 项检查。
+直接受影响的 Root 用例通过 1 项检查，包含真实原生目录捕获。
+未变化的另外三个原生目标和其余十项 Root 用例未在本地重复执行。
+原生源码已提交为 `65267e100a15718300cd17f9d82c2142158ce44a`。
+[R22 四平台供应构建](https://github.com/elliothux/workerd/actions/runs/39721082079)仅启动一次。
+四个平台各通过 7 个原生目标和 11 项 Root 回归，publish 也成功。
+10 项不可变资产的签名、摘要、协议 v4 和 catalog 校验通过。
+正式 lock 与 gitlink 已更新为 R22；旧 R21 结果保留原始适用范围。
+
+公开验收已增加两种调度策略、三种恢复参数、错误类型和跨应用拒绝检查。
+目录捕获只在实验开关开启时执行。
+关闭实验开关后，两种策略均应恢复真实目录备份。
+同一流程检查恢复后的文件元数据、链接、重复恢复和 daemon 重启。
+候选 fixture 的两组严格类型检查和官方 `cf build` 均通过。
+维护 fixture 的 12 项响应与委托测试通过，零失败、零忽略。
+本批尚未编译新的 Rust 产品用例，也未执行真实公开目录恢复流程。
+完整 65 项、当前 coverage、最终 Gate 和三主机发行包仍待验收。
+本批证据位于上述目录的 `native-directory-capture-preparation/public-directory-product-candidate/`。
 
 **后续扩展状态（2026-10-20 UTC）：exec 用户策略修复已通过当前 coverage 和 Linux ARM64 最终 Gate；发行资格仍待完成。**
 正式 pin 为 R21，revision 为 `204a75bcfcc35fdf15756bef03eea867711847a6`。
@@ -57,7 +430,7 @@ Gate 构建步骤记录了实际执行程序的摘要；两个程序与预编译
 2026-09-21（UTC），上游 [PR #7453](https://github.com/cloudflare/workerd/pull/7453) 将 `snapshotContainer()` 的选项改为可省略。
 两项改动均已进入固定 R21 的上游基线；可省略选项也与已保留的托管实测一致。
 当前官方文档仍声明省略选项应抛出 `TypeError`。
-恢复后的 `inspect().image` 也存在文档与托管实测差异；两项来源差异继续保留。
+恢复后的 `inspect().image` 也存在文档与托管实测差异；两项历史差异按页首接受决定处理。
 2026-10-20（UTC），Linux ARM64 和 macOS ARM64 发行包均已构建。
 两个包均绑定 revision `8ee3babe5319d3001b3663c58475af970f16ddce`，并包含本次用户策略修复。
 Linux ARM64 的原四项 package 用例和两项 Dashboard 用例均通过。
@@ -1159,7 +1532,8 @@ const worker = defineWorker({
 export default defineConfig({ worker, containers: [apiContainer] });
 ```
 
-此例展示固定 `cf/config` 的声明关系，不扩展基础 13 family 验收范围。完整 64 个稳定成员仍保持 `blocked`。
+此例保留 CT0 当时固定 `cf/config` 的声明关系，范围为基础 13 family。
+当时的完整 64 个稳定成员均为 `blocked`；当前成员范围与结果见本页的 R22 记录。
 mode 求值、DO export lifecycle 与 Build Output
 由 cf 和官方构建链拥有；`ocd` 验证实际上传合同，不读取 TypeScript 项目文件或沿用旧 migrations/tag 配置。
 

@@ -44,6 +44,56 @@ fn request(authority: &Authority, lease: &ResolvedLease) -> SnapshotRequest {
     SnapshotRequest {
         source: authority.stop(lease),
         name: Some("checkpoint".to_owned()),
+        directory: None,
+    }
+}
+
+#[tokio::test]
+async fn directory_snapshot_capture_persists_path_and_reports_archive_bytes() {
+    for durable_object in [false, true] {
+        let fixture = fixture().await;
+        let image = fixture.admit_image("main").await;
+        let authority = if durable_object {
+            do_authority(&fixture.service, &fixture._artifacts, image, false)
+        } else {
+            authority(&fixture.service, &fixture._artifacts, image, false)
+        };
+        let (auth, credential, lease) = running(&fixture, &authority).await;
+        let directory =
+            open_compute_core::containers::ContainerDirectoryPath::parse("/app/data").unwrap();
+        let mut request = request(&authority, &lease);
+        request.directory = Some(directory.clone());
+        let expected = fixture.protocol.snapshot_rootfs.lock().await.len() as u64;
+        fixture.protocol.image_size.store(173, Ordering::SeqCst);
+        let response = fixture
+            .service
+            .capture_snapshot(request, auth, credential)
+            .await
+            .unwrap();
+        assert_eq!(response.snapshot.dir, Some(directory));
+        assert_eq!(response.snapshot.size, expected);
+        assert_ne!(response.snapshot.size, 173);
+        let restarted = fixture.restart_service();
+        let repo = ContainerAuthority::new(restarted.storage.db());
+        let (saved, image) = repo
+            .directory_snapshot_for_restore(
+                &authority.object,
+                response.snapshot.id,
+                open_compute_core::wall_time_ms(),
+            )
+            .unwrap();
+        assert_eq!(saved.directory, response.snapshot.dir);
+        assert_eq!(saved.image_size, Some(expected));
+        assert_eq!(saved.image_sha256, Some(image.manifest_sha256));
+        assert!(
+            repo.snapshot_for_restore(
+                &authority.object,
+                saved.id,
+                open_compute_core::wall_time_ms()
+            )
+            .is_err()
+        );
+        assert_eq!(fixture.protocol.snapshot_requests.lock().await.len(), 1);
     }
 }
 
@@ -1020,4 +1070,135 @@ async fn default_scheduling_rejects_snapshot_capture_and_restore_before_provider
         ContainerLeaseState::Running
     );
     assert!(fixture.protocol.terminated.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn directory_restore_start_streams_frozen_archive_and_replay_preserves_live_contents() {
+    for durable_object in [false, true] {
+        let fixture = fixture().await;
+        let image = fixture.admit_image("main").await;
+        let source = if durable_object {
+            do_authority(&fixture.service, &fixture._artifacts, image, false)
+        } else {
+            authority(&fixture.service, &fixture._artifacts, image, false)
+        };
+        let (auth, credential, lease) = running(&fixture, &source).await;
+        let original = fixture.protocol.snapshot_rootfs.lock().await.clone();
+        let mut capture = request(&source, &lease);
+        capture.directory = Some(
+            open_compute_core::containers::ContainerDirectoryPath::parse("/app/data").unwrap(),
+        );
+        let saved = fixture
+            .service
+            .capture_snapshot(capture, auth.clone(), credential.clone())
+            .await
+            .unwrap()
+            .snapshot;
+        fixture
+            .service
+            .stop(&source.stop(&lease), 12, &auth, &credential)
+            .await
+            .unwrap();
+        let target = Authority {
+            app: source.app.clone(),
+            object: ContainerObjectAuthority {
+                object_id: insert_object(&fixture.service, source.object.namespace_resource_id, 8),
+                ..source.object
+            },
+        };
+        let mut startup = json!({"directorySnapshots":[
+            {"snapshotId":saved.id.to_string(),"mountPoint":"/restored"},
+            {"snapshotId":null,"mountPoint":"/empty"}
+        ]});
+        if durable_object {
+            let repo = ContainerAuthority::new(fixture.service.storage.db());
+            let target = repo
+                .target(fixture.service.instance_id(), source.app.id, 1)
+                .unwrap();
+            let declarations = repo
+                .version_declarations(fixture.service.instance_id(), target.spec.worker_version_id)
+                .unwrap();
+            startup["image"] = json!(declarations[0].images["main"]);
+        }
+        let restarted = fixture.restart_service();
+        let restored = restarted
+            .resolve(
+                target.request(true, Some(startup.clone())),
+                13,
+                &auth,
+                &credential,
+            )
+            .await
+            .unwrap()
+            .lease
+            .unwrap();
+        assert_eq!(restored.image_sha256, hex::encode(image));
+        let uploads = fixture.protocol.directory_archives.lock().await.clone();
+        assert_eq!(
+            uploads,
+            vec![(restored.opaque_engine_key.clone(), 0, original)]
+        );
+        let registration = fixture
+            .protocol
+            .registrations
+            .lock()
+            .await
+            .last()
+            .unwrap()
+            .clone();
+        assert_eq!(registration.directory_snapshots.len(), 2);
+        assert!(registration.directory_snapshots[1].archive.is_none());
+        fixture.running().await;
+        let current = restarted
+            .resolve(target.request(false, None), 14, &auth, &credential)
+            .await
+            .unwrap()
+            .lease
+            .unwrap();
+        assert_eq!(current.state, ContainerLeaseState::Running);
+        let again = fixture
+            .restart_service()
+            .resolve(target.request(true, Some(startup)), 15, &auth, &credential)
+            .await
+            .unwrap()
+            .lease
+            .unwrap();
+        assert_eq!(again.opaque_engine_key, restored.opaque_engine_key);
+        assert_eq!(*fixture.protocol.directory_archives.lock().await, uploads);
+        for plan in [
+            json!([{"snapshotId":null,"mountPoint":"/"}]),
+            json!([{"snapshotId":null,"mountPoint":"/.open-compute-exec/state"}]),
+            json!([{"snapshotId":null,"mountPoint":"/same"},{"snapshotId":null,"mountPoint":"/same"}]),
+            json!([]),
+        ] {
+            assert!(
+                restarted
+                    .resolve(
+                        target.request(true, Some(json!({"directorySnapshots":plan}))),
+                        16,
+                        &auth,
+                        &credential
+                    )
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(*fixture.protocol.directory_archives.lock().await, uploads);
+        restarted
+            .stop(&target.stop(&restored), 17, &auth, &credential)
+            .await
+            .unwrap();
+        let cleanup = fixture
+            .protocol
+            .cleanup_registrations
+            .lock()
+            .await
+            .last()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            cleanup.directory_snapshots,
+            registration.directory_snapshots
+        );
+    }
 }

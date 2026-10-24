@@ -13,13 +13,13 @@ async fn managed_playwright_default_page_uses_real_browser() {
 }
 
 async fn exercise(playwright: bool) {
-    let purpose = repo().join(".temp/p22-product");
-    fs::create_dir_all(&purpose).unwrap();
-    let root = tempfile::Builder::new()
-        .prefix("managed-")
-        .tempdir_in(purpose)
-        .unwrap()
-        .keep();
+    let evidence = platform_process::Evidence(Some(
+        tempfile::Builder::new()
+            .prefix("managed-")
+            .tempdir()
+            .unwrap(),
+    ));
+    let root = evidence.0.as_ref().unwrap().path().to_owned();
     let executable = std::env::var_os("OPEN_COMPUTE_TEST_BROWSER")
         .expect("explicit chrome-headless-shell fixture required");
     let executable = executable.into_string().unwrap();

@@ -398,6 +398,28 @@ function mapOperations(
       types: declaration.typeNames,
     });
   }
+  const observedOperations = new Set(
+    requireStringArray(
+      (
+        authority.manifest.clientObservedOperations as
+          Array<{ operation: string }> | undefined
+      )?.map((entry) => entry.operation) ?? [],
+      "clientObservedOperations",
+    ),
+  );
+  for (const operation of excludedOperations) {
+    if (excluded.some((entry) => entry.operation === operation)) continue;
+    if (!observedOperations.has(operation))
+      throw new Error(
+        `SDK exclusion is not an implemented operation: ${operation}`,
+      );
+    const [method, path] = operation.split(" ");
+    if (routeIndex.has(`${method} ${path?.replaceAll(/\{[^}]*\}/g, "{}")}`))
+      throw new Error(
+        `observed SDK exclusion now has an official method: ${operation}`,
+      );
+    excluded.push({ operation, reason: excludedReasons.get(operation)! });
+  }
   return { mapped, excluded };
 }
 

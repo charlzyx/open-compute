@@ -13,7 +13,7 @@ import stat
 import tarfile
 import uuid
 
-DIRECTORY = '/opt/open-compute/exec'
+DIRECTORY = '/.open-compute-exec'
 LIMIT = 16 << 20
 
 

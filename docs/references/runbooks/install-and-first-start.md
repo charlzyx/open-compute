@@ -122,3 +122,23 @@ daemon 的 `metrics.max_series` 现在至少为 857；多实例还需要为所�
 停止条件：master key、object authority/fingerprint、runtime digest、权限或空间检查失败。不要反复生成 key、切换 backend，
 也不要以外部 workerd 或重新下载绕过错误。回滚为停止进程并保留 config、key、data-dir 与 object root。
 验证包括一次 smoke Worker 请求、重启后读取，以及停机后的完整 doctor。
+
+## 启用 Containers
+
+Containers 默认关闭。operator 应先准备独立 Broker 与通过资格检查的 rootful Linux Docker Engine。
+Engine 需要 API 1.42 或更高版本、cgroup v2、seccomp 和使用 XFS `pquota` 的 overlay2。
+operator 还应准备固定 sidecar image、只读 exec helper volume 及镜像摘要。
+`ocd` 不在启动或请求路径安装、拉取或构建这些输入。
+
+`ocd container-broker --broker-config /etc/open-compute/container-broker.toml` 以前台独立进程运行。
+该命令拒绝 `--system`、`--config` 和 `--instance`；daemon 不监督 Broker。
+Broker 的 `state_dir` 是持久私有数据，不能作为 cache 删除。
+资格检查失败时，Broker 拒绝执行 mutation。
+
+在实例的 `compute.toml` 中填写 `[containers]` 与 `[containers.resources]`。
+配置包含绝对 `broker_socket`、已通过资格检查的 `provider_contract_sha256`、
+`max_instances`、`max_snapshots`、`max_snapshot_bytes`，以及 CPU、内存、磁盘、PID 和文件上限。
+实例上限不能超过 Provider 已验证的上限。未配置 `[containers]` 时，其他 Worker 的入口保持不变。
+
+完整配置、helper 供应与恢复边界见 [Containers 运维](../containers.md)。
+用户流程见 <https://open-compute.dev/docs/containers/>。

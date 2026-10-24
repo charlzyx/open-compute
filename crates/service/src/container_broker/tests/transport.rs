@@ -17,6 +17,8 @@ use std::{
 };
 use tokio::sync::{Mutex, oneshot};
 
+#[path = "directory_engine.rs"]
+mod directory_engine;
 #[path = "recovery.rs"]
 mod recovery;
 #[path = "snapshot_engine.rs"]
@@ -45,6 +47,10 @@ struct MockEngine {
     stop_signals: Mutex<Vec<(String, String)>>,
     stop_seconds: Mutex<Vec<u64>>,
     imports: Mutex<Vec<Vec<u8>>>,
+    directory_uploads: Mutex<Vec<(String, Vec<u8>)>>,
+    directory_volumes: Mutex<BTreeMap<String, Value>>,
+    directory_helper_exit: AtomicU64,
+    directory_upload_failure: AtomicBool,
     import_failure: AtomicBool,
     image_overrides: Mutex<BTreeMap<String, (u16, Value)>>,
     exec_requests: Mutex<Vec<Value>>,
@@ -154,6 +160,9 @@ async fn engine(State(state): State<Arc<MockEngine>>, mut request: Request) -> R
         state.exec_inspect_started.notify_one();
         gate.notified().await;
     }
+    if let Some(response) = directory_engine::handle(&state, &method, &path, &bytes).await {
+        return response;
+    }
     if let Some(response) = snapshot_engine::handle(&state, &method, &path, &query).await {
         return response;
     }
@@ -178,6 +187,38 @@ async fn engine(State(state): State<Arc<MockEngine>>, mut request: Request) -> R
             .body(Body::from_stream(futures::stream::iter(
                 chunks.map(Ok::<_, std::convert::Infallible>),
             )))
+            .unwrap();
+    }
+    if method == Method::PUT
+        && path.ends_with("/archive")
+        && (query
+            .get("path")
+            .is_some_and(|path| path.starts_with("/open-compute-directories/"))
+            || (query.get("path").map(String::as_str) == Some("/")
+                && state.containers.lock().await.values().any(|container| {
+                    path.split('/').nth(2) == container["Id"].as_str()
+                        && container
+                            .pointer("/Config/Labels/dev.open-compute.container.role")
+                            .and_then(Value::as_str)
+                            == Some("directory-archive")
+                })))
+    {
+        state
+            .directory_uploads
+            .lock()
+            .await
+            .push((query["path"].clone(), bytes.to_vec()));
+        return Response::builder()
+            .status(
+                if state.directory_upload_failure.swap(false, Ordering::SeqCst)
+                    || directory_engine::parent_link_escapes(&bytes)
+                {
+                    500
+                } else {
+                    200
+                },
+            )
+            .body(Body::empty())
             .unwrap();
     }
     if let Some(upgraded) = upgraded {
@@ -272,7 +313,7 @@ async fn engine(State(state): State<Arc<MockEngine>>, mut request: Request) -> R
     let (status, value) = if path == "/info" {
         (
             200,
-            json!({"ServerVersion":"29.4.0","Architecture":"amd64","OSType":"linux","Driver":"overlay2","CgroupVersion":"2","SecurityOptions":["name=seccomp,profile=builtin"]}),
+            json!({"ServerVersion":"29.4.0","Architecture":"amd64","OSType":"linux","Driver":"overlay2","DockerRootDir":"/docker","CgroupVersion":"2","SecurityOptions":["name=seccomp,profile=builtin"]}),
         )
     } else if path == "/version" {
         (200, json!({"Version":"29.4.0", "ApiVersion":"1.54"}))
@@ -354,9 +395,11 @@ async fn engine(State(state): State<Arc<MockEngine>>, mut request: Request) -> R
                 effective["Labels"] = json!(labels);
                 let sequence = state.next_container.fetch_add(1, Ordering::Relaxed);
                 let id = hex::encode(Sha256::digest(format!("{}:{sequence}", slot.key())));
-                let value = json!({"Id":id,"Image":body["Image"],"Config":effective,
+                let value = json!({"Id":id,"Name":format!("/{}",slot.key()),"Image":body["Image"],"Config":effective,
+                "GraphDriver":{"Name":"overlay2","Data":{"UpperDir":format!("/docker/overlay2/{id}/diff")}},
                 "Mounts":helper_input::mounts_from_request(&host),
-                "HostConfig":host,"State":{"Running":false,"Paused":false,"StartedAt":"2026-10-10T00:00:00Z"},
+                "HostConfig":host,"State":{"Running":false,"Paused":false,"Status":"created","ExitCode":0,"Pid":0,
+                "StartedAt":if effective.pointer("/Labels/dev.open-compute.container.role").and_then(Value::as_str)==Some("directory-archive") {"0001-01-01T00:00:00Z"} else {"2026-10-10T00:00:00Z"}},
                 "NetworkSettings":{"Ports":{"39001/tcp":[{"HostIp":"0.0.0.0","HostPort":state.published_port.load(Ordering::Relaxed).to_string()}]}}});
                 slot.insert(value);
                 (201, json!({"Id":id,"Warnings":[]}))
@@ -383,11 +426,17 @@ async fn engine(State(state): State<Arc<MockEngine>>, mut request: Request) -> R
                 None => (404, json!({"message":"raw-private-details"})),
             }
         } else if parts.get(3) == Some(&"wait") {
-            (200, json!({"StatusCode":0}))
+            (
+                200,
+                json!({"StatusCode":containers.get(name).and_then(|value| value.pointer("/State/ExitCode")).and_then(Value::as_u64).unwrap_or(0)}),
+            )
         } else if parts.get(3) == Some(&"start") {
             match containers.get_mut(name) {
                 Some(value) => {
-                    value["State"]["Running"] = true.into();
+                    directory_engine::start(
+                        value,
+                        state.directory_helper_exit.load(Ordering::SeqCst),
+                    );
                     (204, Value::Null)
                 }
                 None => (404, Value::Null),

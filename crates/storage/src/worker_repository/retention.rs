@@ -464,6 +464,13 @@ impl<'a> WorkerRepository<'a> {
                        SELECT 1 FROM container_instance_leases l
                        WHERE l.effective_image_sha256=i.manifest_sha256 AND l.state!='stopped')
                      UNION
+                     SELECT i.artifact_sha256,i.artifact_size
+                     FROM container_instance_leases l
+                     JOIN json_each(l.directory_restores_json) d
+                     JOIN container_snapshots s ON s.id=json_extract(d.value,'$.snapshotId')
+                     JOIN container_images i ON i.manifest_sha256=s.image_sha256
+                     WHERE l.state!='stopped'
+                     UNION
                      SELECT artifact_sha256,artifact_size FROM container_snapshots
                      WHERE artifact_sha256 IS NOT NULL AND (state IN ('pending','ready') OR
                        (state='retiring' AND captured_at_ms IS NULL AND EXISTS (

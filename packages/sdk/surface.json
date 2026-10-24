@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "package": "@open-compute/sdk",
   "packageVersion": "0.4.0",
-  "surfaceDigest": "edd069658d4d6d14958b062935162e69516b5f31b21eeab8240de2d3a0d653c3",
+  "surfaceDigest": "3576628a2b33b26b9d8d0cec1b151e28f23a22b5a0f7ed09507d5e9763bd539c",
   "authority": {
     "openapiRevision": "780de88d0324b007c907a1782259b1a0e5e87c7d",
     "openapiSha256": "e514c72ea05ed98d709d09447d95d81f1dfb43372b23162474990498fe9577a7",
@@ -2116,6 +2116,58 @@
     {
       "operation": "PUT /accounts/{account_id}/r2/buckets/{bucket_name}",
       "reason": "the pinned official cloudflare@7.2.0 SDK does not implement r2-create-bucket-by-name; every SDK method must delegate to an official implementation, so this otherwise supported route stays outside the SDK surface"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/me",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/image-preparations",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "PATCH /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "DELETE /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
     }
   ],
   "openComputeOperations": [

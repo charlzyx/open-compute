@@ -2,7 +2,17 @@ use super::*;
 use std::sync::atomic::Ordering;
 
 pub(super) async fn capture(protocol: Arc<LeaseProtocol>, key: String, value: Value) -> Response {
-    assert_eq!(value.as_object().unwrap().len(), 2);
+    assert_eq!(
+        value.as_object().unwrap().len(),
+        if value.get("directory").is_some() {
+            3
+        } else {
+            2
+        }
+    );
+    if let Some(directory) = value.get("directory") {
+        assert_eq!(directory, "/app/data");
+    }
     assert_eq!(value["startIdentity"], "c".repeat(64));
     assert!(value["maxBytes"].as_u64().unwrap() <= 8 << 20);
     assert!(

@@ -24,7 +24,7 @@ fn qualification_archive(container: &Value, failure: Option<&str>) -> Vec<u8> {
     } else if failure == Some("helper") {
         vec![
             ("open-compute-snapshot-probe", root),
-            ("opt/open-compute/exec/helper", "trusted helper"),
+            (".open-compute-exec/helper", "trusted helper"),
         ]
     } else {
         vec![("open-compute-snapshot-probe", root)]
@@ -103,7 +103,10 @@ pub(super) async fn handle(
 
     let (container, operation) = path.strip_prefix("/containers/")?.split_once('/')?;
     if !(method == Method::POST && matches!(operation, "pause" | "unpause")
-        || method == Method::GET && operation == "export")
+        || method == Method::GET && operation == "export"
+        || method == Method::GET
+            && operation == "archive"
+            && query.get("path").map(String::as_str) == Some("/app/data/."))
     {
         return None;
     }
@@ -127,8 +130,8 @@ pub(super) async fn handle(
         .iter_mut()
         .find(|(_, value)| value["Id"] == container)?;
     let qualification = name.starts_with("oc-qualification-");
-    if operation == "export" {
-        assert_eq!(value["State"]["Paused"], true);
+    if operation == "export" || operation == "archive" {
+        assert_eq!(value["State"]["Paused"], operation == "export");
         let archive = if qualification {
             qualification_archive(value, *state.snapshot_qualification_failure.lock().await)
         } else {

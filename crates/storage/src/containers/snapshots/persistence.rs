@@ -1,6 +1,6 @@
 use super::*;
 
-const COLUMNS: &str = "id,instance_id,application_id,namespace_resource_id,object_id,object_generation,lease_generation,opaque_engine_key,start_identity,source_image_sha256,image_sha256,artifact_sha256,artifact_size,name,state,reserved_bytes,created_at_ms,expires_at_ms,last_restored_at_ms,captured_at_ms,put_attempted,image_size";
+const COLUMNS: &str = "id,instance_id,application_id,namespace_resource_id,object_id,object_generation,lease_generation,opaque_engine_key,start_identity,source_image_sha256,image_sha256,artifact_sha256,artifact_size,name,state,reserved_bytes,created_at_ms,expires_at_ms,last_restored_at_ms,captured_at_ms,put_attempted,image_size,directory_path";
 
 pub(super) fn read_snapshot(
     conn: &Connection,
@@ -77,6 +77,11 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContainerSnapshot> {
         artifact_size: row.get(12)?,
         image_size,
         name: row.get(13)?,
+        directory: row
+            .get::<_, Option<String>>(22)?
+            .map(open_compute_core::containers::ContainerDirectoryPath::try_from)
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
         state,
         reserved_bytes: row.get(15)?,
         created_at_ms: row.get(16)?,

@@ -32,4 +32,6 @@ Worker 签名以 [Workers runtime APIs](https://developers.cloudflare.com/worker
 
 ## 管理 API 与 SDK
 
-Cloudflare-compatible 管理 API 位于 `/client/v4`。类型化 TypeScript client 见[管理 SDK](/zh/docs/platform/reference/sdk/)。仓库提交的 `openapi/open-compute-sdk.json` 与 `packages/sdk/surface.json` 是生成 route 与 SDK inventory 的 authority；本页仅作为面向人的产品索引。
+Cloudflare-compatible 管理 API 位于 `/client/v4`。类型化 TypeScript client 见[管理 SDK](/zh/docs/platform/reference/sdk/)。仓库提交的 `openapi/open-compute-sdk.json` 与 `packages/sdk/surface.json` 描述生成的 SDK 范围。`ocd capabilities --json` 另列出 SDK 范围之外的已实现管理路由。本页仅作为面向人的产品索引。
+
+Container 管理路由由 `openapi/cloudflare-subset-manifest.json` 的 `clientObservedOperations` 登记，并投影到 `ocd capabilities --json`。这些路由不属于固定上游 OpenAPI 子集或已生成的 SDK 方法范围。已实现的路由子集与限制见 [Containers](/zh/docs/containers/)。

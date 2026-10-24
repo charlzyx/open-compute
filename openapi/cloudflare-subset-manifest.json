@@ -163,6 +163,58 @@
     {
       "operation": "PUT /accounts/{account_id}/r2/buckets/{bucket_name}",
       "reason": "the pinned official cloudflare@7.2.0 SDK does not implement r2-create-bucket-by-name; every SDK method must delegate to an official implementation, so this otherwise supported route stays outside the SDK surface"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/me",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/image-preparations",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "PATCH /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "DELETE /accounts/{account_id}/containers/applications/{application_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+      "reason": "The fixed cloudflare@7.2.0 SDK has no Container management method for this cf-observed route; use the qualified cf deployment flow. The tenant runtime API is independent of SDK management coverage."
     }
   ],
   "supportedWithDeviationOperations": [
@@ -357,6 +409,110 @@
       "status": "supported",
       "source": "cloudflare-artifacts-rest-2026-08-13",
       "note": "Artifacts raw file contract",
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "json"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/me",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/image-preparations",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "json"
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "json"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "PATCH /accounts/{account_id}/containers/applications/{application_id}",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "json"
+    },
+    {
+      "operation": "DELETE /accounts/{account_id}/containers/applications/{application_id}",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "POST /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "json"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
+      "requestMediaType": "none"
+    },
+    {
+      "operation": "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+      "status": "supported_with_deviation",
+      "source": "cf-1.0.0-beta.12-containers",
+      "note": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+      "deviations": ["OC-CONTAINERS-MGMT-001"],
       "requestMediaType": "none"
     }
   ],

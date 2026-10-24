@@ -544,8 +544,50 @@ test("native startup metadata preserves all execution overrides for encrypted le
       containerStartupFromWire(
         '{"directorySnapshots":[{"snapshotId":"bad","restorePath":"/a"}]}',
       ),
-    /CONTAINER_UNAVAILABLE/,
+    /VERSION_INVARIANT_VIOLATION/,
   );
+  assert.deepEqual(
+    containerStartupFromWire(
+      JSON.stringify({
+        directorySnapshots: [
+          { snapshotId, restorePath: "/saved" },
+          { restorePath: "//empty/./data/../" },
+        ],
+      }),
+    ),
+    {
+      enableInternet: false,
+      directorySnapshots: [
+        { snapshotId, mountPoint: "/saved" },
+        { snapshotId: null, mountPoint: "/empty" },
+      ],
+    },
+  );
+  assert.deepEqual(containerStartupFromWire('{"directorySnapshots":[]}'), {
+    enableInternet: false,
+    directorySnapshots: [],
+  });
+  for (const entry of [
+    null,
+    [],
+    {},
+    { restorePath: "/" },
+    { restorePath: "/../a" },
+    { restorePath: "relative" },
+    { restorePath: "/a\0b" },
+    { restorePath: `/${"界".repeat(1366)}` },
+    { restorePath: "/a", snapshotId: "" },
+    { restorePath: "/a", snapshotId: null },
+    { restorePath: "/a", snapshotId: 12 },
+  ]) {
+    assert.throws(
+      () =>
+        containerStartupFromWire(
+          JSON.stringify({ directorySnapshots: [entry] }),
+        ),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
+  }
   for (const value of [
     '{"entrypoint":{}}',
     '{"entrypoint":[1]}',
@@ -634,4 +676,148 @@ test("monitor lookup preserves exact exited lease while ordinary operations requ
     [false, false, false, "{}", "", true],
   ])
     await assert.rejects(resolve(...args), /VERSION_INVARIANT_VIOLATION/);
+});
+
+test("directory snapshot metadata binds the exact canonical capture path", () => {
+  const snapshot = {
+    id: "directory-snapshot",
+    size: 123,
+    dir: "/app/data",
+    name: "checkpoint",
+  };
+  assert.deepEqual(
+    containerSnapshotFromWire({ snapshot }, "/app/data"),
+    snapshot,
+  );
+  for (const dir of [
+    undefined,
+    null,
+    1,
+    "/different",
+    "//app/data",
+    "/app/data/.",
+  ]) {
+    const value = { ...snapshot, dir };
+    if (dir === undefined) delete value.dir;
+    assert.throws(
+      () => containerSnapshotFromWire({ snapshot: value }, "/app/data"),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
+  }
+  assert.throws(
+    () => containerSnapshotFromWire({ snapshot }),
+    /VERSION_INVARIANT_VIOLATION/,
+  );
+  assert.throws(
+    () =>
+      containerSnapshotFromWire(
+        { snapshot: { ...snapshot, enginePath: "/private" } },
+        "/app/data",
+      ),
+    /VERSION_INVARIANT_VIOLATION/,
+  );
+});
+
+test("directory snapshot capture keeps current lease fencing and normalizes only API input", async () => {
+  let capture;
+  let current = lease;
+  let metadata = (body) => ({
+    id: "directory-snapshot",
+    size: 123,
+    dir: body.directory,
+    ...(body.name === undefined ? {} : { name: body.name }),
+  });
+  const requests = [];
+  const env = {
+    INTERNAL_TOKEN: "token",
+    WORKER_LOADER_FACTORY: {
+      getContainer(_facets, _class, _resolve, callback) {
+        capture = callback;
+        return {};
+      },
+    },
+    RUNTIME_SOURCE: {
+      async fetch(url, init) {
+        const body = JSON.parse(init.body);
+        requests.push({ url, body });
+        return Response.json(
+          url.endsWith("resolve")
+            ? { lease: current }
+            : { snapshot: metadata(body) },
+        );
+      },
+    },
+  };
+  const mutable = { ...authority };
+  containerAttachment(env, { facets: {} }, mutable, declaration);
+  mutable.routeGeneration = 99;
+  assert.deepEqual(
+    await capture(
+      lease.opaqueEngineKey,
+      "checkpoint",
+      "//app/./state/../data/",
+    ),
+    {
+      id: "directory-snapshot",
+      size: 123,
+      dir: "/app/data",
+      name: "checkpoint",
+    },
+  );
+  const saved = requests.at(-1).body;
+  assert.equal(saved.directory, "/app/data");
+  assert.equal(saved.source.routeGeneration, authority.routeGeneration);
+  assert.equal(saved.source.opaqueEngineKey, lease.opaqueEngineKey);
+  assert.equal(saved.source.leaseGeneration, lease.leaseGeneration);
+  assert.deepEqual(await capture(lease.opaqueEngineKey, undefined, "/"), {
+    id: "directory-snapshot",
+    size: 123,
+    dir: "/",
+  });
+  for (const directory of [
+    null,
+    1,
+    "",
+    "relative",
+    "/../outside",
+    "/app/../../outside",
+    "/nul\0path",
+    "/" + "界".repeat(1366),
+  ]) {
+    const before = requests.length;
+    await assert.rejects(
+      capture(lease.opaqueEngineKey, undefined, directory),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
+    assert.equal(requests.length, before);
+  }
+  for (current of [
+    null,
+    { ...lease, state: "lost" },
+    { ...lease, opaqueEngineKey: "b".repeat(64) },
+    { ...lease, stopRequestedAtMs: 1 },
+  ]) {
+    const before = requests.filter(({ url }) =>
+      url.endsWith("snapshot"),
+    ).length;
+    await assert.rejects(
+      capture(lease.opaqueEngineKey, undefined, "/app/data"),
+      /CONTAINER_UNAVAILABLE/,
+    );
+    assert.equal(
+      requests.filter(({ url }) => url.endsWith("snapshot")).length,
+      before,
+    );
+  }
+  current = lease;
+  for (const reply of [
+    { id: "wrong-kind", size: 1 },
+    { id: "wrong-directory", size: 1, dir: "/other" },
+  ]) {
+    metadata = () => reply;
+    await assert.rejects(
+      capture(lease.opaqueEngineKey, undefined, "/app/data"),
+      /VERSION_INVARIANT_VIOLATION/,
+    );
+  }
 });

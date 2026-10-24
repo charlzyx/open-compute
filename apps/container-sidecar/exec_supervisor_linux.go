@@ -94,6 +94,9 @@ func (output *execSupervisorOutput) discard() {
 
 // runExecSupervisor is selected by the sidecar's fixed, non-secret helper argv.
 func runExecSupervisor(identity, targetUser string) int {
+	if containerQuotaFilter() != nil {
+		return 125
+	}
 	output, err := execSupervisorOutputFile(os.Stdout)
 	if err != nil {
 		return 125

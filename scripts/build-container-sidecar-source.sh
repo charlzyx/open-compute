@@ -49,6 +49,7 @@ case "$(uname -m)" in
   *) echo 'Unsupported Container sidecar build architecture' >&2; exit 1 ;;
 esac
 if [[ "$(uname -s)" == Linux ]]; then
+  go test -count=1 directory_quota_linux.go directory_quota_linux_test.go
   go test -count=1 -run '^TestIngress' .
   exec_coverage_dir="$(mktemp -d "$sidecar_source_dir/exec-profiles.XXXXXX")"
   CGO_ENABLED=0 go test -c -cover -covermode=atomic -o exec-tests exec_supervisor*.go exec_http*.go

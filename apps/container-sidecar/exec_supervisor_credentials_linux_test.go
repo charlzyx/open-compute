@@ -37,6 +37,9 @@ func TestContainerCredentialNumericRange(t *testing.T) {
 
 // This payload runs only in the owned scratch container, never on the build host.
 func execSupervisorRootCredentialPayload(t *testing.T) {
+	if !containerHelperImmutable("/.open-compute-exec") {
+		t.Fatal("helper source is not an immutable root-level mount")
+	}
 	if os.Geteuid() != 0 || os.Getpid() != 1 {
 		t.Fatal("root credential payload requires the isolated main process")
 	}
@@ -145,6 +148,20 @@ func TestContainerCapabilitiesRejectUnprivilegedCaller(t *testing.T) {
 	}{{"0:0", nil}, {"0:0", []string{"/bin/true"}}, {"-1:0", []string{"/bin/true"}}} {
 		if containerMain(value.user, value.args) != 125 {
 			t.Fatal("invalid or unprivileged main launch was accepted")
+		}
+	}
+}
+
+func TestContainerHelperIdentityRejectsWritableMissingAndSymlinkDirectories(t *testing.T) {
+	parent := t.TempDir()
+	file := filepath.Join(parent, "helper")
+	link := filepath.Join(parent, "link")
+	if os.WriteFile(file, []byte("preserved"), 0o555) != nil || os.Symlink(parent, link) != nil {
+		t.Fatal("fixture preparation failed")
+	}
+	for _, path := range []string{parent, file, link, filepath.Join(parent, "missing")} {
+		if containerHelperImmutable(path) {
+			t.Fatal("mutable or rebound helper source was accepted")
 		}
 	}
 }

@@ -18,7 +18,7 @@ pub(super) async fn capture(
         .and_then(|path| path.strip_suffix("/snapshot"))
         .filter(|key| opaque(key))
         .ok_or_else(invalid)?;
-    let bytes = read_body(request.into_body(), 1_024).await?;
+    let bytes = read_body(request.into_body(), 32_768).await?;
     let request: SnapshotCaptureRequest = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
     if !opaque(&request.start_identity)
         || request.max_bytes == 0
@@ -53,10 +53,20 @@ pub(super) async fn capture(
     };
     let (file, size) = tokio::time::timeout(std::time::Duration::from_secs(180), async {
         let id = &identity.0;
-        let (file, size) = state
-            .engine
-            .capture_rootfs(id, &state.config.spool_dir, request.max_bytes)
-            .await?;
+        let (file, size) = match &request.directory {
+            Some(directory) => {
+                state
+                    .engine
+                    .capture_directory(id, directory, &state.config.spool_dir, request.max_bytes)
+                    .await?
+            }
+            None => {
+                state
+                    .engine
+                    .capture_rootfs(id, &state.config.spool_dir, request.max_bytes)
+                    .await?
+            }
+        };
         let (after, paused) = inspect(state, fence.entry, id).await?;
         if after != identity || paused {
             return Err(invalid());

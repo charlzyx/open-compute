@@ -63,6 +63,7 @@ Use `ocd --help` and `ocd <command> --help` as the command-line authority.
 - Gateway: https://open-compute.dev/docs/gateway/
 - Worker logs and live tail: https://open-compute.dev/docs/workers/observability/
 - CLI reference: https://open-compute.dev/docs/cli/
+- Containers and operator-owned Broker: https://open-compute.dev/docs/containers/
 - Operator-owned native extensions: https://open-compute.dev/docs/extension/
 - Products and bindings: https://open-compute.dev/docs/products/
 - Compatibility and limits: https://open-compute.dev/docs/reference/

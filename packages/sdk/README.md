@@ -53,6 +53,10 @@ requests to `api.cloudflare.com`.
   `client.openCompute` only.
 - Other operations that `ocd` supports but the pinned official SDK does not
   implement remain deliberately unexposed.
+- Container management uses the fixed cf route subset. The pinned official SDK
+  has no Container methods, so the facade does not expose them. The generated
+  surface report records all 13 route exclusions. The 65-member tenant runtime
+  API is a separate contract. See the [Container guide](https://open-compute.dev/docs/containers/).
 
 ## Errors
 

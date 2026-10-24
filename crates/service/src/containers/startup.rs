@@ -8,6 +8,8 @@ use open_compute_storage::containers::{
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Startup {
+    pub directory_snapshots:
+        Option<Vec<open_compute_storage::containers::ContainerDirectoryRestore>>,
     pub image: Option<String>,
     pub container_snapshot_id: Option<ResourceId>,
     pub instance_profile: Option<open_compute_core::containers::ContainerInstanceProfile>,
@@ -53,6 +55,7 @@ impl ContainerService {
                 .ok_or_else(unavailable)?,
         )?;
         let empty = Startup {
+            directory_snapshots: None,
             image: None,
             container_snapshot_id: None,
             instance_profile: None,
@@ -80,6 +83,22 @@ impl ContainerService {
             || (startup.image.is_some() && startup.container_snapshot_id.is_some())
         {
             return Err(unavailable());
+        }
+        let directory_snapshots = if request.startup.is_some() {
+            startup.directory_snapshots.clone().unwrap_or_default()
+        } else {
+            frozen
+                .map(|lease| lease.directory_snapshots.clone())
+                .unwrap_or_default()
+        };
+        let mut paths = std::collections::BTreeSet::new();
+        for directory in &directory_snapshots {
+            crate::container_broker::BrokerDirectoryRestore::validate_mount_point(
+                &directory.mount_point,
+            )?;
+            if !paths.insert(directory.mount_point.as_str()) {
+                return Err(wire::invalid());
+            }
         }
         let snapshot_id = if request.startup.is_some() {
             startup.container_snapshot_id
@@ -227,6 +246,7 @@ impl ContainerService {
             self.application_configuration(app)?.0.image
         };
         Ok(ContainerExecutionSpec {
+            directory_snapshots,
             image_sha256: if request.startup.is_none() {
                 existing
                     .as_ref()
@@ -304,11 +324,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(snapshot.container_snapshot_id, Some(id));
+        let directories: Startup = serde_json::from_value(serde_json::json!({
+            "directorySnapshots": [
+                {"snapshotId":id.to_string(),"mountPoint":"/saved"},
+                {"snapshotId":null,"mountPoint":"/empty"}
+            ]
+        }))
+        .unwrap();
+        let plan = directories.directory_snapshots.unwrap();
+        assert_eq!(plan[0].snapshot_id, Some(id));
+        assert_eq!(plan[1].snapshot_id, None);
+        assert_eq!(plan[1].mount_point.as_str(), "/empty");
         for rejected in [
             serde_json::json!({"instanceProfile":"invoice-1"}),
             serde_json::json!({"instanceName":"lite"}),
             serde_json::json!({"containerSnapshotId":"a".repeat(64)}),
-            serde_json::json!({"directorySnapshots":[]}),
+            serde_json::json!({"directorySnapshots":[{"mountPoint":"/a"}]}),
+            serde_json::json!({"directorySnapshots":[{"snapshotId":"bad","mountPoint":"/a"}]}),
+            serde_json::json!({"directorySnapshots":[{"snapshotId":null,"mountPoint":"/a/../b"}]}),
         ] {
             assert!(serde_json::from_value::<Startup>(rejected).is_err());
         }

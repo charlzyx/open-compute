@@ -123,11 +123,6 @@ async fn workflow_snapshot_fresh_host_replays_committed_steps_with_fresh_generat
     }
     let source_config = storage_config(original.storage.data_dir().root());
     let key = inspect_master_key(&source_config).unwrap();
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap();
     let release = platform_capabilities(&PlatformConfig::local_test_config())
         .unwrap()
         .release;
@@ -171,7 +166,7 @@ async fn workflow_snapshot_fresh_host_replays_committed_steps_with_fresh_generat
     assert_eq!(snapshot.manifest.source_release, release);
     let fresh = tempfile::Builder::new()
         .prefix("workflow-restored-")
-        .tempdir_in(workspace.join(".temp/workflow-run"))
+        .tempdir()
         .unwrap();
     let data = fresh.path().join("fresh-host");
     let restore = RestoreTarget::acquire(&data).unwrap();

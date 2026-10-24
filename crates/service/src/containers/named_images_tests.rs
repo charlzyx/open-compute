@@ -370,6 +370,7 @@ async fn durable_object_scheduling_preserves_named_version_images_and_requires_e
         .service
         .capture_snapshot(
             SnapshotRequest {
+                directory: None,
                 source: owner.stop(&first),
                 name: Some("blue".into()),
             },

@@ -62,17 +62,26 @@ pub(super) async fn register(
     {
         return Err(invalid());
     }
+    let mut directories_ready = lease.directory_snapshots.is_empty();
     for name in [
         lease.lease_key.clone(),
         format!("{}-proxy", lease.lease_key),
     ] {
-        verify_existing(state, &name, &lease, &startup).await?;
+        let existing = verify_existing(state, &name, &lease, &startup).await?;
+        if name == lease.lease_key && existing.is_some() {
+            directories_ready = true;
+        }
     }
     let fenced = cleanup || state.journal.contains(&lease.lease_key)?;
+    if !fenced && directory_start::helper(state, &lease).await?.is_some() {
+        return Err(invalid());
+    }
     state.unknown.lock().await.remove(&lease.lease_key);
     leases.insert(
         lease.lease_key.clone(),
         Arc::new(Mutex::new(LeaseEntry {
+            directories_ready: directories_ready && !fenced,
+            directory_archives: directory::Archives::new(lease.directory_snapshots.len()),
             fenced,
             lease,
             startup,
@@ -88,6 +97,7 @@ pub(super) async fn register(
 }
 
 fn fence(entry: &mut LeaseEntry) {
+    entry.directory_archives.clear();
     entry.fenced = true;
     entry.generation_cancel.cancel();
     entry.relay = None;

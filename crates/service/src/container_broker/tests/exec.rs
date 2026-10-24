@@ -281,7 +281,7 @@ fn durable_object_exec_credentials_come_from_registration_and_fixed_helper() {
     )
     .unwrap();
     let command = json!([
-        crate::container_broker::helper::PATH,
+        crate::container_broker::helper::NATIVE_EXEC_PATH,
         "--open-compute-exec",
         "a".repeat(64)
     ]);
@@ -317,12 +317,12 @@ fn durable_object_exec_credentials_come_from_registration_and_fixed_helper() {
     for command in [
         json!(["application"]),
         json!([
-            crate::container_broker::helper::PATH,
+            crate::container_broker::helper::NATIVE_EXEC_PATH,
             "--open-compute-exec",
             "bad"
         ]),
         json!([
-            crate::container_broker::helper::PATH,
+            crate::container_broker::helper::NATIVE_EXEC_PATH,
             "--open-compute-exec",
             "a".repeat(64),
             "0:0"
@@ -397,4 +397,67 @@ fn durable_object_main_preserves_argv_and_verifies_the_bound_helper() {
         default.prepare_create(&base, &lease.lease_key).unwrap(),
         base
     );
+}
+
+#[test]
+fn native_private_exec_resolves_the_qualified_mount_for_each_policy() {
+    use open_compute_storage::containers::ContainerSchedulingPolicy;
+
+    let mounted = crate::container_broker::helper::mount("qualified-helper");
+    let expected_path = format!("{}/helper", mounted[0]["Target"].as_str().unwrap());
+    for policy in [
+        ContainerSchedulingPolicy::Default,
+        ContainerSchedulingPolicy::DurableObject,
+    ] {
+        let mut lease = lease();
+        lease.scheduling_policy = policy;
+        let effective = EffectiveStartup::from_image(
+            &json!({"Config":{"User":"image-user","Cmd":["application"]}}),
+            &lease,
+        )
+        .unwrap();
+        // The request records the pinned native producer's command.
+        let command = json!([
+            "/opt/open-compute/exec/helper",
+            "--open-compute-exec",
+            "b".repeat(64)
+        ]);
+        let actual: Value = serde_json::from_slice(
+            &effective
+                .prepare_exec(&serde_json::to_vec(&json!({"Cmd":command})).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(actual["Cmd"][0], expected_path);
+        assert_eq!(actual["Cmd"][1], command[1]);
+        assert_eq!(actual["Cmd"][2], command[2]);
+        if policy == ContainerSchedulingPolicy::DurableObject {
+            assert_eq!(actual["User"], "0:0");
+            assert_eq!(actual["Cmd"].as_array().unwrap().len(), 4);
+            assert_eq!(actual["Cmd"][3], "image-user");
+        } else {
+            assert!(actual.get("User").is_none());
+            assert_eq!(actual["Cmd"].as_array().unwrap().len(), 3);
+        }
+        for invalid in [
+            json!(["/opt/open-compute/exec/helper", "--other", "b".repeat(64)]),
+            json!([
+                "/opt/open-compute/exec/helper",
+                "--open-compute-exec",
+                "bad"
+            ]),
+            json!([
+                "/opt/open-compute/exec/helper",
+                "--open-compute-exec",
+                "b".repeat(64),
+                "extra"
+            ]),
+        ] {
+            assert!(
+                effective
+                    .prepare_exec(&serde_json::to_vec(&json!({"Cmd":invalid})).unwrap())
+                    .is_err()
+            );
+        }
+    }
 }

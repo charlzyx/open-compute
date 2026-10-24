@@ -14,6 +14,46 @@ fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 
 
+class AgentLogs(unittest.TestCase):
+    def test_only_fixed_forwarding_counts_leave_the_owned_log(self):
+        parent = HERE.parent.parent / '.temp/agent-log-tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as directory:
+            home = Path(directory)
+            path = home / '_lima/colima-fixture/ha.stderr.log'
+            path.parent.mkdir(parents=True)
+            path.write_text('private-canary-token https://private.example/?signed=canary\n'
+                            'SSH server does not seem to be running on vsock port\n'
+                            'Forwarding TCP 127.0.0.1:1234\n'
+                            'Not forwarding TCP 0.0.0.0:22\n'
+                            'failed to set up forwarding tcp port 1234: private-canary-token\n')
+            result = fixture.agent_forwarding(home)
+            self.assertEqual(result, {'available': True, 'truncated': False,
+                'sshVsockFallback': 1, 'tcpForwardFailures': 1, 'tcpForwards': 1})
+            self.assertNotIn('canary', json.dumps(result))
+            self.assertNotIn('private.example', json.dumps(result))
+            path.write_text('Forwarding TCP old\n' + 'x' * (256 << 10)
+                            + '\nForwarding TCP retained\n')
+            result = fixture.agent_forwarding(home)
+            self.assertTrue(result['truncated'])
+            self.assertEqual(result['tcpForwards'], 1)
+
+    def test_missing_log_is_explicit_and_a_symlink_is_never_followed(self):
+        parent = HERE.parent.parent / '.temp/agent-log-tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as directory:
+            home = Path(directory)
+            self.assertEqual(fixture.agent_forwarding(home), {'available': False})
+            target = home / 'preserved'
+            target.write_text('private canary')
+            path = home / '_lima/colima-fixture/ha.stderr.log'
+            path.parent.mkdir(parents=True)
+            path.symlink_to(target)
+            with self.assertRaises(OSError):
+                fixture.agent_forwarding(home)
+            self.assertEqual(target.read_text(), 'private canary')
+
+
 class MacEngine(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='oc-ci-', dir='/tmp')
@@ -30,6 +70,8 @@ class MacEngine(unittest.TestCase):
             self.calls.append(args)
             env = kwargs['env']
             self.assertEqual(env['COLIMA_HOME'], str(self.root / 'colima'))
+            self.assertTrue(Path(env['COLIMA_HOME']).is_dir())
+            self.assertEqual(Path(env['COLIMA_HOME']).stat().st_mode & 0o777, 0o700)
             self.assertEqual(env['DOCKER_CONFIG'], str(self.root / 'docker-config'))
             self.assertNotIn('LIMA_HOME', env)
             stage = args[3] if '--profile' in args else 'version'
@@ -75,6 +117,7 @@ class MacEngine(unittest.TestCase):
             patch.object(fixture.os, 'getuid', return_value=501),
             patch.object(fixture.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 50 << 30})()),
             patch.object(fixture.shutil, 'which', return_value='/controlled/tool'),
+            patch.object(fixture, 'engine_peer_identity', return_value={'uid': 501, 'gid': 20}),
             patch.object(fixture.subprocess, 'run', run),
             patch.object(fixture.subprocess, 'Popen', Child),
             patch.object(Path, 'is_socket', return_value=True)]

@@ -6,7 +6,7 @@ use futures::StreamExt;
 use open_compute_core::PlatformError;
 use serde_json::{Value, json};
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 mod anchor;
 pub(super) mod callback;
@@ -186,30 +186,49 @@ impl Engine {
 
     pub(super) async fn send_archive(
         &self,
+        method: Method,
         path: &str,
-        file: tokio::fs::File,
-        size: u64,
+        mut file: tokio::fs::File,
+        range: std::ops::Range<u64>,
     ) -> Result<reqwest::Response, PlatformError> {
         self.ensure_active().await?;
-        let stream = futures::stream::try_unfold((file, size), |(mut file, left)| async move {
-            let mut buffer = vec![0_u8; 65_536.min(left.max(1) as usize)];
-            let count = file.read(&mut buffer).await?;
-            if left == 0 {
-                if count != 0 {
+        let size = range
+            .end
+            .checked_sub(range.start)
+            .filter(|size| *size > 0)
+            .ok_or_else(invalid)?;
+        let metadata = file.metadata().await.map_err(|_| invalid())?;
+        let file_size = metadata.len();
+        if !metadata.is_file()
+            || range.end > file_size
+            || (method != Method::POST && method != Method::PUT)
+            || (method == Method::POST && (range.start != 0 || range.end != file_size))
+        {
+            return Err(invalid());
+        }
+        file.seek(std::io::SeekFrom::Start(range.start))
+            .await
+            .map_err(|_| invalid())?;
+        let stream =
+            futures::stream::try_unfold((file, size), move |(mut file, left)| async move {
+                if left == 0 {
+                    return Ok(None);
+                }
+                let mut buffer = vec![0_u8; left.min(65_536) as usize];
+                let count = file.read(&mut buffer).await?;
+                if count == 0 {
+                    return Err(std::io::Error::other("archive truncated"));
+                }
+                if count as u64 == left && file.metadata().await?.len() != file_size {
                     return Err(std::io::Error::other("archive size changed"));
                 }
-                return Ok(None);
-            }
-            if count == 0 {
-                return Err(std::io::Error::other("archive truncated"));
-            }
-            buffer.truncate(count);
-            Ok(Some((buffer, (file, left - count as u64))))
-        });
+                buffer.truncate(count);
+                Ok(Some((buffer, (file, left - count as u64))))
+            });
         tokio::time::timeout(
             Duration::from_secs(180),
             self.client
-                .post(format!("http://localhost{path}"))
+                .request(method, format!("http://localhost{path}"))
                 .header("Content-Type", "application/x-tar")
                 .header("Content-Length", size)
                 .body(reqwest::Body::wrap_stream(stream))

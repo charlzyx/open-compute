@@ -7,7 +7,7 @@ upstream type 或 cf field 的存在不代表 open-compute 会注入对应 capab
 
 ## 当前排除项
 
-- Containers 与 Cloudchamber
+- [Container 管理子集](/zh/docs/containers/#管理边界)之外的 Cloudchamber 操作
 - Hyperdrive
 - Analytics Engine
 - 完整 Workers for Platforms 与 dispatch namespace
@@ -19,6 +19,6 @@ upstream type 或 cf field 的存在不代表 open-compute 会注入对应 capab
 
 Dynamic Worker Loader 已支持文档所列的本机 limit 与偏差。完整 Workers for Platforms、dispatch namespace，以及实验性的 `allowExperimental` 与 `streamingTails` 控制仍不在支持范围内。AI Search 和 Markdown Conversion 不会开放其它 Workers AI 方法。
 
-Artifacts 是当前受支持产品，见 [Artifacts](/zh/docs/artifacts/)。Browser Run 在显式配置 backend 后可用，限制见 [Browser Run](/zh/docs/browser-run/)。Containers 仍处于规划阶段，尚不可部署。
+Artifacts 是当前受支持产品，见 [Artifacts](/zh/docs/artifacts/)。Browser Run 在显式配置 backend 后可用，限制见 [Browser Run](/zh/docs/browser-run/)。Containers 需要独立运维的 Linux Broker；API 与管理边界见 [Containers](/zh/docs/containers/)。
 
 参见[产品](/zh/docs/products/)与[兼容性](/zh/docs/platform/compatibility/)。

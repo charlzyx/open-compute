@@ -9,6 +9,8 @@ use rusqlite::{Connection, OptionalExtension as _, params};
 
 mod applications;
 mod deletion;
+mod directory_restores;
+pub use directory_restores::ContainerDirectoryRestore;
 mod leases;
 mod managed;
 mod management;

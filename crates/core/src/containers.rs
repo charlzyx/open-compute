@@ -3,6 +3,9 @@
 use crate::{ErrorCode, PlatformError};
 use serde::{Deserialize, Serialize};
 
+mod directory;
+pub use directory::ContainerDirectoryPath;
+
 /// Provider-enforced limits for one application process and its ephemeral filesystem.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

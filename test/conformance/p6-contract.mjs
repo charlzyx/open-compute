@@ -277,6 +277,8 @@ export function buildCapability(
       requestMediaType: vendorRequestMediaType(id),
     });
   }
+  if (new Set(routes.map((route) => route.id)).size !== routes.length)
+    throw new Error("duplicate management capability route");
   const declaredDeviations = new Set(source.managementApi.deviations);
   const referencedDeviations = new Set();
   for (const route of routes) {
@@ -1645,6 +1647,7 @@ export function validateCommitted({ openapiPath, cfRoot, sdkRoot } = {}) {
     ...manifest.deferredOperations.map((item) => item.operation),
     ...manifest.unsupportedOperations.map((item) => item.operation),
     ...manifest.observedMultipartOperations.map((item) => item.operation),
+    ...(manifest.clientObservedOperations ?? []).map((item) => item.operation),
   ]) {
     if (!routeIds.includes(id))
       throw new Error(`capability route inventory is missing ${id}`);

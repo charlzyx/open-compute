@@ -277,7 +277,10 @@ pub(super) fn prepare_create(
         host.insert("SecurityOpt".into(), json!(["no-new-privileges:true"]));
         host.insert("CapDrop".into(), json!(["NET_RAW"]));
         host.insert("Tmpfs".into(), run_tmpfs(resources.memory_bytes));
-        host.insert("Mounts".into(), super::helper::mount(helper_volume));
+        host.insert(
+            "Mounts".into(),
+            super::directory::mounts(lease, helper_volume),
+        );
     }
     let mut identity = labels(lease, if sidecar { "proxy" } else { "application" });
     if !sidecar {
@@ -424,7 +427,7 @@ pub(super) fn verify_inspect(
         return Err(invalid());
     }
     if role == "application" {
-        super::helper::verify_mounts(value, helper_volume)?;
+        super::directory::verify_mounts(value, lease, helper_volume)?;
     }
     let cap_add = host.get("CapAdd");
     let expected_network = if role == "proxy" {

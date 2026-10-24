@@ -225,3 +225,7 @@ allow = [{ account_id = "<instance-id>", worker_id = "<worker-id>", entrypoint =
 `hardening.emergency_reserve_bytes` 必须低于 `[data]` 的 hard reserve。
 
 Browser Run 不默认启用，backend 与容量字段见 [Browser Run](/zh/docs/browser-run/)。
+
+## Containers
+
+`[containers]` 是可选配置。未配置时，实例不准入 Containers。应填写已通过资格检查的 Broker socket、合同摘要、实例与快照上限，以及资源上限。Broker 使用独立配置文件。参见 [Container 配置](/zh/docs/containers/#实例配置)。

@@ -17,6 +17,8 @@ printf '%s\n' "$allocator" > "$evidence/allocator.txt"
 printf '%s\n' "${allocator_options[@]}" > "$evidence/allocator-bazel-option.txt"
 uname -sr > "$evidence/build-kernel.txt"
 sha256sum test/glibc-compat/Dockerfile > "$evidence/builder.sha256"
+sha256sum test/glibc-compat/build-workerd.sh > "$evidence/build-script.sha256"
+printf '%s\n' cxx > "$evidence/io-backend.txt"
 test "$(getconf GNU_LIBC_VERSION)" = 'glibc 2.28'
 getconf GNU_LIBC_VERSION > "$evidence/build-glibc.txt"
 clang --version > "$evidence/clang.txt"
@@ -45,7 +47,7 @@ CONFIG
 cp .local/bazelrc "$evidence/compat.bazelrc"
 if [ "$allocator" = system ]; then
   bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel cquery \
-    'deps(//src/workerd/server:workerd)' --config=release_linux --strip=always \
+    'deps(//src/workerd/server:workerd)' --config=release_linux --strip=always --//:io_backend=cxx \
     --incompatible_enable_proto_toolchain_resolution=false \
     --@rules_rust//:extra_exec_rustc_flags=-Cstrip=none \
     "${allocator_options[@]}" --output=label > "$evidence/configured-dependencies.txt"
@@ -58,7 +60,7 @@ if any(label.partition('//')[2] == 'tcmalloc:tcmalloc' for label in labels):
 PYQUERY
 fi
 bazel --output_user_root=/var/tmp/open-compute-glibc228/bazel build \
-  //src/workerd/server:workerd --config=release_linux --strip=always \
+  //src/workerd/server:workerd --config=release_linux --strip=always --//:io_backend=cxx \
   --disk_cache=/var/tmp/open-compute-glibc228/action-cache \
   --repository_cache=/var/tmp/open-compute-glibc228/repository-cache \
   --experimental_disk_cache_gc_max_size=6G \
@@ -73,9 +75,11 @@ if [ "$allocator" = system ]; then
   python test/glibc-compat/check-allocator.py "$evidence/workerd" > "$evidence/allocator-symbols.json"
 fi
 "$evidence/workerd" --version > "$evidence/version.txt"
-test "$(cat "$evidence/version.txt")" = 'workerd 2026-09-30'
+expected_version="$(python -c 'import json; print(json.load(open("packages/runtime/workerd.lock.json"))["expectedVersionOutput"])')"
+test "$(cat "$evidence/version.txt")" = "$expected_version"
 "$evidence/workerd" container-protocol-version > "$evidence/protocol.txt"
-test "$(cat "$evidence/protocol.txt")" = 'open-compute-container-protocol-v3'
+expected_protocol="$(python -c 'import json; print(json.load(open("packages/runtime/workerd.lock.json"))["source"]["buildInputs"]["privateContainerProtocol"])')"
+test "$(cat "$evidence/protocol.txt")" = "$expected_protocol"
 "$evidence/workerd" compatibility-catalog > "$evidence/catalog.json"
 python - "$evidence/catalog.json" <<'PY'
 import hashlib, json, pathlib, sys

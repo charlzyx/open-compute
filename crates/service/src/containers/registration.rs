@@ -22,7 +22,35 @@ impl ContainerService {
             .effective_resources
             .validate(self.provider.resources())?;
         let image = self.admitted_image(&lease.effective_image_sha256)?;
+        let directories = repo.directory_lease_inputs(
+            self.instance_id(),
+            lease.identity,
+            &lease.opaque_engine_key,
+        )?;
+        let directories = directories
+            .into_iter()
+            .map(|(entry, image)| {
+                let archive = image
+                    .map(|image| {
+                        if self.admitted_image(&image.manifest_sha256)? != image
+                            || image.diff_ids.len() != 1
+                        {
+                            return Err(unavailable());
+                        }
+                        Ok(crate::container_broker::BrokerDirectoryArchive {
+                            sha256: hex::encode(image.diff_ids[0]),
+                            bytes: image.unpacked_bytes,
+                        })
+                    })
+                    .transpose()?;
+                Ok(crate::container_broker::BrokerDirectoryRestore {
+                    mount_point: entry.mount_point,
+                    archive,
+                })
+            })
+            .collect::<Result<Vec<_>, PlatformError>>()?;
         Ok(BrokerLease {
+            directory_snapshots: directories,
             application_id: app.id,
             scheduling_policy: app.scheduling_policy,
             owner_key: lease.identity.owner_key(self.instance_id()),

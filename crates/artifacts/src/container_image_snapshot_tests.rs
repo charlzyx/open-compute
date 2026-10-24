@@ -8,7 +8,7 @@ fn spool(bytes: &[u8]) -> File {
     file
 }
 
-fn sealed(graph: &Graph) -> (File, crate::ArtifactRef, VerifiedContainerImage) {
+pub(super) fn sealed(graph: &Graph) -> (File, crate::ArtifactRef, VerifiedContainerImage) {
     let image = graph.verify(limits()).unwrap();
     let manifest = serde_json::to_vec(&graph.manifest).unwrap();
     let bytes = write_container_image_archive(

@@ -58,3 +58,7 @@ Backup 和 scheduler recovery 必须满足 help 与[运维指南](/zh/docs/opera
 `ocd instance setup --name dev --yes` 通过运行中的 daemon 创建全新实例。`--config` 和 `--data-dir` 独立指定配置路径与显式 `[data].path`；`--autostart=false`、`--start=false` 可关闭两项默认启动选择。不带 `--yes` 时需要交互确认；已有配置或未知非空数据不会被覆盖。
 
 `ocd cf` 成功后会替换 launcher process，因此最终 stdout、stderr、信号和退出码由 cf 拥有。
+
+## Container Broker
+
+`ocd container-broker --broker-config /absolute/path/broker.toml` 以前台独立进程运行 Broker。该命令拒绝 `--system`、`--config` 和 `--instance`。operator 管理 Broker 服务与 Engine；作用域 daemon 不监督 Broker。参见 [Containers](/zh/docs/containers/)。

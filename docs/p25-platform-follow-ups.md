@@ -14,20 +14,21 @@
 
 [P23 基础实现](implemented/p23-cloudflare-containers.md) 已验证用户当时指定的 13 个 Docker operation family。
 2026-10-12，用户将 P23 目标扩展为完整 stable Container API 与 snapshot capture/restore。
-当前固定清单有 65 个成员；成员资格仍为 `blocked`。
-快照持久化、跨对象与重启恢复、原生 `setInactivityTimeout()`、TCP、WebSocket、HTTPS 拦截及远端对照由 P23 继续验收。
-这些能力不再作为 P25 的独立后续任务。
+当前固定清单的 65 个成员均声明为 `supported`。
+2026-10-23（UTC），P23 的三项真实产品用例、coverage、最终 Gate 子进程及三宿主候选包已通过。
+最终 Gate 外层守卫失败与独立摘要补证分别保留；正式 tag 工作流与公开发布尚未执行。
+上述验收由 P23 记录，不作为 P25 的后续实现任务。
 候选实现、正式 runtime、coverage、最终 Gate 与 package 的证据由 P23 结果页和 [Containers 运维](references/containers.md) 记录。
 基础路径或专项检查通过不改变完整成员资格。
 
 以下能力仍为 P25 的后续范围。
 
 - [ ] 实现 application 主进程 stdout/stderr 采集。
-  `observability.logs` 当前只保存请求意图；`enabled = true` 不证明实际采集。
+      `observability.logs` 当前只保存请求意图；`enabled = true` 不证明实际采集。
 - [ ] 在替换外部 Docker 前，验证可嵌入 provider 与同一私有子集的有效资源限制、离线分发和 lifecycle。
-  未通过资格前继续使用 operator-owned Broker，不添加双路径或自动 fallback。
+      未通过资格前继续使用 operator-owned Broker，不添加双路径或自动 fallback。
 - [ ] 为 qualification probe 的 create 结果未知／Broker crash 增加有身份证明的恢复流程。
-  当前 operator 核对实际名称、image digest 和 Docker ID 后清理；execution lease 的持久 fencing 保持独立。
+      当前 operator 核对实际名称、image digest 和 Docker ID 后清理；execution lease 的持久 fencing 保持独立。
 
 ## 已转交或撤销的方向
 

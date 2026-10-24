@@ -19,7 +19,7 @@ async fn workflow_step_uses_kv_d1_r2_do_queue_and_replay_preserves_external_effe
     let root = repo_root();
     let temp = tempfile::Builder::new()
         .prefix("workflow-products-")
-        .tempdir_in(root.join(".temp/workflow-run"))
+        .tempdir()
         .unwrap();
     let evidence = process_crash::Evidence(Some(temp));
     let temp = evidence.0.as_ref().unwrap();

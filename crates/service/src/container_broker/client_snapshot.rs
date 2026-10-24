@@ -21,6 +21,43 @@ impl QualifiedContainerProvider {
         max_bytes: u64,
         spool_directory: &Path,
     ) -> Result<(std::fs::File, u64), PlatformError> {
+        self.capture_filesystem(
+            lease_key,
+            expected_start_identity,
+            max_bytes,
+            spool_directory,
+            None,
+        )
+        .await
+    }
+
+    /// Capture directory contents under the same process fence and byte budget as rootfs capture.
+    pub async fn capture_directory_snapshot(
+        &self,
+        lease_key: &str,
+        expected_start_identity: &str,
+        max_bytes: u64,
+        spool_directory: &Path,
+        directory: &open_compute_core::containers::ContainerDirectoryPath,
+    ) -> Result<(std::fs::File, u64), PlatformError> {
+        self.capture_filesystem(
+            lease_key,
+            expected_start_identity,
+            max_bytes,
+            spool_directory,
+            Some(directory.clone()),
+        )
+        .await
+    }
+
+    async fn capture_filesystem(
+        &self,
+        lease_key: &str,
+        expected_start_identity: &str,
+        max_bytes: u64,
+        spool_directory: &Path,
+        directory: Option<open_compute_core::containers::ContainerDirectoryPath>,
+    ) -> Result<(std::fs::File, u64), PlatformError> {
         if !self.contract.snapshots
             || !opaque(lease_key)
             || !opaque(expected_start_identity)
@@ -32,6 +69,7 @@ impl QualifiedContainerProvider {
         let request = SnapshotCaptureRequest {
             start_identity: expected_start_identity.to_owned(),
             max_bytes,
+            directory,
         };
         tokio::time::timeout(Duration::from_secs(185), async {
             let response = self

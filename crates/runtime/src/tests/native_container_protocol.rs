@@ -3,15 +3,16 @@ use super::*;
 #[tokio::test]
 async fn native_container_protocol_requires_the_verified_executable_contract() {
     for (command, accepted) in [
-        ("printf 'open-compute-container-protocol-v3\\n'", true),
+        ("printf 'open-compute-container-protocol-v4\\n'", true),
+        ("printf 'open-compute-container-protocol-v3\\n'", false),
         ("printf 'open-compute-container-protocol-v2\\n'", false),
         ("printf 'open-compute-container-protocol-v1\\n'", false),
-        ("printf 'open-compute-container-protocol-v4\\n'", false),
+        ("printf 'open-compute-container-protocol-v5\\n'", false),
         (
-            "printf 'open-compute-container-protocol-v3\\n'; exit 1",
+            "printf 'open-compute-container-protocol-v4\\n'; exit 1",
             false,
         ),
-        ("printf 'open-compute-container-protocol-v3\\nextra'", false),
+        ("printf 'open-compute-container-protocol-v4\\nextra'", false),
         ("printf '%0200d' 0", false),
     ] {
         let dir = TempDir::new().unwrap();

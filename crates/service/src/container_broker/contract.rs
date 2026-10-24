@@ -12,6 +12,8 @@ use std::path::PathBuf;
 pub(super) struct SnapshotCaptureRequest {
     pub(super) start_identity: String,
     pub(super) max_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) directory: Option<open_compute_core::containers::ContainerDirectoryPath>,
 }
 
 /// Independently operated Broker settings; ordinary daemon startup never launches it.
@@ -131,7 +133,7 @@ pub struct ProviderContract {
 
 impl ProviderContract {
     /// Current required lease schema, including trusted scheduling policy.
-    pub const VERSION: u32 = 3;
+    pub const VERSION: u32 = 4;
 
     /// Digest the canonical contract bytes without private host topology.
     pub fn sha256(&self) -> Result<String, PlatformError> {
@@ -140,10 +142,50 @@ impl ProviderContract {
     }
 }
 
+/// Exact bounded tar selected by the daemon's retained directory-backup authority.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrokerDirectoryArchive {
+    /// Digest of the original uncompressed directory tar, not its OCI transport.
+    pub sha256: String,
+    /// Exact uncompressed tar bytes, including headers and padding.
+    pub bytes: u64,
+}
+
+/// Immutable destination and optional backup for one execution-owned directory clone.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrokerDirectoryRestore {
+    /// Canonical absolute destination inside the Container.
+    pub mount_point: open_compute_core::containers::ContainerDirectoryPath,
+    /// Verified directory archive, or none for a new empty directory.
+    #[serde(deserialize_with = "serde::Deserialize::deserialize")]
+    pub archive: Option<BrokerDirectoryArchive>,
+}
+
+impl BrokerDirectoryRestore {
+    pub(crate) fn validate_mount_point(
+        path: &open_compute_core::containers::ContainerDirectoryPath,
+    ) -> Result<(), PlatformError> {
+        let path = path.as_str();
+        if path == "/"
+            || path == super::helper::DIRECTORY
+            || path
+                .strip_prefix(super::helper::DIRECTORY)
+                .is_some_and(|tail| tail.starts_with('/'))
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
+
 /// Ocd-authorized immutable execution policy, registered before native create/start.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrokerLease {
+    /// Frozen directory clones; native create JSON cannot alter their destinations or inputs.
+    pub directory_snapshots: Vec<BrokerDirectoryRestore>,
     /// Opaque, non-reusable engine key from persisted authority.
     pub lease_key: String,
     /// Stable object owner hashed from the persisted instance, namespace and object identity.
@@ -189,6 +231,24 @@ impl BrokerLease {
         {
             return Err(invalid());
         }
+        let mut paths = std::collections::BTreeSet::new();
+        let mut archive_bytes = 0_u64;
+        for directory in &self.directory_snapshots {
+            let path = directory.mount_point.as_str();
+            BrokerDirectoryRestore::validate_mount_point(&directory.mount_point)?;
+            if !paths.insert(path) {
+                return Err(invalid());
+            }
+            if let Some(archive) = &directory.archive {
+                if !opaque(&archive.sha256) || archive.bytes == 0 {
+                    return Err(invalid());
+                }
+                archive_bytes = archive_bytes
+                    .checked_add(archive.bytes)
+                    .filter(|bytes| *bytes <= contract.max_image_bytes)
+                    .ok_or_else(invalid)?;
+            }
+        }
         self.startup.validate()?;
         self.resources.validate(contract.resources)
     }
@@ -225,6 +285,8 @@ pub(super) struct ImageSize {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderLeaseObservation {
+    /// Frozen directory volumes are prepared; this is not a process admission grant.
+    pub directories_prepared: bool,
     /// Hash of the verified Docker ID and process start timestamp, empty before observation.
     pub start_identity: String,
     /// Verified engine configuration image digest.

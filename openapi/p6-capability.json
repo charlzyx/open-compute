@@ -1709,6 +1709,136 @@
         "requestMediaType": "none"
       },
       {
+        "id": "GET /accounts/{account_id}/containers/applications",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/applications",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/applications",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/me",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/me",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/image-preparations",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/image-preparations",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/registries/{domain}/credentials",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/registries/{domain}/credentials",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "PATCH /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "PATCH",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "DELETE /accounts/{account_id}/containers/applications/{application_id}",
+        "method": "DELETE",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "POST /accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "method": "POST",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "json"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/rollouts/{rollout_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/instances-v2",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
+        "id": "GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+        "method": "GET",
+        "path": "/accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}",
+        "status": "supported_with_deviation",
+        "source": "cf-1.0.0-beta.12-containers",
+        "constraint": "Single-machine Container management subset; qualified operator-owned Broker required. See OC-CONTAINERS-MGMT-001 for rollout, observability and provider limits.",
+        "deviations": ["OC-CONTAINERS-MGMT-001"],
+        "requestMediaType": "none"
+      },
+      {
         "id": "GET /open-compute/capabilities",
         "method": "GET",
         "path": "/open-compute/capabilities",
@@ -2128,7 +2258,8 @@
       "OC-DEPLOY-001",
       "OC-D1-001",
       "OC-AI-SEARCH-TOKEN-001",
-      "OC-OBSERVABILITY-001"
+      "OC-OBSERVABILITY-001",
+      "OC-CONTAINERS-MGMT-001"
     ],
     "legacyRoutes": [
       {

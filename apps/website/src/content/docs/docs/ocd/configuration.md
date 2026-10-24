@@ -225,3 +225,7 @@ The instance template also includes `[instance]`, `[auth]`, `[runtime]`, `[cache
 `hardening.emergency_reserve_bytes` must be below the `[data]` hard reserve.
 
 Browser Run is opt-in; see [Browser Run](/docs/browser-run/) for the explicit backend and capacity fields.
+
+## Containers
+
+`[containers]` is optional. Without this section, the instance does not admit Containers. Configure a qualified Broker socket, its contract digest, reservation and snapshot ceilings, and resource ceilings. The Broker configuration is a separate file. See [Container configuration](/docs/containers/#instance-configuration).

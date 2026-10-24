@@ -127,6 +127,7 @@ fn execution(
         )
         .unwrap();
     ContainerExecutionSpec {
+        directory_snapshots: Vec::new(),
         image_sha256: target.image_sha256.unwrap(),
         resources: target.resources,
         enable_internet: false,

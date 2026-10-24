@@ -58,3 +58,7 @@ Backup and scheduler recovery commands require the offline or exclusive conditio
 `ocd instance setup --name dev --yes` creates a fresh instance through the running daemon. `--config` and `--data-dir` independently choose its configuration and explicit `[data].path`; `--autostart=false` and `--start=false` disable the two default startup choices. Without `--yes`, an interactive confirmation is required. Existing configuration or nonempty unknown data is never overwritten.
 
 Successful `ocd cf` execution replaces the launcher process, so cf owns the final stdout, stderr, signals, and exit status.
+
+## Container Broker
+
+`ocd container-broker --broker-config /absolute/path/broker.toml` runs the independent Broker in the foreground. The command rejects `--system`, `--config` and `--instance`. The operator owns its service and Engine; the scoped daemon does not supervise it. See [Containers](/docs/containers/).

@@ -23,8 +23,12 @@ Operator-owned native extensions are not a Cloudflare product Binding. They use 
 
 With an operator-configured managed browser or external CDP backend, Browser bindings, Quick Actions, DevTools and Live View are available. The browser is neither embedded nor downloaded automatically; download file delivery and some client behavior have documented limits. See [Browser Run](/docs/browser-run/).
 
+## Containers
+
+The fixed 65-member Container API includes process lifecycle, exec, HTTP, WebSocket, snapshots and directory restore. Containers require an independently operated Broker and a qualified rootful Linux Docker Engine. The daemon does not install or start either service. See [Containers](/docs/containers/) for configuration and management limits.
+
 ## Not available
 
-Containers, Hyperdrive, Analytics Engine, full Workers for Platforms, general Workers AI inference, Pipelines, Rate Limiting, and mTLS certificates are not current products. Configuration that requires an unavailable capability fails closed.
+Hyperdrive, Analytics Engine, full Workers for Platforms, general Workers AI inference, Pipelines, Rate Limiting, and mTLS certificates are not current products. Configuration that requires an unavailable capability fails closed.
 
 See [Compatibility](/docs/platform/compatibility/), [Behavior differences](/docs/platform/deviations/), [Limits](/docs/platform/limits/), and [Not available](/docs/platform/unsupported/) for the current boundaries.

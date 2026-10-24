@@ -227,7 +227,7 @@ async fn snapshot_capture_requires_positive_snapshot_qualification() {
     broker.retire().await;
 }
 
-fn archive(entries: usize) -> Vec<u8> {
+pub(super) fn archive(entries: usize) -> Vec<u8> {
     let mut archive = tar::Builder::new(Vec::new());
     for index in 0..entries {
         let mut header = tar::Header::new_ustar();
@@ -290,6 +290,85 @@ async fn running() -> (
     assert!(observed.running);
     *broker.state.snapshot_archive.lock().await = Some(archive(1));
     (broker, provider, lease, observed.start_identity)
+}
+
+#[tokio::test]
+async fn directory_snapshot_capture_is_process_bound_and_has_no_general_archive_grant() {
+    let (mut broker, provider, lease, identity) = running().await;
+    let spool_entries = || {
+        std::fs::read_dir(&broker.config.spool_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let entries_before = spool_entries();
+    let directory =
+        open_compute_core::containers::ContainerDirectoryPath::parse("/app/data").unwrap();
+    let before = broker.state.requests.lock().await.len();
+    let (mut file, size) = provider
+        .capture_directory_snapshot(
+            &lease.lease_key,
+            &identity,
+            4096,
+            &broker.config.spool_dir,
+            &directory,
+        )
+        .await
+        .unwrap();
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, archive(1));
+    assert_eq!(size, bytes.len() as u64);
+    let mut archive = tar::Archive::new(bytes.as_slice());
+    let mut entries = archive.entries().unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert_eq!(entry.header().mode().unwrap(), 0o640);
+    assert_eq!(entry.header().uid().unwrap(), 1000);
+    drop(entry);
+    assert!(entries.next().is_none());
+    let operations = broker.state.requests.lock().await[before..].to_vec();
+    assert!(
+        operations
+            .iter()
+            .any(|request| request.ends_with("/archive"))
+    );
+    assert!(
+        !operations
+            .iter()
+            .any(|request| request.ends_with("/export") || request.ends_with("/pause"))
+    );
+    let observed = provider.observe(&lease.lease_key).await.unwrap();
+    assert!(observed.running && !observed.late_operations_fenced);
+    assert_eq!(observed.start_identity, identity);
+    assert!(
+        provider
+            .capture_directory_snapshot(
+                &lease.lease_key,
+                &"f".repeat(64),
+                4096,
+                &broker.config.spool_dir,
+                &directory
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        broker
+            .client()
+            .get(format!(
+                "http://localhost/containers/{}/archive?path=/app/data",
+                lease.lease_key
+            ))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        503
+    );
+    drop(file);
+    assert_eq!(spool_entries(), entries_before);
+    provider.terminate(&lease.lease_key).await.unwrap();
+    broker.retire().await;
 }
 
 #[tokio::test]

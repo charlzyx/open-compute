@@ -139,6 +139,22 @@ class ImageWorkflowTests(unittest.TestCase):
         self.assertIn('shasum -a 256 --check', engine)
         self.assertNotIn('colima start', engine)
 
+    def test_manual_broker_diagnosis_cannot_publish_or_replace_a_gate(self):
+        source = (ROOT / '.github/workflows/container-broker-diagnostic.yml').read_text()
+        self.assertIn('workflow_dispatch:', source)
+        self.assertNotIn('push:', source)
+        self.assertIn('contents: read', source)
+        self.assertNotIn('contents: write', source)
+        self.assertIn('runs-on: macos-15-intel', source)
+        self.assertIn('arm64: false', source)
+        self.assertIn('uses: ./.github/actions/prepare-container-fixture-images', source)
+        self.assertIn('uses: ./.github/actions/setup-container-fixture-engine', source)
+        self.assertEqual(source.count('test/containers-fixture/with-ci-macos-engine.py'), 1)
+        self.assertIn('Broker qualification only; no product Gate', source)
+        self.assertNotIn('./test/gate.py', source)
+        self.assertNotIn('npm publish', source)
+        self.assertNotIn('gh release', source)
+
 
 if __name__ == '__main__':
     unittest.main()

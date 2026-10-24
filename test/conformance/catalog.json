@@ -3,14 +3,15 @@
   "managementApi": {
     "authority": "openapi/p6-capability.json",
     "status": "planned",
-    "routeCount": 214,
+    "routeCount": 227,
     "legacyRouteCount": 4,
     "deviations": [
       "OC-ACCOUNT-SUBDOMAIN-001",
       "OC-DEPLOY-001",
       "OC-D1-001",
       "OC-AI-SEARCH-TOKEN-001",
-      "OC-OBSERVABILITY-001"
+      "OC-OBSERVABILITY-001",
+      "OC-CONTAINERS-MGMT-001"
     ]
   },
   "contracts": [
@@ -693,8 +694,8 @@
     {
       "id": "containers.native",
       "product": "containers",
-      "surface": "P23 pinned stable Container and ExecProcess surface; real-runtime cases passed, but fixed 65-member compatibility qualification is incomplete",
-      "status": "blocked",
+      "surface": "P23 fixed65 stable Container and ExecProcess API, including real directory restore from the experimental producer; release qualification is separate",
+      "status": "supported",
       "sources": [
         {
           "kind": "cloudflare-workers-types",
@@ -703,8 +704,12 @@
           "sha256": "5cba0df0ed430c5ba6bdf249221c2be24f4344e539e29f2113a042a5e5d23a6f"
         }
       ],
-      "positiveCases": [],
-      "negativeCases": [],
+      "positiveCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "negativeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
       "deviations": []
     }
   ],
@@ -31030,6 +31035,591 @@
         "p6-cf-resources::fixed_cf_resource_commands_use_live_v4_authorities"
       ],
       "deviations": []
+    },
+    {
+      "id": "containers::Container::destroy:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::exec:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::getTcpPort:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::images:get#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::inspect:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::interceptAllOutboundHttp:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::interceptOutboundHttp:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::interceptOutboundHttps:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::monitor:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::running:get#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::setInactivityTimeout:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::signal:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::snapshotContainer:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::Container::start:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::dir:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::id:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::name:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshot::size:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#1",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#1",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::cwd:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::env:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::pty:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::signal:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::stderr:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::stdin:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::stdout:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecOptions::user:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecPtyOptions::cols:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerExecPtyOptions::rows:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerInfo::image:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerInfo::labels:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerSnapshot::id:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerSnapshot::name:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerSnapshot::size:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerSnapshotOptions::name:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerSnapshotRestoreParams::id:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartResources::diskMb:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartResources::memoryMib:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartResources::vcpu:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::containerSnapshot:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::containerSnapshot:property#1",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::directorySnapshots:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::enableInternet:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::entrypoint:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::env:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::image:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::image:property#1",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::instance:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ContainerStartupOptions::labels:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::DurableObjectState::container:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecOutput::exitCode:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecOutput::stderr:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecOutput::stdout:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::exitCode:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::isPty:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::kill:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::output:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::pid:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::resize:method#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::stderr:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::stdin:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
+    },
+    {
+      "id": "containers::ExecProcess::stdout:property#0",
+      "status": "supported",
+      "compileCases": ["ts::test/conformance/fixtures/containers-surface.ts"],
+      "runtimeCases": [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers"
+      ],
+      "deviations": []
     }
   ],
   "blockedGaps": [
@@ -31462,77 +32052,6 @@
         "browser_rendering::BrowserRunTargetActionResult::message:property#0",
         "browser_rendering::BrowserRunTargetOptions::liveViewUrlExpiresInMs:property#0"
       ]
-    },
-    {
-      "id": "containers.unverified-stable-members",
-      "memberIds": [
-        "containers::Container::destroy:method#0",
-        "containers::Container::exec:method#0",
-        "containers::Container::getTcpPort:method#0",
-        "containers::Container::images:get#0",
-        "containers::Container::inspect:method#0",
-        "containers::Container::interceptAllOutboundHttp:method#0",
-        "containers::Container::interceptOutboundHttp:method#0",
-        "containers::Container::interceptOutboundHttps:method#0",
-        "containers::Container::monitor:method#0",
-        "containers::Container::running:get#0",
-        "containers::Container::setInactivityTimeout:method#0",
-        "containers::Container::signal:method#0",
-        "containers::Container::snapshotContainer:method#0",
-        "containers::Container::start:method#0",
-        "containers::ContainerDirectorySnapshot::dir:property#0",
-        "containers::ContainerDirectorySnapshot::id:property#0",
-        "containers::ContainerDirectorySnapshot::name:property#0",
-        "containers::ContainerDirectorySnapshot::size:property#0",
-        "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#0",
-        "containers::ContainerDirectorySnapshotRestoreParams::mountPoint:property#1",
-        "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#0",
-        "containers::ContainerDirectorySnapshotRestoreParams::snapshot:property#1",
-        "containers::ContainerExecOptions::cwd:property#0",
-        "containers::ContainerExecOptions::env:property#0",
-        "containers::ContainerExecOptions::pty:property#0",
-        "containers::ContainerExecOptions::signal:property#0",
-        "containers::ContainerExecOptions::stderr:property#0",
-        "containers::ContainerExecOptions::stdin:property#0",
-        "containers::ContainerExecOptions::stdout:property#0",
-        "containers::ContainerExecOptions::user:property#0",
-        "containers::ContainerExecPtyOptions::cols:property#0",
-        "containers::ContainerExecPtyOptions::rows:property#0",
-        "containers::ContainerInfo::image:property#0",
-        "containers::ContainerInfo::labels:property#0",
-        "containers::ContainerSnapshot::id:property#0",
-        "containers::ContainerSnapshot::name:property#0",
-        "containers::ContainerSnapshot::size:property#0",
-        "containers::ContainerSnapshotOptions::name:property#0",
-        "containers::ContainerSnapshotRestoreParams::id:property#0",
-        "containers::ContainerStartResources::diskMb:property#0",
-        "containers::ContainerStartResources::memoryMib:property#0",
-        "containers::ContainerStartResources::vcpu:property#0",
-        "containers::ContainerStartupOptions::containerSnapshot:property#0",
-        "containers::ContainerStartupOptions::containerSnapshot:property#1",
-        "containers::ContainerStartupOptions::directorySnapshots:property#0",
-        "containers::ContainerStartupOptions::enableInternet:property#0",
-        "containers::ContainerStartupOptions::entrypoint:property#0",
-        "containers::ContainerStartupOptions::env:property#0",
-        "containers::ContainerStartupOptions::image:property#0",
-        "containers::ContainerStartupOptions::image:property#1",
-        "containers::ContainerStartupOptions::instance:property#0",
-        "containers::ContainerStartupOptions::labels:property#0",
-        "containers::DurableObjectState::container:property#0",
-        "containers::ExecOutput::exitCode:property#0",
-        "containers::ExecOutput::stderr:property#0",
-        "containers::ExecOutput::stdout:property#0",
-        "containers::ExecProcess::exitCode:property#0",
-        "containers::ExecProcess::isPty:property#0",
-        "containers::ExecProcess::kill:method#0",
-        "containers::ExecProcess::output:method#0",
-        "containers::ExecProcess::pid:property#0",
-        "containers::ExecProcess::resize:method#0",
-        "containers::ExecProcess::stderr:property#0",
-        "containers::ExecProcess::stdin:property#0",
-        "containers::ExecProcess::stdout:property#0"
-      ],
-      "reason": "Nine Directory members lack a stable producer and positive restore evidence. Official documentation conflicts with fixed-source and hosted omitted-options snapshots and with hosted restored-image inspection. The maintained P23 cases passed; remaining per-member qualification is incomplete."
     },
     {
       "id": "workers-types.20260930-unqualified-signatures",

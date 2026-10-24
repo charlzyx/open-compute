@@ -26,23 +26,27 @@ pub(super) async fn created(
     state: &BrokerState,
     operation: &Operation,
     status: u16,
-    lease: Option<&BrokerLease>,
-    startup: Option<&super::super::startup::EffectiveStartup>,
+    entry: Option<&mut LeaseEntry>,
 ) -> Result<(), PlatformError> {
     let Operation::Create(name) = operation else {
         return Ok(());
     };
-    if status != 201 || name.ends_with("-proxy") {
+    if status != 201 {
         return Ok(());
     }
-    let (id, _) = verify_existing(
-        state,
-        name,
-        lease.ok_or_else(invalid)?,
-        startup.ok_or_else(invalid)?,
-    )
-    .await?
-    .ok_or_else(invalid)?;
+    let entry = entry.ok_or_else(invalid)?;
+    if name.ends_with("-proxy") {
+        let credentials = entry.credentials.clone().ok_or_else(invalid)?;
+        state.journal.begin(&entry.lease.lease_key)?;
+        entry.fenced = true;
+        super::super::credentials::install(&state.engine, name, &credentials).await?;
+        state.journal.clear(&entry.lease.lease_key)?;
+        entry.fenced = false;
+        return Ok(());
+    }
+    let (id, _) = verify_existing(state, name, &entry.lease, &entry.startup)
+        .await?
+        .ok_or_else(invalid)?;
     state.engine.verify_helper_volume(&state.config).await?;
     state
         .engine

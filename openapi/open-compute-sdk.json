@@ -17,7 +17,7 @@
   "x-open-compute-sdk": {
     "package": "@open-compute/sdk",
     "packageVersion": "0.4.0",
-    "surfaceDigest": "edd069658d4d6d14958b062935162e69516b5f31b21eeab8240de2d3a0d653c3",
+    "surfaceDigest": "3576628a2b33b26b9d8d0cec1b151e28f23a22b5a0f7ed09507d5e9763bd539c",
     "openapiRevision": "780de88d0324b007c907a1782259b1a0e5e87c7d",
     "cloudflareSdk": "7.2.0"
   },

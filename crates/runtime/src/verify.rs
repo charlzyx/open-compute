@@ -140,7 +140,7 @@ impl VerifiedRuntime {
             || output.timed_out
             || output.stdout_overflow
             || output.stderr_overflow
-            || output.stdout != b"open-compute-container-protocol-v3\n"
+            || output.stdout != b"open-compute-container-protocol-v4\n"
         {
             return Err(PlatformError::new(
                 ErrorCode::RuntimeInvalid,

@@ -8,6 +8,9 @@ use open_compute_storage::containers::{
     ContainerRolloutCreate,
 };
 
+#[path = "directory.rs"]
+mod directory;
+
 #[path = "helper_input.rs"]
 pub(in crate::container_broker::tests) mod helper_input;
 

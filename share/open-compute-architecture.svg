@@ -161,8 +161,8 @@
   <!-- Subordinate execution group: parser is one compact job type, not a peer authority. -->
   <g filter="url(#shadow)"><rect x="1560" y="750" width="360" height="480" rx="26" fill="#eef1f6" stroke="#748096" stroke-width="2.5"/></g>
   <rect x="1590" y="780" width="48" height="30" rx="8" fill="#596575"/><text class="badge" x="1614" y="795">09</text>
-  <text class="eyebrow" x="1656" y="801" fill="#596575">SUPERVISED EXECUTION</text>
-  <text class="node-title" x="1740" y="846" text-anchor="middle">Per-instance host processes</text>
+  <text class="eyebrow" x="1656" y="801" fill="#596575">HOST EXECUTION</text>
+  <text class="node-title" x="1740" y="846" text-anchor="middle">Host execution services</text>
 
   <rect x="1590" y="872" width="300" height="96" rx="15" fill="#ffffff" stroke="#aeb7c5" stroke-width="1.6"/>
   <text class="module-title" x="1612" y="901">Jobs + extensions</text>
@@ -176,11 +176,11 @@
   <text class="module-body" x="1612" y="1047">operator-provided browser · offline start</text>
   <text class="module-body" x="1612" y="1071">CDP / managed · isolated session contexts</text>
 
-  <rect x="1590" y="1108" width="300" height="96" rx="15" fill="#f8f9fc" stroke="#8994a5" stroke-width="1.8" stroke-dasharray="8 6"/>
-  <text class="module-title" x="1612" y="1137">Container runtime</text>
-  <text class="status" x="1868" y="1137" text-anchor="end" fill="#667387">PLANNED</text>
-  <text class="module-body" x="1612" y="1165">embedded provider · Docker-subset shim</text>
-  <text class="module-body" x="1612" y="1189">app + egress sidecar · VMM / helpers</text>
+  <rect x="1590" y="1108" width="300" height="96" rx="15" fill="#f8f9fc" stroke="#8994a5" stroke-width="1.8"/>
+  <text class="module-title" x="1612" y="1137">Container Broker</text>
+  <text class="status" x="1868" y="1137" text-anchor="end" fill="#667387">CURRENT</text>
+  <text class="module-body" x="1612" y="1165">operator-owned Broker · Linux Docker</text>
+  <text class="module-body" x="1612" y="1189">private socket · app + sidecar + helper</text>
 
   <rect x="540" y="1265" width="1380" height="52" rx="12" fill="#fff0ee" stroke="#d96d64" stroke-width="1.5"/>
   <text class="body-small" x="1230" y="1296" text-anchor="middle">TENANT TRUST BOUNDARY · no data paths · no host credentials · no control API · no internal token or sibling identity</text>

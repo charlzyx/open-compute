@@ -12,6 +12,9 @@ pub(super) async fn dispatch(
     }
     let method = request.method().clone();
     let path = request.uri().path().to_owned();
+    if method == Method::POST && path.contains("/directories/") {
+        return directory::stage(state, request, &path).await;
+    }
     if method == Method::POST && path.ends_with("/snapshot") {
         return snapshot::capture(state, request, &path, permit).await;
     }
@@ -111,12 +114,23 @@ pub(super) async fn dispatch(
         } else {
             return Err(invalid());
         };
+        if entry.directories_ready
+            && !entry.lease.directory_snapshots.is_empty()
+            && directory_start::helper(state, &entry.lease)
+                .await?
+                .is_some()
+        {
+            return Err(invalid());
+        }
         let start_identity = entry
             .process_identity
             .as_ref()
             .map(|identity| process_start_identity(key, identity))
             .unwrap_or_default();
         let observation = ProviderLeaseObservation {
+            directories_prepared: !entry.fenced
+                && (entry.lease.directory_snapshots.is_empty()
+                    || (entry.directories_ready && status == 200)),
             start_identity,
             image: entry.lease.image.clone(),
             manifest_sha256: entry.lease.manifest_sha256.clone(),
@@ -147,7 +161,7 @@ pub(super) async fn dispatch(
         .await?;
         let imported = state
             .engine
-            .send_archive("/images/load?quiet=true", file, size)
+            .send_archive(Method::POST, "/images/load?quiet=true", file, 0..size)
             .await?;
         if imported.status().as_u16() != 200 {
             return Err(invalid());
@@ -198,9 +212,7 @@ async fn terminate(
         .cloned()
         .ok_or_else(invalid)?;
     let mut entry = entry.lock().await;
-    entry.fenced = true;
-    entry.generation_cancel.cancel();
-    entry.relay = None;
+    directory_start::fence_main_removal(state, &mut entry).await?;
     if let Some(grace) = graceful_ms {
         verify_existing(state, key, &entry.lease, &entry.startup).await?;
         let stop_path = format!(
@@ -241,6 +253,7 @@ async fn terminate(
             return Err(invalid());
         }
     }
+    directory_start::remove_volumes(state, &mut entry).await?;
     state.journal.clear(key)?;
     state.unknown.lock().await.remove(key);
     entry.cleaned = true;

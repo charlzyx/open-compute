@@ -5,7 +5,7 @@ use flate2::read::MultiGzDecoder;
 use open_compute_core::PlatformError;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::io::{self, Read};
 
 /// Operator bounds applied before reading or decompressing untrusted image content.
@@ -209,7 +209,7 @@ pub use archive::write_container_image_archive;
 mod restore;
 pub use restore::{
     read_container_image_configuration, verify_container_image_archive,
-    write_container_docker_archive,
+    write_container_directory_archive, write_container_docker_archive,
 };
 
 #[path = "container_image_snapshot.rs"]
@@ -284,7 +284,7 @@ fn verify_layer(
     limit: u64,
     entries_left: &mut usize,
 ) -> Result<u64, PlatformError> {
-    let inspected = inspect_archive(reader, limit, entries_left)?;
+    let inspected = inspect_archive(reader, limit, entries_left, false)?;
     if inspected.sha256 != diff_id {
         return Err(integrity_error());
     }
@@ -303,19 +303,34 @@ pub fn verify_container_archive(
     if max_bytes == 0 || max_entries == 0 {
         return Err(integrity_error());
     }
-    inspect_archive(reader, max_bytes, &mut { max_entries })
+    inspect_archive(reader, max_bytes, &mut { max_entries }, false)
+}
+
+/// Validate a single directory tree without following links during restoration.
+/// Links remain valid data, but no member or hardlink target may descend through a non-directory.
+pub fn verify_container_directory_archive(
+    reader: impl Read,
+    max_bytes: u64,
+    max_entries: usize,
+) -> Result<OciBlob, PlatformError> {
+    if max_bytes == 0 || max_entries == 0 {
+        return Err(integrity_error());
+    }
+    inspect_archive(reader, max_bytes, &mut { max_entries }, true)
 }
 
 fn inspect_archive(
     reader: impl Read,
     limit: u64,
     entries_left: &mut usize,
+    directory_tree: bool,
 ) -> Result<OciBlob, PlatformError> {
     let mut archive = tar::Archive::new(ArchiveReader::new(
         io::BufReader::with_capacity(256 * 1024, CheckedReader::new(reader, limit)),
         *entries_left,
     ));
-    let mut names = HashSet::new();
+    let mut names = HashMap::new();
+    let mut hardlink_targets = Vec::new();
     for entry in archive.entries().map_err(|_| integrity_error())? {
         let mut entry = entry.map_err(|_| integrity_error())?;
         let name = entry.path_bytes();
@@ -324,10 +339,13 @@ fn inspect_archive(
             .filter(|part| !part.is_empty() && *part != b".")
             .collect::<Vec<_>>()
             .join(&b'/');
-        if !valid_path(&name) || !names.insert(normalized) {
+        let kind = entry.header().entry_type();
+        if !valid_path(&name)
+            || (directory_tree && normalized.is_empty() && kind != tar::EntryType::Directory)
+            || names.insert(normalized, kind).is_some()
+        {
             return Err(integrity_error());
         }
-        let kind = entry.header().entry_type();
         if !matches!(
             kind,
             tar::EntryType::Regular
@@ -344,6 +362,16 @@ fn inspect_archive(
         {
             return Err(integrity_error());
         }
+        if directory_tree && kind == tar::EntryType::Link {
+            let target = entry.link_name_bytes().ok_or_else(integrity_error)?;
+            hardlink_targets.push(
+                target
+                    .split(|b| *b == b'/')
+                    .filter(|part| !part.is_empty() && *part != b".")
+                    .collect::<Vec<_>>()
+                    .join(&b'/'),
+            );
+        }
         if kind == tar::EntryType::Symlink
             && !entry
                 .link_name_bytes()
@@ -352,6 +380,21 @@ fn inspect_archive(
             return Err(integrity_error());
         }
         io::copy(&mut entry, &mut io::sink()).map_err(|_| integrity_error())?;
+    }
+    if directory_tree {
+        // A captured filesystem cannot contain descendants below a file or link, in any order.
+        for name in names.keys().chain(hardlink_targets.iter()) {
+            let mut prefix = name.as_slice();
+            while let Some(index) = prefix.iter().rposition(|byte| *byte == b'/') {
+                prefix = &prefix[..index];
+                if names
+                    .get(prefix)
+                    .is_some_and(|kind| *kind != tar::EntryType::Directory)
+                {
+                    return Err(integrity_error());
+                }
+            }
+        }
     }
     let mut reader = archive.into_inner();
     // A second archive or non-zero payload after the end marker is ambiguous to extractors.

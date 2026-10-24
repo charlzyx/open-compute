@@ -3,20 +3,29 @@
 Containers 使用独立的 operator-owned Docker Broker。`ocd` 保存镜像、application target 和 execution lease；
 Broker 执行受限的 Docker 操作。`ocd` 不启动 Docker 或 Broker，不在启动或请求路径构建、拉取镜像。
 
-当前 [P23](../implemented/p23-cloudflare-containers.md) 已接入基础 13 个 Docker operation family；产品验收状态由结果页记录。
+当前 [P23](../implemented/p23-cloudflare-containers.md) 已实现固定 65 项 API、完整快照与目录恢复。
+2026-10-23（UTC），R22 输入通过三项真实产品用例、coverage 与最终 Gate 子进程，以及三宿主候选包检查。
+最终 Gate 外层守卫失败与独立摘要补证分别保留；正式 tag 工作流与公开发布尚未执行。
+以下按日期保留的记录不覆盖本段当前状态；完整原始证据与限制由 P23 结果页记录。
 当前全量验收目标包含 snapshot capture、snapshot restore 和 `setInactivityTimeout()`。
 2026-10-20（UTC），R21 输入下的 Linux ARM64 coverage 和最终 Gate 已通过。
 同日，macOS ARM64 的当前 P23 两项真实产品用例均通过。
 原完整 macOS 批次与两个失败目标的分批复验分别保留，详见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
-完整成员资格仍为 `blocked`。
+固定 65 个成员的编译用例与真实容器用例已登记；发行验收仍待完成。
 这些 stable 成员属于兼容目标，不属于 experimental。
 正式 workerd 输入由 [`workerd.lock.json`](../../packages/runtime/workerd.lock.json) 拥有。
 Provider 资格、产品 Gate 与成员资格是不同证据。
+产品验收前，应确认 Provider 合同接口返回成功，且摘要与资格输入相同。
+进程身份和 Engine 库存相同，不足以证明 Provider 仍可用。
 原版 SDK 的 HTTP 场景不验证 TCP、WebSocket 或 HTTPS 拦截行为。
 当前 types 固定为 `@cloudflare/workers-types@5.20260930.2`，Container 清单有 65 个稳定成员。
 成员包括方法、属性和参数类型，不是 65 个方法。
+2026-10-21，用户确认保留完整 65 项，并补齐九个目录成员的真实恢复能力。
+验收依据是固定类型、匹配版本的上游 API 和本地真实行为。
+托管实测用于发现差异，不要求逐项复刻，也不替代本地权限、持久化和产品测试。
+`snapshotDirectory()` 的创建入口仍保留实验开关；这不免除稳定目录恢复字段的实现和验收。
 旧 64 项清单包含 `snapshotDirectory()`；当前 stable types 已移除该方法，并新增 `images` 与 `inspect()`。
-当前 capability manifest 保留 `blocked`，直到成员证据与产品验收齐备。
+当前 capability manifest 声明这 65 个成员的 API 实现范围，不声明完整发行验收通过。
 实现结果与验证记录由 [P23](../implemented/p23-cloudflare-containers.md) 拥有。
 
 ## Provider 前提
@@ -164,17 +173,20 @@ ocd container-broker --broker-config /etc/open-compute/container-broker.toml
 
 该命令以前台独立进程运行。operator 管理其启动和退出；普通 `ocd run` 不 supervise Broker。
 `state_dir` 是必填的持久私有目录，mode 为 `0700`，由一个 Broker 独占。
-它只保存凭据写入和 proxy 删除的非 secret pending marker；操作结果未知时，重启后仍拒绝该 lease 的新授权。
+它保存凭据写入、proxy 删除和目录暂存的非 secret pending marker。
+操作结果未知时，重启后仍拒绝该 lease 的新授权。
 确认两个容器均已删除后才清除 marker。不要把该目录作为可删除 cache。
 缺少 sidecar 或资格检查失败时，Broker 只提供诊断合同，拒绝 mutation。
 诊断合同中的 `qualified = false` 不授权 Worker upload 或 Container start。
 `exec_helper_volume` 与 `exec_helper_sha256` 是必填输入。
-operator 应从固定 sidecar image 中复制 `/opt/open-compute/exec/helper`，预先建立 helper volume。
+operator 应从固定 sidecar image 中复制 `/.open-compute-exec/helper`，预先建立 helper volume。
 volume 只能使用 local driver，不能指定 driver options。
 volume 应包含与 sidecar image 和 helper SHA-256 匹配的两个 label：
 `dev.open-compute.exec-helper.image` 和 `dev.open-compute.exec-helper.sha256`。
 Broker 核对 volume metadata、实际挂载、可执行文件字节和 SHA-256。
-主容器只读挂载 helper volume；sidecar 不挂载此 volume。
+主容器将 helper volume 只读挂载到根目录下的 `/.open-compute-exec`。
+main、exec 和目录 helper 入口拒绝符号链接或可写文件系统。
+该路径不能通过移动可写父目录来替换；sidecar 不挂载此 volume。
 Broker 不自动创建或修复此输入，也不在 execution 终止时删除此输入。
 快照不保存此挂载中的文件。
 `max_image_bytes` 同时限制 registry staging、压缩与解压后的 image graph，以及 Docker-save transport。
@@ -285,9 +297,50 @@ SQLite 单独保存 `image_size`；`artifact_size` 继续用于 artifact 校验�
 Engine 保留已导入的镜像缓存；快照到期或 application 删除不会回收这些镜像。
 snapshot 配额和 lease 的 `cleanupComplete` 不计入或回收 Engine 镜像缓存。
 operator 应单独预算 Engine 磁盘，并回收已不用的镜像缓存。
-托管结果尚未确定完整计量公式；该成员的兼容性保持 `blocked`。
+托管结果尚未确定完整计量公式；该差异保留为诊断，不作为 API 验收门槛。
 当前 P23 产品用例已核对持久化大小、新快照镜像的 Engine 大小和重启后的同一数值。
 这些本地不变量不证明托管计量公式相同。
+
+### 目录恢复实现状态（验收中）
+
+目录恢复清单包含备份 ID 和容器内的目标路径；不含备份 ID 的项表示新建空目录。
+平台在同一 SQLite 事务中校验清单、预留执行并冻结清单。
+平台拒绝根目录、重复目标路径、其他应用的备份、整容器备份和已过期的备份。
+已有执行保留其目录备份，daemon 重启和备份过期不解除该引用。
+停止中的执行、旧执行标识和旧对象权限不能取得恢复输入。
+应用删除期间，artifact 回收也保留存活执行使用的目录备份。
+
+目录捕获服务和存储回归覆盖 `default` 与 `durable_object` 两种调度策略。
+整容器快照的策略限制不变。
+2026-10-21（UTC），Linux ARM64 的实际 Engine fixture 验证了独立目录挂载。
+恢复后的文件内容、UID、GID、mode、硬链接和相对符号链接均保留。
+目录与根文件系统共用 32 MiB 的 XFS project quota；根文件截断后，目录可使用释放的容量。
+整容器 export 不含目录挂载中的文件。
+
+目录 helper 只接收固定路径，不接收租户提供的宿主路径或 project ID。
+helper 在租户启动前，将空卷加入根文件系统的 project；helper 不增加 Linux capability。
+helper 拒绝符号链接、非空目录、其他文件系统和已有 project 的目录。
+XFS 允许文件所有者改写 project 属性；仅移除 `CAP_SYS_ADMIN` 不能守住限额。
+主进程与 exec 入口因此叠加 seccomp 过滤，并同步到全部线程。
+过滤拒绝 `FS_IOC_FSSETXATTR` 和两种 ABI 的 `FS_IOC_SETFLAGS`；租户不能移除 project 或继承标志。
+其他 ioctl 继续受原 Docker profile 约束。
+
+目录归档解码器验证完整 OCI artifact，只输出唯一一层的原始 tar，不向宿主目录解包。
+Broker 在注册时冻结目标路径、tar 摘要和字节数；本地上传不能改写该清单。
+Broker 校验 tar、摘要和大小，然后将归档追加到每个执行独有的匿名文件。
+归档通过偏移量区分；目录数量不会增加暂存文件描述符的数量。
+所有目录归档的总大小不能超过 `max_image_bytes`。
+追加前的持久 marker 保留取消或部分写入的隔离；失败后不能继续启动。
+停止和清理释放匿名文件；重启不信任已丢失的暂存数据。
+
+这些字段使用 Broker 私有协议 v4；旧合同在 consumer 预检时被拒绝。
+候选源码已接入 `directorySnapshots` 的权限校验、冻结清单、归档传输和实际挂载。
+Linux ARM64 Broker 已通过真实目录恢复、重复恢复和重启恢复检查。
+R22 workerd 通过现有回调传递目录参数，私有 Container 协议为 v4。
+正式 pin 已更新为 R22；四个平台构建、发布和十个资产的校验均已完成。
+R22 真实普通容器用例已覆盖公开目录 API。
+完整 coverage、最终 Gate 用例和三宿主发行包的独立状态由 [P23](../implemented/p23-cloudflare-containers.md) 记录。
+当前证据和后续验收由 [P23](../implemented/p23-cloudflare-containers.md) 记录。
 
 ### CF 对比证据与冲突
 
@@ -342,7 +395,12 @@ application 删除不证明 snapshot 字节已回收或计费停止。
 删除 application 后的 snapshot 保留行为未确定。
 证据标识为 `inspect-image-controlled-19-preparation/hosted-observations-review.json`。
 
-当前官方文档与固定版本、托管结果存在两项来源差异，兼容性声明保持 `blocked`：
+### 已接受的快照兼容性差异
+
+2026-10-21（UTC），用户接受以下两项差异。
+平台按已合并的上游 API 改动和官方明确写出的恢复语义实现。
+两项差异不再阻止本次验收或发行资格；本地功能和其余必需检查仍需通过。
+下表保留官方文档和托管观察的不同结果。
 
 | 行为                             | 官方来源（文档更新于 2026-09-30） | 2026-10-12 托管结果             | 当前实现                                     |
 | -------------------------------- | --------------------------------- | ------------------------------- | -------------------------------------------- |
@@ -353,9 +411,19 @@ application 删除不证明 snapshot 字节已回收或计费停止。
 固定 types 为 `@cloudflare/workers-types@5.20260930.2`。
 匹配 upstream workerd revision 为 `d99bc6b777e35d72d71c2f1fe2fd1db53284528a`。
 2026-09-21（UTC），上游 [PR #7453](https://github.com/cloudflare/workerd/pull/7453) 将 `snapshotContainer()` 的选项改为可省略。
-固定 R21 的上游基线包含该修复；修复不含 compatibility date 分支。
+固定 R22 的上游基线包含该修复；修复不含 compatibility date 分支。
 该版本行为与已保留的托管成功观察一致，官方 API 文档仍声明选项必填。
+官方作者在 PR 中确认，可省略选项是原始 API 设计意图。
+平台允许 `snapshotContainer()` 和 `snapshotContainer({})`；不复刻文档所述的省略参数错误。
+
+2026-09-30（UTC），官方 [文档 PR #33825](https://github.com/cloudflare/cloudflare-docs/pull/33825) 明确说明恢复后的空字符串。
+`inspect().image` 表示传给 `start()` 的镜像引用；快照恢复没有传入该引用。
+平台因此返回 `""`，不生成或推测托管环境的 registry 引用。
+托管非空引用的来源、生成公式及可比较范围没有明确对照，保留为未知。
+
+接受范围仅限这两个可观察结果，不免除文件内容、权限、隔离、跨 DO 恢复和重启测试。
 平台不按环境切换上述行为，也不增加兼容分支。
+历史来源冲突和失败记录保留；后续验收采用本节已接受的规则。
 
 官方文档另已说明 exec stream 的类型与运行值差异。
 固定 types 将 `stderr` 声明为 `ReadableStream \| null`。
@@ -455,7 +523,7 @@ exec 的退出码应来自目标进程；helper 意外退出不能证明目标�
 `exitCode` 应在目标进程退出后完成；`output()` 应等待输出流结束。
 新增 helper 的源码、正式 runtime pin、Provider 资格和产品回归须使用同一组输入。
 R21 当前输入已完成 helper、Provider 资格与 P23 真实产品回归。
-完整 stable API 的成员资格仍未通过；当前输入和原始报告见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
+该轮尚未完成 stable API 成员验收；当时输入和原始报告见 [P23 结果](../implemented/p23-cloudflare-containers.md)。
 
 2026-10-12，维护中的 P23 场景新增独立对象的 exec 生命周期回归。
 回归核对真实子进程 PID，并在子进程退出后才释放后代进程的输出屏障。
@@ -524,7 +592,7 @@ DO 重建后，旧 timeout 配置失效；构造函数可重新设置 timeout。
 未设置 timeout 时，本地候选采用现有 Actor 的 10 秒空闲间隔，不声明 CF 的默认时长等于 10 秒。
 timer 到期后，原生控制事件先登记 stop intent，再等待 Broker 的正向清理证明。
 未知停止结果仍占用容量。
-原生专项回归已通过；正式 pin 和完整产品验收尚未通过。
+该轮原生专项回归已通过；当时尚未完成正式 pin 和完整产品验收。
 
 2026-10-12，托管探针分别设置 1 秒和 120 秒 timeout。
 客户端连续 90.001 秒不向 Worker 发请求，也不调用 `ctx.abort()`。
@@ -577,3 +645,13 @@ rolling rollout 请求在 `steps` 与 `step_percentage` 中选一项，同时提
 
 应用容器可以访问宿主允许的 IP 网络。单机部署不承诺阻止 provider 网络直连容器，也不承诺每个容器独立 VM。
 平台控制 API、原生回调和 engine socket 仍各自验证权限；出站 IP capability 继续拒绝宿主 Unix socket。
+
+## 公开管理面与 SDK
+
+Container 管理路由由 `openapi/cloudflare-subset-manifest.json` 的 `clientObservedOperations` 登记。
+生成器将固定 cf 使用的 13 条路由投影到 `ocd capabilities --json`，并标注 `OC-CONTAINERS-MGMT-001`。
+路由包含 application、账号上限、镜像准备、registry credential、rollout 与实例观察。
+这些观察路由不属于固定上游 OpenAPI 子集；不能据此声称完整 Cloudflare 管理面兼容。
+固定 `cloudflare@7.2.0` SDK 没有对应方法，生成的 facade 不提供 Container 管理方法。
+`packages/sdk/surface.json` 登记排除项；应用使用固定 cf 部署流程。
+Dashboard 尚无独立的 Container 管理页。65 项 tenant runtime API 与上述管理面分别验收。

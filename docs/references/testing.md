@@ -6,13 +6,13 @@
 
 ## 按输入选择测试
 
-| 改动 | 验证范围 |
-| --- | --- |
-| 文档、release notes、指令策略 | `git diff --check`、`bun scripts/check-docs.ts`，核对变动的链接、命令和声明；不运行 Rust Gate |
-| SDK、Dashboard、Website 或 JS tooling | 所属 typecheck/test/build；SDK 生成面还需 pack 检查；只读脚本也检查其变动行为 |
-| Rust 生产代码 | 开发时受影响 crate/Gate；完成后执行下文静态检查、coverage 和最终 workspace 验收 |
+| 改动                                                                                         | 验证范围                                                                                                                            |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 文档、release notes、指令策略                                                                | `git diff --check`、`bun scripts/check-docs.ts`，核对变动的链接、命令和声明；不运行 Rust Gate                                       |
+| SDK、Dashboard、Website 或 JS tooling                                                        | 所属 typecheck/test/build；SDK 生成面还需 pack 检查；只读脚本也检查其变动行为                                                       |
+| Rust 生产代码                                                                                | 开发时受影响 crate/Gate；完成后执行下文静态检查、coverage 和最终 workspace 验收                                                     |
 | 正式 workerd/Caddy lock、对应 submodule、runtime loader、Cap'n Proto、compatibility baseline | 重建 runtime，执行 `p3-contract`、受影响的 P0/P1/P2/Workflow/P3 targets、coverage、最终 Gate 与三平台 package 资格；下载/打包需授权 |
-| 混合改动 | 取受影响范围的并集；正式 tag 仍执行发布流程的完整矩阵 |
+| 混合改动                                                                                     | 取受影响范围的并集；正式 tag 仍执行发布流程的完整矩阵                                                                               |
 
 SDK 消费者读取 `packages/sdk/dist/`。生成面变化或缺少产物时先运行
 `bun run --filter @open-compute/sdk build`，再检查消费者；SDK typecheck 不刷新产物。
@@ -99,7 +99,8 @@ Broker 入口载入两个已验证的 bootstrap archive，安装 helper，再核
 命令结束后，入口回收本轮 helper、Broker 和 Colima profile；失败仍保留宿主报告。
 准备入口的成功只证明准备链，不替代命令自身的 coverage 或最终 Gate 结果。
 当前 P23 验收范围包含完整 stable Container API 与 snapshot capture/restore。
-固定 types 的清单包含 65 个成员；成员资格仍为 `blocked`，见 [Containers 运维](containers.md)。
+固定 types 的清单包含 65 个成员；当前实现范围见 [Containers 运维](containers.md)。
+正式发行资格要求当前 tag 的 coverage、最终 Gate 和三平台包报告全部通过。
 P23 产品场景包含跨对象快照恢复、重启后恢复，以及 exec PID、晚输出、helper 意外退出和无 shell 回归。
 PTY 场景用 stdin 与 `SIGWINCH` 握手，核对 resize 前后的尺寸、合并后的 stderr 和真实退出码。
 命名镜像场景核对两个镜像、独立 getter 副本、省略规格时的 Lite，以及自定义 CPU 限额。
@@ -284,8 +285,20 @@ readiness、事务、崩溃与恢复的超时和 fresh-process 要求均不改�
 single-binary 与 `workflow-product` 使用独占屏障。该目标同时覆盖 16 路 batch 并发、单 step 最大结果和
 大结果 replay；三者组合时必须保持在 Standard 128 MiB heap 内。隔离整个目标以避免叠加 CPU、内存和
 内核缓冲区压力，不减少内部并发、放宽断言超时或将失败改为重试。不能把全局状态测试直接改成多线程。
-临时目录使用较短的 `.temp/gate-tmp/<随机名>/`，避免报告目录中的长目标名称超过 Unix socket
-路径长度上限；退出后非空目录移入该目标的诊断目录并拒绝覆盖，成功返回但留有文件也算失败。
+运行器从标准 `TMPDIR` 创建每个目标的短临时目录，不使用报告目录的长目标名称。
+`TMPDIR` 应位于本地文件系统；共享 FUSE 挂载不满足本地数据库和对象存储的要求。
+仓库位于共享 FUSE 挂载时，数据库与恢复夹具不应将临时目录固定到仓库路径。
+Rust 夹具可用 `tempfile::tempdir()` 或 `tempfile::Builder` 的 `tempdir()` 继承 `TMPDIR`。
+4 GiB 验收环境应使用本地磁盘目录，不将完整产品数据放入内存文件系统。
+编译父进程可通过 `OPEN_COMPUTE_GATE_BUILD_EVENT_FD` 和 `OPEN_COMPUTE_GATE_RUN_CONTINUE_FD` 传入专用管道。
+编译完成后，运行器发送当前源码摘要，并暂停用例清单检查和执行。
+父进程应先恢复验收资源限制，再发送与源码摘要匹配的继续消息并关闭管道。
+只配置一个管道、消息不匹配或等待超过 120 秒均使本轮失败。
+未收到继续消息时，管道关闭也使本轮失败。
+未配置管道时，运行器保留原来的连续执行流程。
+目标退出后，运行器将非空临时目录保留到诊断目录，并拒绝覆盖。
+如果两个目录位于不同文件系统，运行器保留原目录，并向报告目录复制副本。
+报告的 `retained_temporary` 字段记录原目录路径。成功返回但留有文件也算失败。
 默认并行失败后不再提交目标，已开始的目标完成自己的清理；`--keep-going` 继续提交剩余目标，独占屏障和失败退出码保持不变。
 
 串行/并行对比必须使用相同源码、输入、目标及构建配置，分别记录编译和执行耗时，不能用

@@ -160,7 +160,13 @@ impl EffectiveStartup {
                 _ => return Err(invalid()),
             }
         }
-        if self.durable_object {
+        let private_exec = root
+            .get("Cmd")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|command| command.first())
+            .and_then(serde_json::Value::as_str)
+            == Some(super::helper::NATIVE_EXEC_PATH);
+        if self.durable_object || private_exec {
             let target_user = root
                 .get("User")
                 .and_then(serde_json::Value::as_str)
@@ -172,14 +178,17 @@ impl EffectiveStartup {
                 .and_then(serde_json::Value::as_array_mut)
                 .ok_or_else(invalid)?;
             if command.len() != 3
-                || command[0].as_str() != Some(super::helper::PATH)
+                || command[0].as_str() != Some(super::helper::NATIVE_EXEC_PATH)
                 || command[1].as_str() != Some("--open-compute-exec")
                 || !command[2].as_str().is_some_and(super::contract::opaque)
             {
                 return Err(invalid());
             }
-            command.push(serde_json::Value::String(target_user));
-            root.insert("User".into(), serde_json::json!("0:0"));
+            command[0] = serde_json::Value::String(super::helper::PATH.to_owned());
+            if self.durable_object {
+                command.push(serde_json::Value::String(target_user));
+                root.insert("User".into(), serde_json::json!("0:0"));
+            }
         }
         // Moby adds HOSTNAME and, for a TTY, TERM before merging the container environment.
         // Bare names in exec overrides remove inherited values; PATH remains available.

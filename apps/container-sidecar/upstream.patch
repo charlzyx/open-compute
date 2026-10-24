@@ -188,18 +188,27 @@
  		log.Println("error writing put success response:", err)
  	}
  }
-@@ -1160,6 +1179,26 @@
+@@ -1160,6 +1179,35 @@
  }
  
  func main() {
++ if len(os.Args) > 1 && os.Args[1] == "--open-compute-directory-quota" {
++  if len(os.Args) != 2 || !containerHelperImmutable("/.open-compute-exec") {
++   os.Exit(125)
++  }
++  if prepareDirectoryQuota() != nil {
++   os.Exit(125)
++  }
++  os.Exit(0)
++ }
 + if len(os.Args) > 1 && os.Args[1] == "--open-compute-main" {
-+  if len(os.Args) < 4 {
++  if len(os.Args) < 4 || !containerHelperImmutable("/.open-compute-exec") {
 +   os.Exit(125)
 +  }
 +  os.Exit(containerMain(os.Args[2], os.Args[3:]))
 + }
 + if len(os.Args) > 1 && os.Args[1] == "--open-compute-exec" {
-+  if len(os.Args) != 3 && len(os.Args) != 4 {
++  if (len(os.Args) != 3 && len(os.Args) != 4) || !containerHelperImmutable("/.open-compute-exec") {
 +   os.Exit(125)
 +  }
 +  targetUser := ""
@@ -223,5 +232,5 @@
  RUN apk add --no-cache iptables ip6tables iproute2
 +RUN mkdir -p /run/open-compute && chmod 0700 /run/open-compute
  COPY --from=compressor /proxy-everything /proxy-everything
-+COPY --from=compressor /proxy-everything /opt/open-compute/exec/helper
++COPY --from=compressor /proxy-everything /.open-compute-exec/helper
  ENTRYPOINT ["/proxy-everything"]

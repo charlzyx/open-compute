@@ -26,6 +26,7 @@ fn effective_startup_is_immutable_scoped_and_restarts_without_plaintext() {
         )
         .unwrap();
     let mut execution = ContainerExecutionSpec {
+        directory_snapshots: Vec::new(),
         image_sha256: alternate.manifest_sha256,
         resources: fixture.spec.resources,
         enable_internet: false,

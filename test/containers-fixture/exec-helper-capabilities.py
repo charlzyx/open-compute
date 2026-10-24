@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -51,6 +52,11 @@ def main():
         os.close(binary_fd)
         raise RuntimeError("EXEC_CREDENTIAL_BINARY_CHANGED")
     output = Path(tempfile.mkdtemp(prefix="exec-capabilities-", dir=coverage.parent))
+    helper_source = output / "helper-source"
+    helper_source.mkdir(mode=0o700)
+    shutil.copyfile(binary, helper_source / "helper")
+    (helper_source / "helper").chmod(0o555)
+    helper_source.chmod(0o555)
     profiles = output / "profiles"
     profiles.mkdir(mode=0o777)
     profiles.chmod(0o777)
@@ -96,8 +102,9 @@ def main():
             "--memory-swap", "256m", "--pids-limit", "64", "--cap-drop", "NET_RAW",
             "--security-opt", "no-new-privileges:true", "--log-driver", "none",
             "--mount", "type=bind,src=" + str(profiles) + ",dst=/tmp",
+            "--mount", "type=bind,src=" + str(helper_source) + ",dst=/.open-compute-exec,readonly",
             "--env", "GOCOVERDIR=/tmp", "--env", "OC_EXEC_TEST_PAYLOAD=root-credentials",
-            image, "/exec-tests", "-test.run=^TestExecSupervisorPayload$", "-test.v", "-test.gocoverdir=/tmp",
+            image, "/.open-compute-exec/helper", "-test.run=^TestExecSupervisorPayload$", "-test.v", "-test.gocoverdir=/tmp",
         ).stdout.decode().strip()
         if not re.fullmatch(r"[0-9a-f]{64}", container):
             raise RuntimeError("EXEC_CREDENTIAL_CONTAINER_RESULT")

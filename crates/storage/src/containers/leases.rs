@@ -72,11 +72,13 @@ impl ContainerAuthority<'_> {
         execution
             .startup
             .validate_image_reference(&execution.image_sha256)?;
+        directory_restores::validate_plan(&execution.directory_snapshots)?;
         self.db.with_immediate(|tx| {
             if let Some(lease) = read_authorized_live(tx,authority)? {
                 if execution.image_sha256 != lease.effective_image_sha256
                     || execution.resources != lease.effective_resources || execution.enable_internet != lease.enable_internet
-                    || execution.startup != lease.startup { return Err(invariant()); }
+                    || execution.startup != lease.startup
+                    || execution.directory_snapshots != lease.directory_snapshots { return Err(invariant()); }
                 return Ok(lease);
             }
             let (target, max_instances, paused): (Option<u64>,u32,bool) = tx.query_row(
@@ -97,6 +99,8 @@ impl ContainerAuthority<'_> {
             execution.resources.validate(target_spec.resources)?;
             if execution.enable_internet && !target_spec.enable_internet { return Err(invariant()); }
             snapshots::validate_execution(tx,authority,execution,now_ms)?;
+            directory_restores::validate_execution(tx,authority,execution,now_ms)?;
+            let directories_json=serde_json::to_vec(&execution.directory_snapshots).map_err(|_|invariant())?;
             let resources_json = serde_json::to_vec(&execution.resources).map_err(|_|invariant())?;
             let startup_json = serde_json::to_vec(&execution.startup).map_err(|_|invariant())?;
             let (total, application): (u64,u64) = tx.query_row(
@@ -115,11 +119,11 @@ impl ContainerAuthority<'_> {
                 "INSERT INTO container_instance_leases
                  (application_id,namespace_resource_id,object_id,object_generation,lease_generation,
                   target_generation,opaque_engine_key,state,created_at_ms,updated_at_ms,
-                  effective_image_sha256,effective_resources_json,enable_internet,startup_json,startup_envelope_json,snapshot_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,'admitting',?8,?8,?9,?10,?11,?12,?13,?14)",
+                  effective_image_sha256,effective_resources_json,enable_internet,startup_json,startup_envelope_json,snapshot_id,directory_restores_json)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,'admitting',?8,?8,?9,?10,?11,?12,?13,?14,?15)",
                 params![authority.application_id.to_string(),authority.namespace_resource_id.to_string(),
                     authority.object_id.to_string(),authority.object_generation,generation,target,engine_key,now_ms,
-                    execution.image_sha256.as_slice(),resources_json,execution.enable_internet,startup_json,execution.startup_envelope,execution.startup.snapshot_id.map(|id|id.to_string())],
+                    execution.image_sha256.as_slice(),resources_json,execution.enable_internet,startup_json,execution.startup_envelope,execution.startup.snapshot_id.map(|id|id.to_string()),directories_json],
             ).map_err(|_| invariant())?;
             read_lease(tx,ContainerLeaseIdentity {
                 namespace_resource_id: authority.namespace_resource_id,object_id: authority.object_id,
@@ -273,7 +277,7 @@ impl ContainerAuthority<'_> {
     }
 }
 
-fn read_authorized_live(
+pub(super) fn read_authorized_live(
     conn: &Connection,
     authority: &ContainerObjectAuthority,
 ) -> Result<Option<ContainerLease>, PlatformError> {
@@ -336,7 +340,7 @@ fn busy() -> PlatformError {
     )
 }
 
-const LEASE_COLUMNS: &str = "application_id,namespace_resource_id,object_id,object_generation,lease_generation,target_generation,opaque_engine_key,start_identity,state,created_at_ms,updated_at_ms,stopped_at_ms,stop_requested_at_ms,effective_image_sha256,effective_resources_json,enable_internet,startup_json,startup_envelope_json,snapshot_id";
+const LEASE_COLUMNS: &str = "application_id,namespace_resource_id,object_id,object_generation,lease_generation,target_generation,opaque_engine_key,start_identity,state,created_at_ms,updated_at_ms,stopped_at_ms,stop_requested_at_ms,effective_image_sha256,effective_resources_json,enable_internet,startup_json,startup_envelope_json,snapshot_id,directory_restores_json";
 
 fn read_live(
     conn: &Connection,
@@ -383,7 +387,13 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContainerLease> {
     if startup.snapshot_id.map(|id| id.to_string()) != row.get::<_, Option<String>>(18)? {
         return Err(rusqlite::Error::InvalidQuery);
     }
+    let directory_snapshots: Vec<ContainerDirectoryRestore> =
+        serde_json::from_slice(&row.get::<_, Vec<u8>>(19)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    directory_restores::validate_plan(&directory_snapshots)
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
     Ok(ContainerLease {
+        directory_snapshots,
         application_id: application
             .parse()
             .map_err(|_| rusqlite::Error::InvalidQuery)?,

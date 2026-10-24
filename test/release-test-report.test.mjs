@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { releaseTestReport } from "../scripts/release-test-report.ts";
+import {
+  gateEvidence,
+  releaseTestReport,
+} from "../scripts/release-test-report.ts";
 import {
   createReleaseEvidence,
   writeJson,
@@ -16,6 +19,35 @@ const identity = {
 };
 const digest = "c".repeat(64);
 
+test("release report consumes the workflow's current macOS evidence label", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+  const platform = /os: \[ubuntu-24\.04, (macos-[^\],]+)\]/.exec(workflow)?.[1];
+  assert.ok(platform);
+  const label = `gate-evidence-${platform}`;
+  const parent = new URL("../.temp/release-report-tests/", import.meta.url);
+  await mkdir(parent, { recursive: true });
+  const directory = await mkdtemp(join(parent.pathname, "workflow-"));
+  try {
+    await createReleaseEvidence(directory, identity, digest);
+    const previous = gateEvidence.find((entry) =>
+      entry.startsWith("gate-evidence-macos-"),
+    );
+    assert.ok(previous);
+    if (previous !== label) {
+      await rename(join(directory, previous), join(directory, label));
+    }
+    const report = JSON.parse(
+      (await releaseTestReport(directory, identity, digest)).json,
+    );
+    assert.ok(report.gates.some((gate) => gate.label === label));
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
 test("release report publishes selected metrics and escaped case names; rejects stale, incomplete or failed qualification", async () => {
   await mkdir(new URL("../.temp/release-report-tests/", import.meta.url), {
     recursive: true,
@@ -24,7 +56,7 @@ test("release report publishes selected metrics and escaped case names; rejects 
     new URL("../.temp/release-report-tests/run-", import.meta.url).pathname,
   );
   await createReleaseEvidence(directory, identity, digest);
-  const gatePath = join(directory, "gate-evidence-macos-15/report.json");
+  const gatePath = join(directory, "gate-evidence-macos-15-intel/report.json");
   const gate = JSON.parse(await readFile(gatePath, "utf8"));
   gate.results[0].targets[0].cases = ['<img src=x onerror="throw 1">'];
   gate.targets.push("open-compute-service.bin.ocd");
@@ -53,7 +85,7 @@ test("release report publishes selected metrics and escaped case names; rejects 
   assert.equal(report.gates.length, 6);
   assert.deepEqual(
     report.gates
-      .find((entry) => entry.label === "gate-evidence-macos-15")
+      .find((entry) => entry.label === "gate-evidence-macos-15-intel")
       .targets.at(-1).cases,
     [],
   );

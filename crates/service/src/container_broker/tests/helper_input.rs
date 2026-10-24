@@ -7,23 +7,28 @@ const CONTENT: &[u8] = b"trusted helper";
 
 pub(crate) fn mounted_volume() -> Value {
     json!([{"Type":"volume","Name":config().exec_helper_volume,"Driver":"local",
-        "Source":"/engine-owned-volume","Destination":"/opt/open-compute/exec",
+        "Source":"/engine-owned-volume","Destination":"/.open-compute-exec",
         "RW":false,"Propagation":""}])
 }
 
 pub(in crate::container_broker::tests) fn mounts_from_request(host: &Value) -> Value {
     match host.get("Mounts").and_then(Value::as_array) {
         None => json!([]),
-        Some(mounts) => json!(
+        Some(mounts) => {
+            json!(
             mounts
                 .iter()
-                .map(|mount| json!({
+                .map(|mount| if mount["Type"] == "bind" { json!({
+                    "Type":"bind","Source":mount["Source"],"Destination":mount["Target"],
+                    "RW":!mount["ReadOnly"].as_bool().unwrap_or(false),"Propagation":mount.pointer("/BindOptions/Propagation").and_then(Value::as_str).unwrap_or("rprivate")
+                }) } else { json!({
                     "Type":mount["Type"],"Name":mount["Source"],"Driver":"local",
                     "Source":"/engine-owned-volume","Destination":mount["Target"],
                     "RW":!mount["ReadOnly"].as_bool().unwrap_or(false),"Propagation":""
-                }))
+                }) })
                 .collect::<Vec<_>>()
-        ),
+        )
+        }
     }
 }
 

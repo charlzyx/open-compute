@@ -7,6 +7,9 @@ use std::io::{Cursor, Write};
 #[path = "container_image_archive_tests.rs"]
 mod archive;
 
+#[path = "container_directory_archive_tests.rs"]
+mod directory;
+
 #[path = "container_image_snapshot_tests.rs"]
 mod snapshot;
 

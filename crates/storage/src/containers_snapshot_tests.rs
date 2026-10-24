@@ -39,6 +39,7 @@ fn pending(fixture: &Fixture, source: &ContainerSnapshotSource, now: i64) -> Con
         .reserve_snapshot(
             &fixture.authority,
             &NewContainerSnapshot {
+                directory: None,
                 id: ResourceId::generate(),
                 source: source.clone(),
                 name: Some("daily".into()),
@@ -86,6 +87,131 @@ fn restore(
     spec.startup.snapshot_id = Some(snapshot);
     spec.startup.image_reference.clear();
     spec
+}
+
+#[test]
+fn directory_snapshot_authority_is_durable_application_scoped_and_not_a_boot_image() {
+    let fixture = fixture(4);
+    let repo = ContainerAuthority::new(fixture.storage.db());
+    let source = source(&fixture);
+    let directory =
+        open_compute_core::containers::ContainerDirectoryPath::parse("/app/data").unwrap();
+    let pending = repo
+        .reserve_snapshot(
+            &fixture.authority,
+            &NewContainerSnapshot {
+                id: ResourceId::generate(),
+                source: source.clone(),
+                name: Some("data".into()),
+                directory: Some(directory.clone()),
+                reserved_bytes: 4096,
+            },
+            limits(),
+            40,
+        )
+        .unwrap();
+    assert!(
+        repo.directory_snapshot_for_restore(&fixture.authority, pending.id, 40)
+            .is_err()
+    );
+    repo.stage_snapshot_artifact(
+        fixture.authority.instance_id,
+        pending.id,
+        &source,
+        &image(21),
+    )
+    .unwrap();
+    let snapshot = repo
+        .finish_snapshot_capture(&fixture.authority, pending.id, &source, 1502, 41)
+        .unwrap();
+    let other = other_object(&fixture, 19);
+    assert_eq!(
+        repo.directory_snapshot_for_restore(&other, snapshot.id, 42)
+            .unwrap(),
+        (snapshot.clone(), image(21))
+    );
+    assert!(repo.snapshot_for_restore(&other, snapshot.id, 42).is_err());
+    assert!(
+        repo.reserve(
+            &other,
+            &"c".repeat(64),
+            &restore(&fixture, &other, snapshot.id, &"c".repeat(64)),
+            10,
+            43
+        )
+        .is_err()
+    );
+    for invalid in [
+        ContainerObjectAuthority {
+            instance_id: InstanceId::generate(),
+            ..other
+        },
+        ContainerObjectAuthority {
+            application_id: ResourceId::generate(),
+            ..other
+        },
+        ContainerObjectAuthority {
+            route_generation: other.route_generation + 1,
+            ..other
+        },
+    ] {
+        assert!(
+            repo.directory_snapshot_for_restore(&invalid, snapshot.id, 42)
+                .is_err()
+        );
+    }
+    assert!(
+        repo.directory_snapshot_for_restore(&other, snapshot.id, snapshot.expires_at_ms)
+            .is_err()
+    );
+    fixture
+        .storage
+        .db()
+        .with_immediate(|tx| {
+            for value in [None, Some("/other"), Some("/app/../data")] {
+                assert!(
+                    tx.execute(
+                        "UPDATE container_snapshots SET directory_path=?2 WHERE id=?1",
+                        params![snapshot.id.to_string(), value]
+                    )
+                    .is_err()
+                );
+            }
+            Ok(())
+        })
+        .unwrap();
+    let data = fixture.directory.path().join("data");
+    drop(fixture.storage);
+    let storage = PlatformStorage::bootstrap(&configuration(&data), &SystemClock).unwrap();
+    let reopened = ContainerAuthority::new(storage.db());
+    assert_eq!(
+        reopened
+            .directory_snapshot_for_restore(&other, snapshot.id, 42)
+            .unwrap(),
+        (snapshot, image(21))
+    );
+    assert!(
+        reopened
+            .snapshot_for_restore(&other, pending.id, 42)
+            .is_err()
+    );
+}
+
+#[test]
+fn whole_snapshot_cannot_supply_directory_restore_authority() {
+    let fixture = fixture(4);
+    let source = source(&fixture);
+    let snapshot = ready(&fixture, &source);
+    let repo = ContainerAuthority::new(fixture.storage.db());
+    assert!(
+        repo.directory_snapshot_for_restore(&fixture.authority, snapshot.id, 42)
+            .is_err()
+    );
+    assert_eq!(
+        repo.snapshot_for_restore(&fixture.authority, snapshot.id, 42)
+            .unwrap(),
+        image(21)
+    );
 }
 
 #[test]
@@ -418,6 +544,7 @@ fn pending_ready_and_retiring_charges_require_positive_absence_before_reuse() {
     let instance = fixture.authority.instance_id;
     let snapshot = pending(&fixture, &source, 40);
     let request = NewContainerSnapshot {
+        directory: None,
         id: ResourceId::generate(),
         source: source.clone(),
         name: None,
@@ -471,6 +598,7 @@ fn pending_ready_and_retiring_charges_require_positive_absence_before_reuse() {
         1
     );
     let another = NewContainerSnapshot {
+        directory: None,
         id: ResourceId::generate(),
         ..request
     };
@@ -540,6 +668,7 @@ fn snapshot_expiry_is_exclusive_and_derived_lineage_stays_bound_to_the_applicati
         .reserve_snapshot(
             &other,
             &NewContainerSnapshot {
+                directory: None,
                 id: ResourceId::generate(),
                 source: restored_source.clone(),
                 name: None,
@@ -628,6 +757,7 @@ fn snapshot_reservation_rejects_forged_source_names_and_arithmetic_overflow() {
     let repo = ContainerAuthority::new(fixture.storage.db());
     let source = source(&fixture);
     let input = NewContainerSnapshot {
+        directory: None,
         id: ResourceId::generate(),
         source: source.clone(),
         name: None,
@@ -635,6 +765,7 @@ fn snapshot_reservation_rejects_forged_source_names_and_arithmetic_overflow() {
     };
     for reserved_bytes in [0, u64::MAX] {
         let input = NewContainerSnapshot {
+            directory: None,
             reserved_bytes,
             ..input.clone()
         };
@@ -645,6 +776,7 @@ fn snapshot_reservation_rejects_forged_source_names_and_arithmetic_overflow() {
     }
     for name in ["x".repeat(257), "hidden\0tail".into()] {
         let input = NewContainerSnapshot {
+            directory: None,
             name: Some(name),
             ..input.clone()
         };
@@ -744,7 +876,7 @@ fn v17_appends_snapshot_authority_without_changing_v16_history_or_regular_images
     drop(connection);
     let db = ControlDb::open(&path, 100).unwrap();
     crate::migrations::apply(&db, &SystemClock).unwrap();
-    assert_eq!(crate::migrations::inspect_schema(&db).unwrap(), 17);
+    assert_eq!(crate::migrations::inspect_schema(&db).unwrap(), 18);
     db.with_read(|conn| {
         let after:String=conn.query_row("SELECT checksum FROM refinery_schema_history WHERE version=16",[],|row|row.get(0)).unwrap();
         assert_eq!(after,original);
@@ -1039,6 +1171,7 @@ fn unknown_put_is_fenced_before_io_and_never_releases_its_charge_after_restart()
     )
     .unwrap();
     let request = NewContainerSnapshot {
+        directory: None,
         id: ResourceId::generate(),
         source: ContainerSnapshotSource {
             identity: replacement.identity,
@@ -1106,6 +1239,7 @@ fn default_scheduling_cannot_capture_or_restore_snapshots() {
         repo.reserve_snapshot(
             &fixture.authority,
             &NewContainerSnapshot {
+                directory: None,
                 id: ResourceId::generate(),
                 source: source.clone(),
                 name: None,
@@ -1182,6 +1316,7 @@ fn snapshot_image_size_survives_restart_and_restore_without_changing_artifact_ch
             repo.reserve_snapshot(
                 &fixture.authority,
                 &NewContainerSnapshot {
+                    directory: None,
                     id: ResourceId::generate(),
                     source: source.clone(),
                     name: None,
@@ -1322,3 +1457,6 @@ fn snapshot_ready_without_image_size_fails_closed_on_read_and_restart() {
     drop(fixture.storage);
     assert!(PlatformStorage::bootstrap(&configuration(&data), &SystemClock).is_err());
 }
+
+#[path = "containers_directory_restore_tests.rs"]
+mod directory_restore_tests;

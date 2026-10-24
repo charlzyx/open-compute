@@ -2,13 +2,15 @@ name: CentOS 8 system malloc diagnostic
 
 on:
   push:
-    branches: [centos8-compat]
+    branches: [centos8-compat, upgrade/upstream-r22-glibc228-20261024]
     paths:
       - .github/workflows/centos8-system-malloc.yml
       - test/glibc-compat/build-workerd.sh
       - test/glibc-compat/check-allocator.py
       - test/glibc-compat/centos-smoke.py
       - test/glibc-compat/Dockerfile
+      - packages/runtime/workerd.lock.json
+      - third_party/workerd
   workflow_dispatch:
 
 permissions:

@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 mod control;
 mod credentials;
+mod directories;
 mod registration;
 mod rollouts;
 mod snapshots;
@@ -222,7 +223,32 @@ impl ContainerService {
                 })
                 .ok_or_else(unavailable)??;
             }
-            if self.provider.register(&registration).await.is_err() {
+            if self
+                .provider
+                .register(&registration)
+                .await
+                .inspect_err(|error| {
+                    tracing::warn!(
+                        phase = "container-registration",
+                        error_code = error.code().as_str(),
+                        operator_message = error.message(),
+                        "Container admission failed"
+                    );
+                })
+                .is_err()
+                || self
+                    .prepare_directories(&authority, &lease, &registration, auth, credential)
+                    .await
+                    .inspect_err(|error| {
+                        tracing::warn!(
+                            phase = "container-directory-preparation",
+                            error_code = error.code().as_str(),
+                            operator_message = error.message(),
+                            "Container admission failed"
+                        );
+                    })
+                    .is_err()
+            {
                 auth.with_current(credential, || {
                     repo.mark_lost(lease.identity, &lease.opaque_engine_key, now_ms)
                 })

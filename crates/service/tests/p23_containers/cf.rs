@@ -47,6 +47,28 @@ pub(super) fn update_code(project: &Path) {
     fs::write(module, source).unwrap();
 }
 
+pub(super) fn set_directory_capture(project: &Path, enabled: bool) {
+    let path = project.join(".cloudflare/output/v0/workers/default/worker.config.json");
+    let mut worker: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(worker["name"], "containers-fixture");
+    let flags = worker
+        .as_object_mut()
+        .unwrap()
+        .entry("compatibilityFlags")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .unwrap();
+    if enabled {
+        assert!(!flags.iter().any(|flag| flag == "experimental"));
+        flags.push(Value::String("experimental".to_owned()));
+    } else {
+        let before = flags.len();
+        flags.retain(|flag| flag != "experimental");
+        assert_eq!(before, flags.len() + 1);
+    }
+    fs::write(path, serde_json::to_vec(&worker).unwrap()).unwrap();
+}
+
 pub(super) async fn deploy(
     project: &Path,
     state: &Path,

@@ -4,6 +4,7 @@
 
 mod cf;
 mod cleanup;
+mod directory_snapshots;
 mod exec_options;
 mod exec_options_probe;
 mod exec_users;
@@ -119,12 +120,7 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
     let provider = QualifiedContainerProvider::preflight(&inputs.containers).await
         .expect("P23 requires active qualified Linux Docker; protocol mocks and OrbStack quota are not evidence");
     provider.ensure_active().await.unwrap();
-    let purpose = repo().join(".temp/p23-product");
-    fs::create_dir_all(&purpose).unwrap();
-    let directory = tempfile::Builder::new()
-        .prefix("run-")
-        .tempdir_in(&purpose)
-        .unwrap();
+    let directory = tempfile::Builder::new().prefix("run-").tempdir().unwrap();
     let root = directory.path().to_owned();
     let _evidence = platform_process::Evidence(Some(directory));
     let data = root.join("data");
@@ -653,6 +649,47 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
         &provider,
     )
     .await;
+    cf::set_directory_capture(&project, true);
+    cf::deploy(
+        &project,
+        &state,
+        &admin,
+        account,
+        "directories",
+        &replacement_image,
+        [&image, &replacement_image],
+    )
+    .await;
+    let saved_directories = directory_snapshots::capture(
+        &client,
+        &public,
+        &host,
+        &config,
+        (instance, named_application, idle_application),
+        &provider,
+    )
+    .await;
+    cf::set_directory_capture(&project, false);
+    cf::deploy(
+        &project,
+        &state,
+        &admin,
+        account,
+        "directories-stable",
+        &replacement_image,
+        [&image, &replacement_image],
+    )
+    .await;
+    directory_snapshots::cross_restore(
+        &client,
+        &public,
+        &host,
+        &config,
+        (instance, named_application, idle_application, saved.id),
+        &provider,
+        &saved_directories,
+    )
+    .await;
     let cleanup_images = {
         let db = ControlDb::open_readonly_wal_aware(&data.join("control.sqlite"), 1000).unwrap();
         let authority = ContainerAuthority::new(&db);
@@ -674,6 +711,16 @@ async fn ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_
         instance,
         named_application,
         saved,
+    )
+    .await;
+    directory_snapshots::restore_after_restart(
+        &client,
+        &public,
+        &host,
+        &config,
+        instance,
+        (named_application, idle_application),
+        saved_directories,
     )
     .await;
     named_images::assert_images(&client, &public, &host, [&image, &replacement_image]).await;

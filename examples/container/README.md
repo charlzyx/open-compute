@@ -8,8 +8,9 @@ and stops the configured instance before marking the volume initialized.
 Worker Containers require an independently managed Docker Broker and qualified
 provider. See the [Containers operator guide](../../docs/references/containers.md).
 This Compose stack deploys `ocd`; its Docker socket is not a tenant binding.
-P23's new Container capability remains blocked until the formal runtime and
-provider checks pass.
+The 0.4.0 candidate passed the recorded Container product and provider checks.
+Each installation still requires its own qualified provider; candidate evidence
+does not qualify another Engine or complete the formal tag workflow.
 
 ## Published images
 

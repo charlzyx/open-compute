@@ -38,6 +38,8 @@ pub struct NewContainerSnapshot {
     pub source: ContainerSnapshotSource,
     /// Optional public descriptive name.
     pub name: Option<String>,
+    /// Captured directory, or `None` for a complete root filesystem snapshot.
+    pub directory: Option<open_compute_core::containers::ContainerDirectoryPath>,
     /// Complete artifact-byte reservation, retained while publication is unknown.
     pub reserved_bytes: u64,
 }
@@ -72,10 +74,12 @@ pub struct ContainerSnapshot {
     pub artifact_sha256: Option<[u8; 32]>,
     /// Exact artifact bytes, persisted before the first PUT.
     pub artifact_size: Option<u64>,
-    /// Provider-reported Docker image bytes, frozen at positive capture completion.
+    /// Public size: provider image bytes for rootfs capture, tar bytes for a directory capture.
     pub image_size: Option<u64>,
     /// Optional public descriptive name.
     pub name: Option<String>,
+    /// Immutable capture path; directory snapshots cannot become startup images.
+    pub directory: Option<open_compute_core::containers::ContainerDirectoryPath>,
     /// Capture and retirement state.
     pub state: ContainerSnapshotState,
     /// Original byte reservation; pending captures keep its complete charge.

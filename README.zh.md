@@ -148,14 +148,7 @@ open-compute 补上了这一层，并把它交付为一个文件。
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workers AI  | ██░░░░░░░░ 20% — 仅 Markdown Conversion 与 AI Search                                                                                                |
 | Browser Run | external CDP 与 managed browser、Quick Actions、DevTools、Live View 与 Custom AI；见[运维指南](docs/references/runbooks/install-and-first-start.md) |
-
-### 规划中
-
-设计进行中，尚不可部署对应 binding / API。
-
-| 模块       | 状态                      |
-| ---------- | ------------------------- |
-| Containers | ██░░░░░░░░ 20% — 规划中。 |
+| Containers  | 固定 65 项 API 包含目录恢复；需要独立运维的 Linux Broker。[候选验收已通过，正式 tag 资格待完成](docs/implemented/p23-cloudflare-containers.md)。    |
 
 ### 尚未支持
 

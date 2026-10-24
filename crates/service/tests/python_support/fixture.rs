@@ -54,13 +54,8 @@ impl Fixture {
         )
         .await
         .unwrap();
-        let runs = repo_root().join(".temp/p21-python-main-run");
-        fs::create_dir_all(&runs).unwrap();
         let evidence = platform_process::Evidence(Some(
-            tempfile::Builder::new()
-                .prefix("main-")
-                .tempdir_in(&runs)
-                .unwrap(),
+            tempfile::Builder::new().prefix("main-").tempdir().unwrap(),
         ));
         let root = evidence.0.as_ref().unwrap().path().to_owned();
         let data = root.join("data");

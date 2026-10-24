@@ -196,6 +196,7 @@ const topics: TopicDefinition[] = [
       ]),
       group("Compute", "计算", groupIcons.compute, [
         link("Durable Objects", "Durable Objects", "/durable-objects"),
+        link("Containers", "Containers", "/containers"),
         link("Queues", "Queues", "/queues"),
         link("Workflows", "Workflows", "/workflows"),
         link("Browser Run", "Browser Run", "/browser-run"),
@@ -215,6 +216,7 @@ const topics: TopicDefinition[] = [
       { nested: true, prefix: "/r2" },
       { nested: true, prefix: "/vectorize" },
       { nested: true, prefix: "/durable-objects" },
+      { nested: true, prefix: "/containers" },
       { nested: true, prefix: "/queues" },
       { nested: true, prefix: "/workflows" },
       { nested: true, prefix: "/browser-run" },

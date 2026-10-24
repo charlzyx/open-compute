@@ -26,6 +26,9 @@ use std::{
 use tokio::sync::{Mutex, Semaphore};
 
 mod control;
+mod directory;
+mod directory_archive;
+mod directory_start;
 mod exec;
 mod helper;
 mod native;
@@ -34,6 +37,8 @@ mod registration;
 mod snapshot;
 
 struct LeaseEntry {
+    directories_ready: bool,
+    directory_archives: directory::Archives,
     lease: BrokerLease,
     startup: super::startup::EffectiveStartup,
     fenced: bool,
@@ -281,6 +286,9 @@ async fn verify_inspection(
         sidecar_id.as_deref(),
         &state.config.exec_helper_volume,
     )?;
+    if !name.ends_with("-proxy") {
+        directory::verify_volumes(state, lease).await?;
+    }
     startup.verify(value, name)
 }
 
@@ -304,7 +312,7 @@ async fn inventory(engine: &Engine, maximum: u32) -> Result<BTreeSet<String>, Pl
     }
     let list = value
         .as_array()
-        .filter(|list| list.len() <= maximum as usize * 2)
+        .filter(|list| list.len() <= maximum as usize * 3)
         .ok_or_else(invalid)?;
     let mut result = BTreeSet::new();
     for entry in list {
@@ -314,6 +322,44 @@ async fn inventory(engine: &Engine, maximum: u32) -> Result<BTreeSet<String>, Pl
             .filter(|key| opaque(key))
             .ok_or_else(invalid)?;
         result.insert(key.to_owned());
+    }
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair(
+            "filters",
+            "{\"label\":[\"dev.open-compute.container.lease\"]}",
+        )
+        .finish();
+    let (status, volumes) = engine
+        .json(Method::GET, &format!("/volumes?{query}"), Value::Null)
+        .await?;
+    if status != 200 {
+        return Err(invalid());
+    }
+    let volumes = volumes.get("Volumes").ok_or_else(invalid)?;
+    if !volumes.is_null() {
+        for volume in volumes.as_array().ok_or_else(invalid)? {
+            let key = volume
+                .pointer("/Labels/dev.open-compute.container.lease")
+                .and_then(Value::as_str)
+                .filter(|key| opaque(key))
+                .ok_or_else(invalid)?;
+            let index = volume
+                .pointer("/Labels/dev.open-compute.container.directory.index")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid)?;
+            let position = index.parse::<usize>().map_err(|_| invalid())?;
+            if index != position.to_string()
+                || volume.get("Name").and_then(Value::as_str)
+                    != Some(format!("oc-directory-{key}-{index}").as_str())
+                || volume
+                    .pointer("/Labels/dev.open-compute.container.role")
+                    .and_then(Value::as_str)
+                    != Some("directory")
+            {
+                return Err(invalid());
+            }
+            result.insert(key.to_owned());
+        }
     }
     Ok(result)
 }

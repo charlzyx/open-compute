@@ -115,12 +115,7 @@ impl Fixture {
         .await
         .expect("formal pinned stock runtime");
 
-        let runs = repo.join(".temp/p6-cloudflare-sdk-run");
-        fs::create_dir_all(&runs).unwrap();
-        let temp = tempfile::Builder::new()
-            .prefix("sdk-")
-            .tempdir_in(runs)
-            .unwrap();
+        let temp = tempfile::Builder::new().prefix("sdk-").tempdir().unwrap();
         let root = temp.path().to_owned();
         let data = root.join("data");
         let storage = PlatformStorage::bootstrap(&storage_config(&data), &SystemClock).unwrap();

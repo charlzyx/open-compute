@@ -43,6 +43,7 @@ fn contract() -> ProviderContract {
 
 fn lease() -> BrokerLease {
     BrokerLease {
+        directory_snapshots: Vec::new(),
         scheduling_policy: open_compute_storage::containers::ContainerSchedulingPolicy::Default,
         lease_key: "a".repeat(64),
         owner_key: "9".repeat(64),

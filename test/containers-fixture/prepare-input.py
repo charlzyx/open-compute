@@ -32,7 +32,7 @@ def policy(body, broker_socket, requested):
         'max_instances', 'max_snapshots', 'max_snapshot_bytes'))
     contract = json.loads(body, object_pairs_hook=oci.pairs)
     oci.require(isinstance(contract, dict) and set(contract) == FIELDS, 'CONTRACT_FIELDS')
-    oci.require(type(contract['version']) is int and contract['version'] == 3
+    oci.require(type(contract['version']) is int and contract['version'] == 4
                 and contract['runtime'] == 'docker' and contract['qualified'] is True
                 and contract['snapshots'] is True, 'CONTRACT_NOT_QUALIFIED')
     oci.require(all(isinstance(contract[name], str) and contract[name]

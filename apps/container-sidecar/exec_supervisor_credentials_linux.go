@@ -117,7 +117,7 @@ func containerCapabilities() ([2]unix.CapUserData, []uintptr, error) {
 }
 
 func containerMain(value string, arguments []string) int {
-	if len(arguments) == 0 {
+	if len(arguments) == 0 || containerQuotaFilter() != nil {
 		return 125
 	}
 	credential, err := containerCredentials(value)
@@ -156,4 +156,25 @@ func containerMain(value string, arguments []string) int {
 	}
 	_ = syscall.Exec(path, arguments, os.Environ())
 	return 125
+}
+
+// A root-level read-only directory cannot be rebound by renaming a writable ancestor.
+func containerHelperImmutable(directory string) bool {
+	fd, err := unix.Open(directory, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false
+	}
+	defer unix.Close(fd)
+	var filesystem unix.Statfs_t
+	if unix.Fstatfs(fd, &filesystem) != nil || filesystem.Flags&unix.ST_RDONLY == 0 {
+		return false
+	}
+	file, err := unix.Openat(fd, "helper", unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false
+	}
+	defer unix.Close(file)
+	var info unix.Stat_t
+	return unix.Fstat(file, &info) == nil && info.Mode&unix.S_IFMT == unix.S_IFREG &&
+		unix.Fstatfs(file, &filesystem) == nil && filesystem.Flags&unix.ST_RDONLY != 0
 }

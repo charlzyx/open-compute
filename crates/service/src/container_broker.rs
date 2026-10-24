@@ -6,6 +6,8 @@
 mod client;
 mod contract;
 mod credentials;
+mod directory;
+mod directory_helper;
 mod engine;
 mod helper;
 mod journal;
@@ -17,7 +19,10 @@ mod spool;
 mod startup;
 
 pub use client::QualifiedContainerProvider;
-pub use contract::{BrokerConfig, BrokerLease, ProviderContract, ProviderLeaseObservation};
+pub use contract::{
+    BrokerConfig, BrokerDirectoryArchive, BrokerDirectoryRestore, BrokerLease, ProviderContract,
+    ProviderLeaseObservation,
+};
 pub use credentials::BrokerControlCredentials;
 pub use startup::{BrokerLabel, BrokerStartOptions};
 

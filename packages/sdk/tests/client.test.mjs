@@ -65,7 +65,30 @@ test("surface report, combined OpenAPI, and extension authority agree", async ()
   assert.equal(surface.packageVersion, packageJson.version);
   assert.equal(surface.operations.length, 148);
   assert.equal(surface.observedStandardOperations.length, 18);
-  assert.equal(surface.excludedOperations.length, 1);
+  const selection = JSON.parse(
+    await readFile(
+      new URL(
+        "../../../openapi/cloudflare-subset-manifest.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(surface.excludedOperations, selection.sdkExcludedOperations);
+  const containerRoutes = selection.clientObservedOperations.filter((entry) =>
+    entry.operation.includes("/containers/"),
+  );
+  assert.equal(containerRoutes.length, 13);
+  assert.ok(
+    containerRoutes.every((entry) =>
+      surface.excludedOperations.some(
+        (excluded) => excluded.operation === entry.operation,
+      ),
+    ),
+  );
+  assert.ok(
+    !Object.keys(combined.paths).some((path) => path.includes("/containers/")),
+  );
   const byNode = (list) =>
     [...list].sort((left, right) => left.node.localeCompare(right.node));
   assert.deepEqual(

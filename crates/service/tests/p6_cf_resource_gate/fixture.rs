@@ -33,11 +33,9 @@ impl Fixture {
         .await
         .expect("formal pinned stock runtime");
 
-        let runs = repo.join(".temp/p6-cf-resource-run");
-        fs::create_dir_all(&runs).unwrap();
         let temp = tempfile::Builder::new()
             .prefix("resources-")
-            .tempdir_in(runs)
+            .tempdir()
             .unwrap();
         let evidence = Evidence::new(temp);
         let root = evidence.path().to_owned();

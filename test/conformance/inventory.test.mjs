@@ -441,9 +441,23 @@ test("target member evidence is complete and raw TCP coverage is exact", async (
   assert.ok(browser.members.every((member) => member.status === "blocked"));
   const containers = inventory.products.containers;
   assert.equal(containers.kind, "target");
-  assert.equal(containers.status, "blocked");
+  assert.equal(containers.status, "supported");
   assert.equal(containers.members.length, 65);
-  assert.ok(containers.members.every((member) => member.status === "blocked"));
+  for (const member of containers.members) {
+    assert.equal(member.status, "supported", member.id);
+    assert.deepEqual(
+      member.compile_cases,
+      ["ts::test/conformance/fixtures/containers-surface.ts"],
+      member.id,
+    );
+    assert.deepEqual(
+      member.runtime_cases,
+      [
+        "p23-containers::ordinary_sdk_native_execution_code_deploy_rollout_and_restart_use_real_containers",
+      ],
+      member.id,
+    );
+  }
   assert.ok(
     containers.members.some(
       (member) =>
@@ -484,7 +498,6 @@ test("target member evidence is complete and raw TCP coverage is exact", async (
     blocked,
     [
       ...browser.members.map((member) => member.id),
-      ...containers.members.map((member) => member.id),
       ...NEW_PIN_BLOCKED_MEMBERS,
       "dynamic_workers::WorkerLoaderWorkerCode::allowExperimental:property#0",
       "dynamic_workers::WorkerLoaderWorkerCode::streamingTails:property#0",
