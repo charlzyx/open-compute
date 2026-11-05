@@ -60,17 +60,6 @@
 - `open-compute-core` Cargo description 删除不准确的 “Dependency-free”，改为基础 config、error、ID、secret、health 与 clock 职责；它没有 workspace-internal dependency 不等于没有 dependency。
 - R2 完成后同步本页、`docs/README.md` 和受影响的持续维护文档；不把历史 review 当成新的兼容合同。
 
-## 验收
-
-- R2 create、replay、lost-response reconcile、startup recovery、delete 和 restart/crash case 只经过一个 lifecycle controller；handler 中不再直接调用 resource reservation/state transition repository methods。
-- idempotency fixed vectors 和 Vectorize metadata boundary 的成功/拒绝测试通过；service production dependency 不再直接使用 `image`。
-- admin 与 merged router 共享一份 admin route composition，listener-specific middleware、fallback 和鉴权行为保持回归覆盖。
-- Dashboard production source 不再直接导入 `cloudflare/error` 或 `cloudflare/resources/**`，不再手写已纳入 authority 的 query keys，也不展示未支持产品。
-- `open_compute_storage::workers` 和领域类型 root aliases 消失；依赖边界检查反映文档中的全部 crate。
-- production build 不包含只供测试的 service helpers，确认的零消费者 API 已删除。
-
-实现完成后按仓库约定运行 Dashboard build、Rust format/Clippy、no-default-features、MSRV、metadata、dependency boundaries、coverage，以及最终一次 `./test/gate.py --workspace`；只有成功退出的结果才能写入移至 `implemented/` 后的精简记录。
-
 ## 实施证据（2026-09-30）
 
 - `bun run build`、Dashboard TypeScript/tests/build、Rust format/Clippy、no-default-features、Rust 1.98 MSRV、metadata、dependency boundaries 与 source policy 均通过。

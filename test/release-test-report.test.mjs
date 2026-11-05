@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import {
@@ -19,33 +19,22 @@ const identity = {
 };
 const digest = "c".repeat(64);
 
-test("release report consumes the workflow's current macOS evidence label", async () => {
+test("release report requires one workspace coverage pass and all supported native packages", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
-  const platform = /os: \[ubuntu-24\.04, (macos-[^\],]+)\]/.exec(workflow)?.[1];
-  assert.ok(platform);
-  const label = `gate-evidence-${platform}`;
-  const parent = new URL("../.temp/release-report-tests/", import.meta.url);
-  await mkdir(parent, { recursive: true });
-  const directory = await mkdtemp(join(parent.pathname, "workflow-"));
-  try {
-    await createReleaseEvidence(directory, identity, digest);
-    const previous = gateEvidence.find((entry) =>
-      entry.startsWith("gate-evidence-macos-"),
-    );
-    assert.ok(previous);
-    if (previous !== label) {
-      await rename(join(directory, previous), join(directory, label));
-    }
-    const report = JSON.parse(
-      (await releaseTestReport(directory, identity, digest)).json,
-    );
-    assert.ok(report.gates.some((gate) => gate.label === label));
-  } finally {
-    await rm(directory, { recursive: true });
-  }
+  assert.doesNotMatch(workflow, /\n  integration:/);
+  assert.equal(workflow.match(/run: .*test\/coverage\.sh --shard/g)?.length, 1);
+  assert.deepEqual(gateEvidence, [
+    "coverage-shard-1",
+    "coverage-shard-2",
+    "coverage-shard-3",
+    "coverage-shard-4",
+    "package-gate-darwin-arm64",
+    "package-gate-linux-arm64",
+    "package-gate-linux-x64",
+  ]);
 });
 
 test("release report publishes selected metrics and escaped case names; rejects stale, incomplete or failed qualification", async () => {
@@ -56,7 +45,7 @@ test("release report publishes selected metrics and escaped case names; rejects 
     new URL("../.temp/release-report-tests/run-", import.meta.url).pathname,
   );
   await createReleaseEvidence(directory, identity, digest);
-  const gatePath = join(directory, "gate-evidence-macos-15-intel/report.json");
+  const gatePath = join(directory, "coverage-shard-1/report.json");
   const gate = JSON.parse(await readFile(gatePath, "utf8"));
   gate.results[0].targets[0].cases = ['<img src=x onerror="throw 1">'];
   gate.targets.push("open-compute-service.bin.ocd");
@@ -82,15 +71,23 @@ test("release report publishes selected metrics and escaped case names; rejects 
     );
   }
   const report = JSON.parse(rendered.json);
-  assert.equal(report.gates.length, 6);
+  assert.equal(report.gates.length, 7);
   assert.deepEqual(
     report.gates
-      .find((entry) => entry.label === "gate-evidence-macos-15-intel")
+      .find((entry) => entry.label === "coverage-shard-1")
       .targets.at(-1).cases,
     [],
   );
   assert.equal(report.installs.length, 10);
   assert.equal(report.stress.runs.length, 5);
+  const fourthPath = join(directory, "coverage-shard-4/report.json");
+  const fourth = JSON.parse(await readFile(fourthPath, "utf8"));
+  await rm(fourthPath);
+  await assert.rejects(
+    releaseTestReport(directory, identity, digest),
+    /single Gate report/,
+  );
+  await writeJson(fourthPath, fourth);
   const oldRevision = gate.revision;
   gate.revision = "f".repeat(40);
   await writeJson(gatePath, gate);
@@ -122,6 +119,44 @@ test("release report publishes selected metrics and escaped case names; rejects 
   await writeJson(gatePath, gate);
   const stressPath = join(directory, "stress-qualification/qualification.json");
   const stress = JSON.parse(await readFile(stressPath, "utf8"));
+  assert.equal(report.stress.budgetSeconds, 2400);
+  assert.equal(report.stress.seconds, 1440);
+  assert.doesNotMatch(rendered.html, /soak duration: one hour/);
+  for (const seconds of [2401]) {
+    stress.seconds = seconds;
+    await writeJson(stressPath, stress);
+    await assert.rejects(
+      releaseTestReport(directory, identity, digest),
+      /stress budget/,
+    );
+  }
+  stress.seconds = 0;
+  await writeJson(stressPath, stress);
+  await assert.rejects(
+    releaseTestReport(directory, identity, digest),
+    /stage durations/,
+  );
+  stress.seconds = 1409.75;
+  await writeJson(stressPath, stress);
+  await assert.rejects(
+    releaseTestReport(directory, identity, digest),
+    /stage durations/,
+  );
+  stress.seconds = 1440;
+  stress.runs.at(-1).soak.events.at(-1).elapsed_sec = 599;
+  await writeJson(stressPath, stress);
+  await assert.rejects(
+    releaseTestReport(directory, identity, digest),
+    /minimum 10-minute restart-recovery soak/,
+  );
+  stress.runs.at(-1).soak.events.at(-1).elapsed_sec = 600;
+  stress.runs[3].seconds = 659;
+  await writeJson(stressPath, stress);
+  await assert.rejects(
+    releaseTestReport(directory, identity, digest),
+    /peak load steps/,
+  );
+  stress.runs[3].seconds = 720;
   stress.runs.at(-1).scale = 0.1;
   await writeJson(stressPath, stress);
   await assert.rejects(

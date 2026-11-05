@@ -2,6 +2,7 @@
 
 use crate::capabilities::platform_release_metadata;
 use crate::config_load::LoadedConfig;
+use crate::instance_registry::ServiceScope;
 use crate::metrics::MetricsRegistry;
 use crate::object_storage::connect_object_backend;
 use crate::{ai_tokenizer::AiTokenizerRegistry, auth::resolve_admin_auth};
@@ -18,7 +19,10 @@ use open_compute_storage::data_dir::{inspect_durable_object_storage, read_operat
 use open_compute_storage::inspect::{
     inspect_control_db, inspect_data_root, inspect_master_key, inspect_resources,
 };
-use open_compute_storage::scheduler::{inspect_p23_cross_database, inspect_scheduler_db};
+use open_compute_storage::scheduler::{
+    inspect_p23_cross_database_readonly as inspect_p23_cross_database,
+    inspect_scheduler_db_readonly as inspect_scheduler_db,
+};
 use serde::Serialize;
 use std::io::Write;
 
@@ -153,17 +157,14 @@ fn operation_receipt_check(loaded: &LoadedConfig, name: &'static str) -> DoctorC
         "last-restore.json" => "last_restore_receipt",
         _ => "operation_receipt",
     };
-    let metadata = match std::fs::symlink_metadata(&path) {
+    let metadata = match std::fs::metadata(&path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return warning(check_name, "operation receipt has not been recorded", None);
         }
         Err(_) => return warning(check_name, "operation receipt cannot be inspected", None),
     };
-    if metadata.file_type().is_symlink()
-        || !metadata.file_type().is_file()
-        || metadata.len() > 64 * 1024
-    {
+    if !metadata.file_type().is_file() || metadata.len() > 64 * 1024 {
         return warning(check_name, "operation receipt is invalid", None);
     }
     match read_operation_receipt(&loaded.config.data.path, name, 64 * 1024)

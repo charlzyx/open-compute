@@ -39,30 +39,6 @@ recovery、runtime liveness probe、workerd supervisor 或 limits API。
 | operator outbound            | `#42`               | AI、target、release 与远程 S3 使用一个代理选择与安全合同，tenant egress 不变                             |
 | AI Search 扩展               | `#58`               | namespaced manual source、exact revision、零完整源文件副本、复用现有 indexing pipeline                   |
 
-## 2. 顺序结论
-
-实施顺序固定如下：
-
-| 顺序 | Issue      | 为什么在这里                                                                                          |
-| ---: | ---------- | ----------------------------------------------------------------------------------------------------- |
-|    1 | `#66`      | 小而确定，先恢复标准 Wrangler deploy 路径，解锁后续所有真实 deployment fixtures                       |
-|    2 | `#61`      | 先收敛 Cron unknown/drain，再让 `#62` 修改同一 promotion workflow，避免两个并发状态模型               |
-|    3 | `#62`      | 在 W2 generation/incident 和已收敛 promotion 上增加 deployment admission、quarantine、rollback 与诊断 |
-|    4 | `#42`      | 独立于部署主链；先于 `#58` 建立共享 operator HTTP transport 和 loopback 强制直连规则                  |
-|    5 | `#58`      | 最大的新功能面和最后的 schema 消费者；复用既有 migration 和 HTTP 安全边界                             |
-|    6 | 全批次验收 | 冻结 source、统一 capabilities/deviations/docs，执行 coverage 和一次最终 workspace Gate               |
-
-`#42` 的代码可以与部署主链独立开发，但提交/验收仍按上表串行冻结。`#58` 不提前落地，因为它会扩大
-config、persistence、private protocol、runtime facade 和文档面，且不是当前数据完整性或服务可用性 blocker。
-
-## 3. 已完成前置
-
-P15 已为每类 authoritative SQLite database 建立独立 Refinery lineage，并完成精确 pre-P15 current-head 接管；
-后续 schema 工作只向所属 lineage 追加 migration。W2 已固定 fork、四平台 artifacts 和 formal pin，完成原生
-ResourceLimits、isolate condemnation、generation-fenced functional watchdog 与 `#67` 真实运行时验收。证据和
-持续边界分别见 [P15](p15-sqlite-refinery-migrations.md) 与
-[W2](w2-standard-limits.md)。
-
 ## 4. `#66`：对齐 Wrangler multipart metadata
 
 ### 4.1 合同
@@ -86,15 +62,6 @@ installedVersion
 不为这个字段增加独立 count、字符串或 aggregate budget；multipart metadata 已有统一的 1 MiB admission
 上限。元素保留 `deny_unknown_fields` 和字符串类型校验，顶层也继续 `deny_unknown_fields`，避免把本次修复
 扩大为接受任意 Wrangler metadata。
-
-### 4.2 验收
-
-- 由当前认证基准 Wrangler 4.127.1 生成的 multipart fixture 含 `package_dependencies` 时 deploy、activate、
-  dispatch 成功；4.127.1 是回归基准，不是请求 admission 的精确版本门槛；
-- 省略、空数组和 malformed entries 有测试；未知顶层字段与未知 entry 字段仍返回 closed-decoder 错误；
-- 现有 metadata 1 MiB 边界测试继续覆盖包含 `package_dependencies` 的整个 JSON，不新增重复限额体系；
-- Script upload 与 Versions upload 共用同一 parser，不增加只修某一路由的分支；
-- 兼容日期、binding 不存在等失败保持各自内部分类，Cloudflare envelope 不泄漏 Rust/serde 错误。
 
 ## 5. `#61`：Cron unknown outcome 必须收敛
 
@@ -130,15 +97,6 @@ activation 转为 `draining` 后：
 promotion 保留有界等待。如果当前 claim 在 drain timeout 内没有结束，返回专门的
 `CronProjectionPending` operator diagnostic，包含 activation id 的非秘密 hash、剩余 bound 和 terminal reason
 分类；Cloudflare-facing envelope 保持固定 shape。调用方重试会在上述确定上界后成功，绝不会永久循环。
-
-### 5.3 验收
-
-- always-unknown fixture 的 attempt 单调增加，最终 terminal；重启不重置 budget/deadline；
-- one-off transport loss 可在下一次 delivery 成功；known failure/noRetry 保持原语义；
-- unknown run 遇到 deployment drain 不再 reclaim，旧 activation 在确定上界内归零；
-- history、metrics 和 support bundle 区分 runtime exception、dispatch timeout、transport loss、generation loss
-  与 drain exhaustion，不保存 payload/cron input/secret；
-- scheduler migration 满足 contiguous、transactional、previous-head→latest 和 crash/restart 验收。
 
 ## 6. `#62`：deployment admission、quarantine 与 crash diagnostics
 
@@ -196,17 +154,6 @@ namespaced system status 与 support bundle 暴露：
 Cloudflare Deployment API 仍返回 immutable deployment resources；open-compute-only assessment 只出现在
 namespaced status/capability surface。deployment create 在 candidate 未通过时返回失败，不先返回 active success。
 
-### 6.4 验收
-
-- compile/init 会使 child 退出的 candidate 不替换旧 active；W2 重启后旧 Worker 和所有邻居继续成功；
-- candidate validation 成功后才可见 active，generation race 必须重验；
-- 唯一 in-flight active deployment 导致 unexpected exit 时被 quarantine并自动回退，邻居在新 generation
-  ready 后恢复；stale incident 不能 quarantine 新 deployment；
-- 多 in-flight 的 ambiguous crash 不错误 quarantine，status/support bundle 给出可行动证据；
-- last-exit 文件、CLI JSON、metrics 和 support bundle 有严格大小/字符/secret tests，重启后证据仍存在；
-- W2 已归档的真实 binary、loader、activation 与 crash/restart Gates 继续覆盖 runtime process 边界；本批次新增
-  focused regression 覆盖 admission、generation race、quarantine、rollback、status 与 bounded diagnostic。
-
 ## 7. `#42`：operator-owned HTTP proxy
 
 ### 7.1 一个冻结的单代理策略
@@ -250,17 +197,6 @@ supervisor probe、Wrangler subprocess 和 tenant workerd outbound 也不接入�
 operator 文档明确说明：macOS System Settings 中启用 Surge/Whistle 本身不会影响 `ocd`；必须在实际启动
 `ocd` 的 shell、launchd 或 service environment 中设置上述变量。本批次不实现 SystemConfiguration、PAC、
 WPAD、SOCKS、proxy authentication、custom CA 或单独的 open-compute proxy config。
-
-### 7.2 验收
-
-- local HTTP proxy 证明共享 operator client 使用 absolute-form HTTP，HTTPS destination 使用真实 `CONNECT`
-  tunnel，AI embedding 走同一 policy；target/release 复用该 client，S3 connector 复用同一 frozen policy；
-- 固定环境变量优先级、空值、`NO_PROXY` host/domain suffix/IP/CIDR/`*` 和 loopback hard bypass 有测试；
-  只设置 `HTTP_PROXY` 或 `http_proxy` 也使用该 proxy；
-- invalid/unsupported/unreachable explicit proxy 不产生 direct origin connection；diagnostics 只报告 direct、
-  selected variable 和无 credential 的 proxy origin；
-- S3 经 proxy 的 SigV4 请求成功，loopback S3 和 public Git import 保持 direct；
-- tenant outbound、internal runtime listeners、manual source provider 和 supervisor probe 不经过 operator proxy。
 
 ## 8. `#58`：namespaced manual external source
 
@@ -328,92 +264,6 @@ state。
 旧 generation 在新 generation 完整成功前 active。delete 只移除 locator和 derived state，从不调用 provider
 delete。snapshot 保存 locator和 derived database，不包含源文件；restore/reindex只有在同 provider exact
 revision仍可读时继续，否则 fail closed。
-
-### 8.4 验收
-
-- manual instance 无任何 scan job；bound Worker无需 `ProductWrite` token 即可 upsert exact revision；
-- provider stream产生 keyword/vector结果，AI Search object namespace不存在完整源副本；
-- same revision幂等，changed revision generation-fenced，missing/drift/malformed/oversize/unavailable/response-loss
-  都有 restart-safe outcome；
-- delete、instance delete、reindex和GC从不修改 provider source；
-- account/instance/provider capability isolation、credential redaction、loopback/redirect/SSRF边界有测试；
-- list/get/download/search citation保留 provider id、source、key、revision，供 application重新授权；
-- builtin、R2 和全部既有 Cloudflare AI Search conformance fixture 在 extension enabled/disabled 两种状态下结果不变；
-- [`cloudflare-compatibility.md`](../references/cloudflare-compatibility.md) 已把 manual source 单独登记为
-  **open-compute extension / Cloudflare API superset**，不得计入 Cloudflare stable-member denominator、伪装成官方
-  capability 或用 deviation ID 掩盖官方 API 行为变化。
-
-## 9. Cross-issue ownership
-
-- `crates/storage` 独占 per-database Refinery migration、Cron durable budget、deployment assessment 和 AI Search locator；service
-  handler不能拼 SQL。
-- `crates/workers` 独占 Version/Deployment admission、active pointer、quarantine/rollback 和 route generation。
-- `crates/runtime` 只提供 W2 supervisor snapshot/incident/diagnostics，不感知 Worker database 或自动 rollback。
-- `crates/core` 独占 transport-neutral operator proxy env 解析与选择；`crates/artifacts` 只把已冻结 policy 适配到
-  S3 connector，public Git import 保持 direct。
-- `crates/service` 组合 deployment validation、incident attribution、operator HTTP 和 AI Search provider transport；
-  transport handlers保持 thin。
-- `packages/runtime` 只添加 trusted validation endpoint 与 namespaced AI Search facade；tenant input不能选择内部
-  endpoint、generation、provider URL 或 credential。
-
-## 10. 分阶段提交与 Gates
-
-实现边界与第 2 节顺序一致：
-
-1. `fix(workers): accept Wrangler package dependencies`（`#66`）
-2. `fix(cron): bound unknown delivery and activation drain`（`#61`）
-3. `fix(workers): admit deployments and quarantine runtime crashes`（`#62`）
-4. `feat(http): honor the operator proxy policy`（`#42`）
-5. `feat(ai-search): add namespaced manual source providers`（`#58`）
-6. `test: qualify remaining GitHub open-issue batch`
-
-每阶段只运行对应 focused tests，修复后冻结再进入下一阶段。最终按仓库规则运行 runtime build、Rust/TypeScript
-静态检查、dependency boundaries、coverage和一次完整 workspace Gate；不重复同一 frozen input 的 aggregate，
-不隐式下载 workerd，不运行需 sudo 的 Linux egress fixture。
-
-最终验收复用既有 real-runtime Gates 覆盖正式 workerd、deployment activation、supervisor restart 与 runtime
-boundary；本批次 focused tests 额外覆盖以下新增合同：
-
-- 认证基准 Wrangler 带 `package_dependencies` deploy candidate；
-- Cron dispatch在candidate activation前后发生one-off和permanent unknown；
-- candidate validation失败或generation race时旧active保留，唯一in-flight incident可quarantine并回退；
-- operator AI provider和remote S3经proxy调用，同时manual source provider保持loopback direct；
-- manual source的exact revision、provider isolation、download citation和generation fence不漂移。
-
-## 11. 完成定义
-
-本 I 批次只有同时满足以下条件才可移入 `docs/implemented/`：
-
-- GitHub再次读取时，本文列出的 5 个 issues 仍是剩余集合；新增 issue 已显式纳入或排除并说明原因；
-- 5 个剩余 issues 各自的 issue reproduction 和 failure path 在正式输入上通过，不以 unit mock 替代
-  real-runtime 要求；
-- `#61/#62` 证明单个 Cron run 或 deployment 不能永久阻断 shared runtime 或后续 deployment；
-- `#42`不改变tenant egress，`#58`不产生完整源副本或Cloudflare兼容性误报；
-- errors、status、metrics、support bundle和logs不泄漏secret、source bytes、internal URL或raw
-  runtime exception；
-- capabilities、deviations、operator docs、Workers types和GitHub issue状态与实现事实一致；
-- coverage不低于90.00%，最终single-round workspace Gate通过，无orphan process/listener/temp file或secret
-  artifact。
-
-## 12. Cloudflare 兼容性检查
-
-按 [`cf-compatibility-check`](../../.agents/skills/cf-compatibility-check/SKILL.md) 的 runtime、management API 与
-cross-cutting checklist 检查最终 diff，结论为 **无 Cloudflare 合同回归**：
-
-| 变更  | 兼容性结论                                                                                                                                          |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `#66` | 只补齐 Wrangler upload metadata 的已发送字段；Script/Versions 共用 parser，未知字段仍 closed，字段不进入 runtime 或 hash。                          |
-| `#61` | 只改变本地 scheduler 的 durable attempt、deadline 与 drain；Scheduled handler、`controller.noRetry()` 和 tenant-visible event shape 不变。          |
-| `#62` | admission/probe 是 authenticated private path；Cloudflare Deployment resource shape 不变，assessment 只在 namespaced system status/support bundle。 |
-| `#42` | 只覆盖 operator-owned HTTP/S3；tenant `fetch()`、Sockets、Service binding 和 public-network capability 完全不接入 proxy policy。                    |
-| `#58` | manual source 只存在于 `open-compute:ai-search` 类型和 extension operations；官方 adapter 不创建、列出或解析它，官方 member inventory 仍为 54。     |
-
-验证基线是 formal pinned workerd、pinned Cloudflare OpenAPI lock、P6 contract generator、Workers types strict compile 与
-现有 runtime/product Gates。未执行需要外部 Cloudflare account 和写入权限的 hosted differential；这不影响本地已声明
-合同的检查结论，也不把 hosted global topology 纳入 single-machine support scope。
-
-GitHub issues `#42`、`#58`、`#61`、`#62` 和 `#66` 已在实现及上述证据完成后分别写入提交、行为和验收证据，
-并以 completed 关闭；`#68` 已由 P16 单独实现并归档。
 
 ## 13. 最终验收证据
 

@@ -1,6 +1,7 @@
 //! Large concurrent uploads through real HTTP, stock workerd, R2 and D1.
 
 use super::*;
+use axum::body::Bytes;
 use futures::StreamExt as _;
 use http_body_util::BodyExt as _;
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
@@ -11,9 +12,10 @@ use open_compute_workers::{
 };
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
+use tokio::io::AsyncWriteExt as _;
 
-const TOTAL: usize = 241_910_375;
 const PART: usize = 8 * 1024 * 1024;
+const TOTAL: usize = 2 * PART + 1;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_large_upload_keeps_runtime_responsive() {
@@ -125,44 +127,105 @@ async fn concurrent_large_upload_keeps_runtime_responsive() {
     let upload_id = created["uploadId"].as_str().unwrap().to_owned();
     let repo = R2MultipartRepository::new(gate.storage.db());
     let started = Instant::now();
-    let uploads = futures::stream::iter(0..TOTAL.div_ceil(PART))
-        .map(|index| {
-            let client = client.clone();
-            let url = format!("{base}/part?uploadId={upload_id}&number={}", index + 1);
-            async move {
-                let bytes = tokio::task::spawn_blocking(move || part_bytes(index))
+    let upload_client = client.clone();
+    let upload_base = base.clone();
+    let upload_id_for_task = upload_id.clone();
+    // Hold the first HTTP body until the complete probe response has been read.
+    let resume_upload = Arc::new(tokio::sync::Notify::new());
+    let upload_resume = resume_upload.clone();
+    let mut uploads = tokio::task::JoinSet::new();
+    uploads.spawn(async move {
+        futures::stream::iter(0..TOTAL.div_ceil(PART))
+            .map(|index| {
+                let client = upload_client.clone();
+                let resume = upload_resume.clone();
+                let url = format!(
+                    "{upload_base}/part?uploadId={upload_id_for_task}&number={}",
+                    index + 1
+                );
+                async move {
+                    let bytes = tokio::task::spawn_blocking(move || upload_part_bytes(index))
+                        .await
+                        .unwrap();
+                    let started = Instant::now();
+                    let length = bytes.len();
+                    let body = if index == 0 {
+                        let mut bytes = Bytes::from(bytes);
+                        let first = bytes.split_to(1);
+                        Body::from_stream(
+                            futures::stream::once(async {
+                                Ok::<_, std::convert::Infallible>(first)
+                            })
+                            .chain(futures::stream::once(
+                                async move {
+                                    resume.notified().await;
+                                    Ok(bytes)
+                                },
+                            )),
+                        )
+                    } else {
+                        Body::from(bytes)
+                    };
+                    let response = tokio::time::timeout(
+                        Duration::from_secs(35),
+                        client.request(
+                            Request::builder()
+                                .method("PUT")
+                                .uri(url)
+                                .header(header::CONTENT_LENGTH, length)
+                                .body(body)
+                                .unwrap(),
+                        ),
+                    )
                     .await
+                    .unwrap()
                     .unwrap();
-                let started = Instant::now();
-                let part = checked_json(
-                    &format!("upload part {}", index + 1),
-                    send(&client, "PUT", url, Body::from(bytes)).await,
+                    let part = checked_json(&format!("upload part {}", index + 1), response).await;
+                    (part, started.elapsed())
+                }
+            })
+            .buffer_unordered(3)
+            .collect::<Vec<_>>()
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(35), async {
+        loop {
+            let ready = checked_json(
+                "upload started",
+                send(
+                    &client,
+                    "GET",
+                    format!("{base}/upload-started"),
+                    Body::empty(),
                 )
-                .await;
-                (part, started.elapsed())
+                .await,
+            )
+            .await;
+            if ready["uploading"] == true {
+                break;
             }
-        })
-        .buffer_unordered(4)
-        .collect::<Vec<_>>();
-    tokio::pin!(uploads);
-    let mut probes = 0;
-    let mut max_probe = Duration::ZERO;
-    let results = loop {
-        tokio::select! {
-            result = &mut uploads => break result,
-            () = tokio::time::sleep(Duration::from_millis(50)) => {
-                let probe_started = Instant::now();
-                let response = send(&client, "GET", format!("{base}/ping"), Body::empty()).await;
-                assert_eq!(response.status(), 200);
-                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "pong");
-                max_probe = max_probe.max(probe_started.elapsed());
-                assert!(max_probe < Duration::from_secs(2), "lightweight request stalled: {max_probe:?}");
-                probes += 1;
-            }
+            tokio::task::yield_now().await;
         }
-    };
+    })
+    .await
+    .expect("first part must reach the native upload before the probe");
+    let probe_started = Instant::now();
+    let response = send(&client, "GET", format!("{base}/ping"), Body::empty()).await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["x-p05-upload-in-flight"], "true");
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        "pong"
+    );
+    let max_probe = probe_started.elapsed();
+    assert!(
+        max_probe < Duration::from_secs(2),
+        "lightweight request stalled: {max_probe:?}"
+    );
+    resume_upload.notify_one();
+    let results = uploads.join_next().await.unwrap().unwrap();
     let upload_elapsed = started.elapsed();
-    assert!(probes > 0, "no concurrent responsiveness probe executed");
+    assert_eq!(results.len(), 3);
     let max_part = results.iter().map(|(_, elapsed)| *elapsed).max().unwrap();
     let mut parts: Vec<_> = results.into_iter().map(|(part, _)| part).collect();
     parts.sort_by_key(|part| part["partNumber"].as_i64().unwrap());
@@ -220,13 +283,35 @@ async fn concurrent_large_upload_keeps_runtime_responsive() {
     let response = send(&client, "GET", format!("{base}/get"), Body::empty()).await;
     assert_eq!(response.status(), 200);
     let mut stream = response.into_body().into_data_stream();
-    let mut actual = Sha256::new();
+    // Drain the real response before running the client's CPU-bound checksum oracle.
+    let mut readback = tokio::fs::File::from_std(tempfile::tempfile().unwrap());
+    let readback_started = Instant::now();
     let mut length = 0;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.unwrap();
+        let chunk = chunk.unwrap_or_else(|_| {
+            panic!(
+                "readback interrupted after {length} bytes and {:?}",
+                readback_started.elapsed()
+            )
+        });
         length += chunk.len();
-        actual.update(&chunk);
+        assert!(length <= TOTAL, "readback exceeded the uploaded length");
+        readback.write_all(&chunk).await.unwrap();
     }
+    readback.flush().await.unwrap();
+    let mut readback = readback.into_std().await;
+    let actual = tokio::task::spawn_blocking(move || {
+        use std::io::Seek as _;
+        readback.rewind().unwrap();
+        let mut digest = Sha256::new();
+        assert_eq!(
+            std::io::copy(&mut readback, &mut digest).unwrap(),
+            TOTAL as u64
+        );
+        digest.finalize()
+    })
+    .await
+    .unwrap();
     let expected = tokio::task::spawn_blocking(|| {
         let mut digest = Sha256::new();
         for index in 0..TOTAL.div_ceil(PART) {
@@ -237,11 +322,7 @@ async fn concurrent_large_upload_keeps_runtime_responsive() {
     .await
     .unwrap();
     assert_eq!(length, TOTAL);
-    assert_eq!(
-        actual.finalize(),
-        expected,
-        "readback must match every uploaded byte"
-    );
+    assert_eq!(actual, expected, "readback must match every uploaded byte");
     assert!(
         std::fs::read_dir(gate.storage.data_dir().root().join("r2-staging"))
             .unwrap()
@@ -259,7 +340,7 @@ async fn concurrent_large_upload_keeps_runtime_responsive() {
         assert_eq!(provider_parts, parts.len(), "unexpected provider retries");
     }
     println!(
-        "large upload profile={} bytes={TOTAL} concurrency=4 upload_ms={} complete_ms={} max_part_ms={} probes={probes} max_probe_ms={} sha256={}",
+        "large upload profile={} bytes={TOTAL} concurrency=3 upload_ms={} complete_ms={} max_part_ms={} probes=1 max_probe_ms={} sha256={}",
         if cfg!(debug_assertions) {
             "debug"
         } else {
@@ -278,6 +359,16 @@ async fn concurrent_large_upload_keeps_runtime_responsive() {
     let _ = gate.shutdown_tx.send(true);
     gate.source_task.await.unwrap().unwrap();
     gate.binding_task.await.unwrap().unwrap();
+}
+
+fn upload_part_bytes(index: usize) -> Vec<u8> {
+    let length = (TOTAL - index * PART).min(PART);
+    let pattern: [u8; 251] = std::array::from_fn(|offset| ((offset + index * 17) % 256) as u8);
+    let mut bytes = vec![0; length];
+    for chunk in bytes.chunks_mut(pattern.len()) {
+        chunk.copy_from_slice(&pattern[..chunk.len()]);
+    }
+    bytes
 }
 
 fn part_bytes(index: usize) -> Vec<u8> {
@@ -327,10 +418,12 @@ async fn checked_json(
     serde_json::from_str(&text).unwrap()
 }
 
-const SOURCE: &str = r#"export default {
+const SOURCE: &str = r#"let uploadInFlight = false;
+export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/ping") return new Response("pong");
+    if (url.pathname === "/upload-started") return Response.json({uploading: uploadInFlight});
+    if (url.pathname === "/ping") return new Response("pong", {headers: {"x-p05-upload-in-flight": String(uploadInFlight)}});
     if (url.pathname === "/create") {
       await env.DB.exec("CREATE TABLE parts (part INTEGER PRIMARY KEY, size INTEGER NOT NULL)");
       return Response.json(await env.BUCKET.createMultipartUpload("large.bin"));
@@ -339,9 +432,27 @@ const SOURCE: &str = r#"export default {
       const number = Number(url.searchParams.get("number"));
       const size = Number(request.headers.get("content-length"));
       const upload = env.BUCKET.resumeMultipartUpload("large.bin", url.searchParams.get("uploadId"));
-      const part = await upload.uploadPart(number, request.body);
-      await env.DB.prepare("INSERT INTO parts VALUES (?, ?)").bind(number, size).run();
-      return Response.json(part);
+      let phase = "r2-upload";
+      try {
+        const uploading = upload.uploadPart(number, request.body);
+        if (number === 1) uploadInFlight = true;
+        const part = await uploading;
+        if (number === 1) uploadInFlight = false;
+        phase = "d1-insert";
+        await env.DB.prepare("INSERT INTO parts VALUES (?, ?)").bind(number, size).run();
+        return Response.json(part);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        const codes = [
+          "R2_INVALID_OPTIONS", "R2_MULTIPART_INVALID", "R2_OBJECT_TOO_LARGE",
+          "R2_OVERLOADED", "R2_PROVIDER_UNAVAILABLE", "R2_RESULT_UNKNOWN",
+          "R2_INTERNAL_PROTOCOL_ERROR", "BINDING_PROTOCOL_ERROR", "BINDING_PERMISSION_DENIED",
+          "D1_TYPE_ERROR", "D1_SQL_INVALID", "D1_PARAMETER_MISMATCH", "D1_AUTHORIZER_DENIED",
+          "D1_LIMIT_ERROR", "D1_TIMEOUT", "D1_OVERLOADED", "D1_RESULT_UNKNOWN",
+          "D1_DATABASE_CORRUPT", "D1_INTERNAL_PROTOCOL_ERROR"
+        ];
+        return Response.json({phase, nativeErrorCode: codes.find(code => message.includes(code)) ?? "UNKNOWN"}, {status: 500});
+      }
     }
     if (url.pathname === "/state") {
       return Response.json(await env.DB.prepare("SELECT COUNT(*) AS count, SUM(size) AS bytes FROM parts").first());

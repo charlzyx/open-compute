@@ -1,13 +1,12 @@
 use super::*;
 
 pub(super) async fn run() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in("/tmp").unwrap();
     let runtime = verified(dir.path()).await;
     let data = dir.path().join("teardown-proof");
     fs::create_dir(&data).unwrap();
     fs::create_dir(data.join("runtime")).unwrap();
     let lease = data.join("runtime/child.lease");
-    open_compute_runtime::set_start_key_hook(Some(test_start_key));
 
     let sup = WorkerdSupervisor::new(
         WorkerdSupervisorOptions {
@@ -18,7 +17,6 @@ pub(super) async fn run() {
             jitter: Arc::new(SequenceJitter::new(vec![0])),
             lease_path: Some(lease.clone()),
         },
-        Vec::new(),
         Vec::new(),
         Vec::new(),
     );
@@ -60,12 +58,10 @@ pub(super) async fn run() {
         },
         Vec::new(),
         Vec::new(),
-        Vec::new(),
     );
     replacement.start();
     let next = wait_state(&replacement, SupervisorState::Running).await;
     assert_ne!(next.pid, Some(pid));
     replacement.shutdown().await;
     assert!(!lease.exists());
-    open_compute_runtime::set_start_key_hook(None);
 }

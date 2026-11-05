@@ -1,10 +1,10 @@
 # 版本与发布流程
 
 本页定义正式发布和恢复流程；构建输入、单文件布局与平台限制见[单二进制分发](single-binary.md)。
-执行授权遵循根 [Operating Contract](../../AGENTS.md#operating-contract)：先完成已授权的本地准备，
+执行授权遵循根 [AGENTS.md](../../AGENTS.md#working-here)：先完成已授权的本地准备，
 尚未授权的打包、上传、发布或部署再请求确认。说明 source revision、目标平台、精确 workerd pin、
 目标位置、网络/权限影响和排除的无关改动；同一范围的已有授权不重复询问。
-发布前按 [Day1 迁移规则](../../AGENTS.md#day1-architecture)核对已发布 SQL 的文件名、顺序与字节，资格检查拒绝漂移。
+发布前按 [Day1 迁移规则](../../AGENTS.md#invariants)核对已发布 SQL 的文件名、顺序与字节，资格检查拒绝漂移。
 
 open-compute 只发布标准稳定版本和三个正式平台的原生单文件 `ocd`。版本使用不带预发布或构建后缀的
 SemVer：Cargo 版本写作 `X.Y.Z`，Git tag 写作 `vX.Y.Z`。不使用 `alpha`、`beta`、`rc`、
@@ -79,7 +79,7 @@ macOS 入口先在 `container-images.yml` 的手动入口为同一候选构建�
    package/version、official SDK/OpenAPI pins、surface 变化、安装命令与 npm version link）；
    不得保留 TODO、TBD 或 PLACEHOLDER。Workerd 与 Thanks 的内容要求见下文。
 
-上述规则由唯一的 `failfast` job 持有，所有 coverage、integration、package 和 SDK package job 都只在它
+上述规则由唯一的 `failfast` job 持有，所有 coverage、package 和 SDK package job 都只在它
 成功后启动。该 job 绑定 `release` environment，并只做秒级检查：tag/release/source identity、版本与干净
 checkout、main CI 证据、release notes 章节和占位符、Workerd 章节的精确 gitlink 或
 `submodule revision is unchanged` 句子、Thanks、`sourceDigest`、release-tool 单元契约、
@@ -87,9 +87,15 @@ checkout、main CI 证据、release notes 章节和占位符、Workerd 章节的
 parser，producer 在写报告前即调用 consumer parser；schema 漂移不再等到三平台产物完成后才发现。
 `failfast` 不拉取 LFS、不构建 Rust/workerd、不跑 coverage 或完整 Gate。
 
-校验通过后，release workflow 并行执行 90% Rust 行覆盖率、macOS 上完整单轮最终 workspace Gate、
-Linux 上仅 `p0-2` 受控 egress fixture，以及三个正式平台打包。Linux egress 不再夹带第二轮
-`--workspace`；静态资格直接复用 release source commit 已通过的 main `ci`，不在 tag workflow 重跑。
+三个正式平台在校验后并行打包。`package-linux-x64` 构建 Linux x64，`package-other` 用同一步骤构建 Darwin ARM64 和 Linux ARM64。
+打包任务以 `release-<target>` 上传结束。`upgrade-driver` 在 `failfast` 后独立构建三平台测试驱动；候选 dispatch 只构建所选平台。
+`package-gate-linux-x64` 等待 `package-linux-x64`，`package-gate-other` 等待 `package-other`，再下载对应包执行 `single-binary`；Linux ARM64 另执行 Dashboard e2e。
+`install-lifecycle` 等待 `package` 和 `upgrade-driver`，`stress` 只等待 `package`；`assemble` 应等待全部包、package Gate、安装、stress、coverage 和现有 provider/SDK 检查，`publish` 等待 `assemble` 与现有检查。
+`package` 在 tag push 时等待三个平台，候选 dispatch 时只等待所选平台。
+四个 coverage shard 与 package 并行，只依赖 `failfast` 和 `fixture-images`；候选 dispatch 在各片下载前独立验证 fixture run 来源。
+只有含 `containers` 的第二片在 coverage 环境与 target 目录中先执行 Gate 的完整 workspace `cargo test --no-run` 构建，得到本提交的 test-support Broker，再进入 Linux engine；四片都在受控 egress 中执行 workspace 子集。
+`coverage` 合并四片的原始 profile 和各片的精确 object 集合，再检查 90.00% 行覆盖率；release report 要求四片各有一份成功的 Gate 报告。
+静态资格直接复用 release source commit 已通过的 main `ci`，不在 tag workflow 重跑。
 三个原生 runner 使用正式 workerd lock 打包自己的 `ocd`，并以 `OPEN_COMPUTE_TEST_OCD` 跑单文件隔离、
 首启、重启和损坏拒绝测试。Linux ARM64 package 还对 production binary 执行精确的 embedded Dashboard
 smoke：未认证 shell、admin session、account discovery、顶层 reload 和真实 Worker 创建/删除。完整 Dashboard
@@ -100,17 +106,20 @@ E2E 依赖专用多实例与可选产品 fixture，不在干净的 production pa
 不改变 binary、receipt、配置或持久数据。0.2.3 的 sudo setup 会拒绝 installer 交给服务用户的临时目录；
 该已复现的历史问题不能通过修改旧二进制掩盖，候选版本的原始 installer 首装仍必须无 workaround 通过。
 
-`publish` 明确依赖 main 静态资格、coverage、macOS 最终 Gate、Linux egress 和三个正式平台 assemble；
-任何一项未通过均不得公开发布。构建保留编译耗时和必要失败证据；当前 mbx/Cargo target 缓存策略见 [CI 构建性能](ci-build-performance.md#缓存与证据)。
+`publish` 等待 source 检查、合并后的 coverage、gateway/provider 测试、SDK、安装、stress 和 assemble；
+任何一项未通过均不得公开发布。构建保留编译耗时和必要失败证据；当前 Cargo 缓存策略见 [CI 构建性能](ci-build-performance.md#缓存与证据)。
 
 npm 发布以 `npm publish` 成功退出为完成信号，成功后不轮询 registry，也不等待 eventual-consistency read-back。
 只有 `npm publish` 返回失败时才做一次只读身份查询：若同版本已经存在且 tarball shasum/integrity 与已验证
 artifact 完全一致，则把它视为此前调用结果未知但发布已完成；否则立即失败并交给 `release-recovery`，不自动重发。
 
 只读 `assemble` job 只接受三个精确命名的二进制和对应 package report；它重新核对版本、revision、workerd pin、
-lock SHA-256、文件大小与文件 SHA-256。组装还必须等待 coverage、integration、安装生命周期和 stress 全部成功，读取各 job 的同提交证据生成品牌 HTML 与 JSON 报告，将报告摘要和大小写入 `release.json`，并加入 `SHA256SUMS`。
+lock SHA-256、文件大小与文件 SHA-256。组装还必须等待 coverage、gateway、AI/S3 provider、安装生命周期和 stress 全部成功，读取各 job 的同提交证据生成品牌 HTML 与 JSON 报告，将报告摘要和大小写入 `release.json`，并加入 `SHA256SUMS`。
 
-`stress` 使用已打包的 Linux x64 候选，在独立 Compose project 中实际限制 2 CPU / 4 GiB，执行 smoke、P0、scenario、完整 P1 peak 与一小时 soak。缩减档、零样本、超出错误率或延迟 SLO、缺失 stack、重启失败或恢复未验证均阻止发布。报告包含 Gate case、耗时、覆盖率、安装/升级步骤、逐 stack 样本和 p50/p95/p99、阈值以及恢复重启次数；只输出选定字段，不包含凭据、原始日志、API payload 或主机路径。
+`stress` 使用已打包的 Linux x64 候选，在独立 Compose project 中实际限制 2 CPU / 4 GiB，在 40 分钟预算内依次执行 smoke、P0、scenario、P1 peak 和恢复 soak。每个峰值负载档持续 60 秒，原并发、速率和 SLO 保持。soak 固定以 600 秒为目标，轮换上限 60 秒、重启间隔 150 秒，完成 3 次重启和恢复核验。轮换包含 readiness 耗时，并为剩余 stack 分配重启开销；每个 stack 都必须有样本。
+600 秒结束时若还缺恢复核验，继续轮换至三次完成；整个 soak 在 suite deadline 前 60 秒强制结束，保留 drain 时间。
+
+预算从部署完成后开始；CI 另留 15 分钟用于准备、清理和上传。阶段耗时和总耗时应写入报告。超时、缩减负载档、零样本、超出错误率或延迟 SLO、缺失 stack、重启失败或恢复未验证均阻止发布。报告包含 Gate case、耗时、覆盖率、安装/升级步骤、逐 stack 样本和 p50/p95/p99、阈值以及恢复重启次数；只输出选定字段，不包含凭据、原始日志、API payload 或主机路径。
 
 工作流的默认权限
 是只读，只有 `release` environment 中的最后一个 job 获得 `contents: write`。该 job 只使用随 tag 提交并通过上述结构
@@ -127,7 +136,7 @@ Dashboard smoke。工具链镜像固定 Rust 1.98.0、Bun 1.3.14、Node 26.8.1 �
 worktree 的 `.temp/release-dry-run/source/.temp/` 和 `apps/dashboard/test-results/`。
 
 远端 `release-dry-run` workflow 已删除：它耗时接近正式 release，产物和缓存又不被正式 release 消费。
-本地诊断不创建 GitHub Release、不发布 npm、不创建或移动 tag，也不替代正式 tag workflow 的 macOS
+本地诊断不创建 GitHub Release、不发布 npm、不创建或移动 tag，也不替代正式 tag workflow 的 Linux
 workspace Gate、coverage、Linux x64/Darwin package、受控 egress、SDK tarball、artifact 组装和公开资产回读。
 
 CI 和 release 都使用 `bun run test:js:ci` 的平台工具/runtime 测试集合。第三方应用 qualification
@@ -145,7 +154,7 @@ vinext/Next.js 端到端或 hosted Cloudflare differential。其冻结摘要和�
    `packages/sdk/package.json` 的 `version` 改为同一 `X.Y.Z`（`@open-compute/sdk` 与 `ocd` 共享同一
    stable 版本，没有独立 SDK tag；release workflow 的 `failfast` job 会拒绝 SDK 与 workspace 版本不一致
    的 tag）；
-2. 通过全局 `mbx` 调用 Rust 工具更新 `Cargo.lock` 的 workspace package 版本，不手改 lockfile；
+2. 通过 `cargo` 更新 `Cargo.lock` 的 workspace package 版本，不手改 lockfile；
 3. 检查并上传 Git LFS 实体，不能只把 pointer 推到 Git：
 
    ```sh
@@ -199,11 +208,12 @@ git tag -a vX.Y.Z -m "open-compute vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Gate job 显式构建资产并准备锁定依赖，package 独立从源码构建。qualification 与 package 在身份校验后并行，
-publish 等待完整成功证据。缓存与任务依赖见 [CI 构建性能](ci-build-performance.md#当前执行分工)。
+每个 coverage shard 显式构建资产并准备锁定依赖，与 package 独立运行。Broker 来自本提交的完整插桩构建，Gate 复用相同 feature graph、普通二进制与测试产物，只重复 Cargo 的 fresh 检查；包仍由自己的 `single-binary` Gate、安装生命周期和 stress 验证。
+原始 profile 与精确 object 使用 `zstd -T0` 归档，上传关闭二次压缩，merge 解包后保持相同输入集合。
+merge 等待所有 shard；publish 等待三个正式平台包与完整成功证据。任务依赖见 [CI 构建性能](ci-build-performance.md#当前执行分工)。
 
 push tag 是唯一发布触发器。随后在 GitHub Actions 的 `release` workflow 中确认所有 qualification、
-三个正式目标 package 和 `publish` job 成功，并在 GitHub Release 页面核对七个 assets。仓库已配置以下设置（2026-09-06 按用户要求迁移）：
+三个正式目标 package、package Gate 和 `publish` job 成功，并在 GitHub Release 页面核对七个 assets。仓库已配置以下设置（2026-09-06 按用户要求迁移）：
 
 - main 分支不启用分支保护；版本从 main 推进到唯一的 release 分支；release 分支要求 PR、最新 required `ci` 成功和讨论解决，禁止强推/删除；管理员同样受检查约束；
 - `Release tags` ruleset 限制 `v*` tag 创建/更新/删除，仅 repository admin maintainer 可 bypass；

@@ -15,15 +15,12 @@ pub(super) async fn run() {
         CREATE TABLE steps(id TEXT NOT NULL REFERENCES runs(id),ordinal INTEGER NOT NULL,descriptor TEXT NOT NULL,
             state TEXT NOT NULL,token TEXT,deadline INTEGER NOT NULL,output TEXT,code TEXT,attempt INTEGER NOT NULL,PRIMARY KEY(id,ordinal));").unwrap();
     let db = Arc::new(Mutex::new(db));
-    let backend = Backend {
-        auth: harness.binding_auth.clone(),
-        db: db.clone(),
-    };
-    let listener = harness.binding_listener.take().unwrap();
+    let backend = Backend { db: db.clone() };
+    let mut listener = harness.binding_listener.take().unwrap();
     let mut shutdown = harness.shutdown.subscribe();
     let server = tokio::spawn(async move {
         axum::serve(
-            listener,
+            listener.take_listener().unwrap(),
             Router::new()
                 .route("/internal/workflows/runs/{operation}", post(handle))
                 .with_state(backend),
@@ -83,7 +80,7 @@ pub(super) async fn run() {
         };
         assert_eq!(
             decode_workflow_json(&output_base64),
-            json!({"bytes": 4.0, "denied": true})
+            json!({"bytes": 4.0, "privateBytes": 4.0})
         );
     }
     for mode in ["hostileWait", "hostileRetry"] {
@@ -108,14 +105,14 @@ pub(super) async fn run() {
                 );
                 db.execute(
                     "UPDATE steps SET state='complete',output=?2 WHERE id=?1 AND state='waiting'",
-                    params![request.fence.instance_id.to_string(), event],
+                    params![request.fence.instance_id, event],
                 )
                 .unwrap();
             }
             assert_eq!(
                 db.execute(
                     "UPDATE runs SET state='running',token=?2 WHERE id=?1 AND state='waiting'",
-                    params![request.fence.instance_id.to_string(), "33".repeat(32)]
+                    params![request.fence.instance_id, "33".repeat(32)]
                 )
                 .unwrap(),
                 1
@@ -179,7 +176,7 @@ pub(super) async fn run() {
                 let (state, token): (String, Option<String>) = db
                     .query_row(
                         "SELECT state,token FROM runs WHERE id=?1",
-                        [request.fence.instance_id.to_string()],
+                        [request.fence.instance_id],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .unwrap();
@@ -188,7 +185,7 @@ pub(super) async fn run() {
                 let count: i64 = db
                     .query_row(
                         "SELECT count(*) FROM steps WHERE id=?1",
-                        [request.fence.instance_id.to_string()],
+                        [request.fence.instance_id],
                         |row| row.get(0),
                     )
                     .unwrap();
@@ -229,7 +226,7 @@ pub(super) async fn run() {
                             .unwrap()
                             .query_row(
                                 "SELECT state,output,code FROM steps WHERE id=?1",
-                                [request.fence.instance_id.to_string()],
+                                [request.fence.instance_id],
                                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                             )
                             .unwrap();
@@ -250,7 +247,7 @@ pub(super) async fn run() {
                     .unwrap()
                     .query_row(
                         "SELECT state FROM runs WHERE id=?1",
-                        [request.fence.instance_id.to_string()],
+                        [request.fence.instance_id],
                         |row| row.get(0),
                     )
                     .unwrap();
@@ -291,7 +288,7 @@ async fn assert_quarantine_and_restart(
         .unwrap()
         .query_row(
             "SELECT count(*) FROM steps WHERE id=?1",
-            [quarantined.fence.instance_id.to_string()],
+            [quarantined.fence.instance_id],
             |row| row.get(0),
         )
         .unwrap();
@@ -303,7 +300,7 @@ async fn assert_quarantine_and_restart(
     // isolate. This fixture supplies the due promotion; product tests must prove
     // the same transition through the production scheduler and migrations.
     let mut sleeping = sleeping.unwrap();
-    let id = sleeping.fence.instance_id.to_string();
+    let id = sleeping.fence.instance_id;
     let due: i64 = db
         .lock()
         .unwrap()

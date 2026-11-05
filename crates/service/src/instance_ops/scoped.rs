@@ -6,10 +6,6 @@ use open_compute_storage::lock::InspectLock;
 use std::io::{BufRead, IsTerminal};
 
 /// Create a fresh instance through the running daemon after showing exact paths.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "CLI setup options are explicit at the boundary"
-)]
 pub async fn setup_instance(
     registry: &InstanceRegistry,
     scope: ServiceScope,
@@ -175,10 +171,6 @@ pub(crate) fn wait_scoped_daemon_state(
     scope: ServiceScope,
     running: bool,
 ) -> Result<(), PlatformError> {
-    #[cfg(any(test, feature = "test-support"))]
-    if manager.is_test_stub() {
-        return Ok(());
-    }
     let timeout = if running {
         INSTANCE_READY_TIMEOUT
     } else {

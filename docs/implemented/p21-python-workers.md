@@ -37,7 +37,7 @@ Assets 使用现有 private wrapped binding，公开名称为 `Fetcher`，让官
 
 原生 R2 延续 upstream 的已知长度流上传合同：定长分块流可写入，未知长度流抛出 `TypeError` 且不产生对象。D1 binding 延续上游 WrappedBinding 的序列化能力，父 Worker 的持久数据可由显式接收该 binding 的子 Worker 读取，子 `env` 仍仅包含声明的键；原生 KV/R2/Queue 的直接 transfer 拒绝保持。测试使用当前原生 public objects，未恢复已删除的 facade。
 
-Flask 带 request/app context 的流式响应受 [cloudflare/workers-py#287](https://github.com/cloudflare/workers-py/issues/287) 影响。用户于 2026-10-04 明确要求记录并暂缓。SDK 保持原版，普通 Flask HTTP、template、HEAD/status/query、secret、restart 和 rollback 仍需通过。该流式路由不计为通过；Django 和 FastAPI 的流式验收保留。原始失败与诊断证据保留，待上游修复后重验 body、并发上下文和 cancellation cleanup。
+Flask 带 request/app context 的流式响应受 [cloudflare/workers-py#287](https://github.com/cloudflare/workers-py/issues/287) 影响。用户于 2026-10-04 明确要求记录并暂缓。SDK 保持原版，普通 Flask 用例验证 HTTP、template、HEAD/status/query 与 secret。Main 用例集中验证 restart、rollback 和 prepared artifact 完整性。该流式路由不计为通过；Django 和 FastAPI 的流式验收保留。原始失败与诊断证据保留，待上游修复后重验 body、并发上下文和 cancellation cleanup。
 
 Dynamic Python 的 fresh isolate 仍受 `OC-WKR-LIMIT-001` 的一秒 startup 限制，未声明支持；普通部署 prepared artifact 的通过不能推出 Dynamic Python 通过。完整支持面由 [兼容矩阵](../references/cloudflare-compatibility.md)、[偏差](../references/p1-deviations.md)、机器可读合同与用户文档拥有。
 
@@ -59,32 +59,12 @@ CF 复核对照固定的官方 types、cf producer、SDK 与 formal workerd sour
 
 ## #129 Dynamic 基线与 #128 HTTP 子项
 
-2026-10-05 的 scoped Gate `20261005T123536-25820dff` 通过：`./test/gate.py p21-python-runtime`，native inventory 完全匹配，1 个真实进程用例、1 pass、零 ignored、单轮，567.04 秒。复用上文 R4 的正式 darwin-arm64 binary，SHA-256 `5fcc34038f37c5a42668193f31bc1a9eeb4355f42f8188b312d03c77f3efb788`；未重建 workerd、变更正式 pin 或修改 SDK。运行环境仍为 Rust 1.98、`RUSTFLAGS=-D warnings -C debuginfo=0`、`CARGO_INCREMENTAL=0`。
+2026-10-05 scoped Gate `20261005T123536-25820dff`（`p21-python-runtime`）通过。
 
-[`dynamic.rs`](../../crates/service/tests/p21_python_runtime/dynamic.rs) 在普通部署的真实 daemon 中调用公开 `loadWorker`/`getWorker`，使用固定 `child.py`、`2026-09-08`、`globalOutbound = null`，不注入 prepared artifact。该原生 raw Dynamic 路径按 matching workerd 自动选择内置 SDK；它与普通部署的外部 SDK 1.9.2 是不同输入。每阶段分别新建两次、同键调用两次：
-
-| 阶段                                    | 单次 wall 时间 | 实际结果                          |
-| --------------------------------------- | -------------- | --------------------------------- |
-| fresh-process-before-python-preparation | 1017–1053 ms   | 4/4 startup CPU limit；factory +2 |
-| after-ordinary-python-preparation       | 1013–1016 ms   | 4/4 startup CPU limit；factory +2 |
-| fresh-process-after-restart             | 1016–1023 ms   | 4/4 startup CPU limit；factory +2 |
-
-12 次均返回 `Worker exceeded CPU time limit.`，一秒 startup CPU 限额保持不变。失败的初始化没有形成可成功调用的 warmed child；同键两次均重新运行 factory。普通应用的预初始化与运行也没有令 raw Dynamic 初始化通过。三阶段的父 Worker 健康调用均成功，restart 后其不可变 Version 保持不变。wall 时间不是独立 CPU 测量；这份负基线不声明 Dynamic Python 可用于生产，后续实现留在 [#126](https://github.com/elliothux/open-compute/issues/126)。中英文指南已纠正 Cloudflare GA 日期、区分本地资格与上游状态、解释 interpreter/snapshot/TCP 边界，W1/W2 标识其历史 pin，不再作为当前 Dynamic 支持声明。
-
-[`http_clients.rs`](../../crates/service/tests/p21_python_runtime/http_clients.rs) 与应用 `http_client_cases.py` 使用未修改的 requests 2.33.1、httpx 0.28.1（sync/async）和其原版依赖，实际 Python 为 3.14.2。三组完整断言分别运行于首次部署、fresh restart、rollback 后：Unicode 正文/响应头、422 错误、完整 stream 读取、真实超时、closed-port refusal、失败后恢复和 AsyncClient task cancellation。服务器 admission 与迟到响应计数证明 deadline 在响应完成前触发；取消后有界 drain 到零 pending，并在最终停止时证明监听端口可重绑。流迭代验证完整正文，不据此宣称网络分块一定即时交付或 task cancellation 一定立即 abort Fetch。
-
-requests/urllib3 的真实超时链是 `ConnectionError → MaxRetryError → TimeoutError → _TimeoutError → JsException`，不能只捕获 `requests.Timeout`。httpx sync/async 的该 fixture 超时均为 `ConnectTimeout`。三种客户端各自在限额为 2 的独立 Version 内完成两次真实 HTTP 请求，第三次被原生 `Too many subrequests` 拒绝；服务端恰好收到两次，下一次独立 invocation 仍能成功。上传会话分别创建，不复用已消费的 token。现有 Vectorize 等待断言的有界窗口覆盖 30 秒 durable claim 及 SQLite busy windows，不放宽产品限制。
-
-输入由用户已安装的 PyWrangler 构建，再由 cf `workers versions create --prebuilt` 捕获：
-
-```sh
-node scripts/build-python.ts /absolute/python-project --assets-directory public
-node test/conformance/applications/prepare-python-main.ts /absolute/python-project /absolute/capture-dir runtime
-OPEN_COMPUTE_TEST_WORKERD=/absolute/verified/workerd ./test/gate.py p21-python-runtime
-```
-
-本次复用既有构建解释器，设置 `UV_PYTHON_DOWNLOADS=never`、`npm_config_offline=true`；Cargo 的 workerd archive 与 Caddy 输入来自既有 `runtime-env.sh` 的正式锁校验结果。维护 fixture 的 194 个模块及 upload SHA-256 `515bb1afe95d4672ddc69e8050813511f55db8356af516a8a68e3c4634d77a4d` 由 manifest 验证，19 个 SDK source hash 仍匹配原版 inventory。PyWrangler 选用 Pyodide 314.0.7 索引的 requests/httpx wheels；[pylock.toml](../../test/fixtures/python-runtime/pylock.toml) 保留精确 URL/digest，运行资格来自正式 314.0.6 bundle，未把 package 索引当作 runtime pin 升级。
-
-五种 canonical Clippy 配置、后续 fixture 的 scoped Clippy、格式、source policy、capture 工具 strict typecheck、13 个 capture/parser 检查、baseline identity 和双语网站构建通过。此次 follow-up 只改测试、捕获输入和文档，生产代码未变化；上文完整 workspace/coverage 是此前生产实现的验收，这次新增断言的证据为本 scoped run。完整输出、负基线、超时异常链、限额结果与此前失败保存在 `.temp/python-issues-128-129/` 和 `.temp/gate-run/`；没有重试未修复的失败或删除证据。
-
-[#129](https://github.com/elliothux/open-compute/issues/129) 的基线与文档范围已完成。[#128](https://github.com/elliothux/open-compute/issues/128) 仅补齐 requests/httpx 子项；AI/API client、HTTP MCP、PostgreSQL/MySQL drivers、TLS 及其剩余资格后续再补。Flask context streaming #287 保持已接受的上游限制，不修改 SDK 或把该路线计为通过。
+- **Dynamic Python（#129）**：raw Dynamic 路径在三个阶段（fresh process、普通 preparation 后、restart 后）各调用 4 次，12 次全部触发
+  `Worker exceeded CPU time limit.`，1 秒 startup CPU 限额不变。失败初始化不会形成 warmed child。Dynamic Python 仍不可用于生产，
+  后续实现见 [#126](https://github.com/elliothux/open-compute/issues/126)。
+- **HTTP 客户端（#128 子项）**：原版 requests 2.33.1 和 httpx 0.28.1（sync/async）在首次部署、重启和 rollback 后通过 Unicode、错误码、
+  流式读取、真实超时、连接拒绝、取消和 subrequest 限额断言。requests 的超时对外是 `ConnectionError`，不是 `requests.Timeout`。
+  AI/API client、HTTP MCP、数据库驱动和 TLS 仍属于 [#128](https://github.com/elliothux/open-compute/issues/128)。
+- Flask context streaming（workers-py#287）保持已接受的上游限制。

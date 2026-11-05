@@ -24,10 +24,7 @@ use std::collections::VecDeque;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::{Read, Seek as _, SeekFrom, Write as _};
-#[cfg(target_os = "macos")]
-use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::ffi::OsStringExt as _;
-use std::os::unix::fs::MetadataExt as _;
 use std::str::FromStr as _;
 use std::sync::Arc;
 #[cfg(test)]

@@ -1,10 +1,58 @@
 import unittest
+from pathlib import Path
+import subprocess
+import tempfile
 from unittest.mock import patch
 
-from ci_scope import BASELINE_PATH, changed_files, classify
+from ci_scope import BASELINE_PATH, PRODUCT_TARGETS, affected_targets, changed_files, classify
 
 
 class CiScopeTests(unittest.TestCase):
+    def test_product_target_unions_and_shared_fallback(self):
+        self.assertEqual(affected_targets(['crates/service/src/r2_api.rs']), ['r2', 'recorded', 'contract'])
+        self.assertEqual(affected_targets([
+            'crates/service/src/r2_api.rs', 'crates/storage/src/d1.rs',
+            'crates/service/src/r2_backend/tests/multipart.rs',
+        ]), ['r2', 'd1', 'recorded', 'contract'])
+        self.assertEqual(affected_targets(['crates/service/tests/p0_5_r2_support/uploads.rs']),
+                         ['r2', 'recorded', 'contract'])
+        self.assertEqual(affected_targets(['test/applications/python-queues/src/entry.py']),
+                         ['recorded', 'python-queues', 'contract'])
+        for path in ['crates/core/src/ids.rs', 'Cargo.lock', 'packages/runtime/src/loader.ts']:
+            self.assertEqual(affected_targets([path]), list(PRODUCT_TARGETS), path)
+        self.assertEqual(affected_targets(['test/conformance/fixtures/kv/portable-namespace/contract.json']), ['recorded', 'contract'])
+        self.assertIn('recorded', PRODUCT_TARGETS)
+        self.assertNotIn('single-binary', PRODUCT_TARGETS)
+        self.assertNotIn('cf-diff', PRODUCT_TARGETS)
+        self.assertNotIn('ai-provider-qualification', PRODUCT_TARGETS)
+        self.assertEqual(affected_targets(['docs/references/testing.md', 'AGENTS.md',
+                                          'apps/website/src/app.tsx']), [])
+
+    def test_deleted_and_renamed_products_keep_both_sides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=directory, text=True).strip()
+
+            git('init', '--quiet')
+            source = Path(directory, 'crates/service/src/r2_api.rs')
+            source.parent.mkdir(parents=True)
+            source.write_text('same source\n')
+            git('add', '.')
+            base = git('write-tree')
+            for destination, expected in [
+                    (None, ['r2', 'recorded', 'contract']),
+                    ('d1.rs', ['r2', 'd1', 'recorded', 'contract']),
+                    ('shared.rs', list(PRODUCT_TARGETS))]:
+                git('read-tree', '--reset', '-u', base)
+                if destination:
+                    source.rename(source.with_name(destination))
+                else:
+                    source.unlink()
+                git('add', '-A')
+                head = git('write-tree')
+                with patch('ci_scope.git_output', side_effect=lambda args: git(*args)):
+                    self.assertEqual(affected_targets(changed_files(base, head)), expected)
+
     def test_docs_only(self):
         self.assertEqual(classify(["docs/references/testing.md", "README.md"]), ("docs", ""))
         self.assertEqual(
@@ -50,7 +98,7 @@ class CiScopeTests(unittest.TestCase):
                 (
                     "diff",
                     "--name-only",
-                    "--diff-filter=ACMRTUXB",
+                    "--no-renames",
                     "base",
                     "head",
                 ): f"{BASELINE_PATH}\n",
@@ -68,7 +116,7 @@ class CiScopeTests(unittest.TestCase):
                 (
                     "diff",
                     "--name-only",
-                    "--diff-filter=ACMRTUXB",
+                    "--no-renames",
                     "previous",
                     "head",
                 ): f"apps/website/src/app.tsx\n{BASELINE_PATH}\n",
@@ -85,7 +133,7 @@ class CiScopeTests(unittest.TestCase):
             (
                 "diff",
                 "--name-only",
-                "--diff-filter=ACMRTUXB",
+                "--no-renames",
                 "base",
                 "head",
             ): f"{BASELINE_PATH}\n",

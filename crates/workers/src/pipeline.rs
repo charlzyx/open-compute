@@ -184,19 +184,6 @@ pub enum ModuleBindingKind {
     DataBlob,
 }
 
-/// Upload-time Standard resource limits declaration. Only the fixed Cloudflare upload schema
-/// fields are accepted; values are validated against the Standard ceilings at materialization.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct VersionResourceLimitsInput {
-    /// Invocation CPU budget in milliseconds.
-    #[serde(default)]
-    pub cpu_ms: Option<u32>,
-    /// Invocation subrequest budget.
-    #[serde(default)]
-    pub sub_requests: Option<u32>,
-}
-
 /// Platform-provided runtime capabilities frozen with one version.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -207,10 +194,9 @@ pub struct VersionRuntimeFeatures {
     /// Immutable compatibility flags passed to the tenant isolate.
     #[serde(default)]
     pub compatibility_flags: Vec<String>,
-    /// Standard resource limits declared with the upload; omitted dimensions take the
-    /// Standard defaults when the Version is materialized.
-    #[serde(default)]
-    pub limits: Option<VersionResourceLimitsInput>,
+    /// Validated, fully materialized Standard resource limits.
+    #[serde(default = "EffectiveResourceLimits::standard_defaults")]
+    pub limits: EffectiveResourceLimits,
     /// Immutable closed Cloudflare Version annotations.
     #[serde(default)]
     pub annotations: BTreeMap<String, String>,
@@ -245,7 +231,7 @@ impl Default for VersionRuntimeFeatures {
         Self {
             compatibility_date: default_compatibility_date(),
             compatibility_flags: Vec::new(),
-            limits: None,
+            limits: EffectiveResourceLimits::standard_defaults(),
             annotations: BTreeMap::new(),
             cache: VersionCacheInput::default(),
             worker_loaders: Vec::new(),
@@ -278,11 +264,6 @@ pub struct QueueConsumerInput {
     /// Optional ready dead-letter Queue in the same instance.
     #[serde(default)]
     pub dead_letter_queue: Option<QueueId>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct FailedResponse {
-    code: String,
 }
 
 /// Candidate identity passed to the real runtime validator.
@@ -382,36 +363,6 @@ pub trait RuntimeValidator: Send + Sync + 'static {
             ))
         })
     }
-}
-
-/// Cross-database product handoff invoked after validation and before active routing changes.
-pub trait ProductPromotionCoordinator: Send + Sync + 'static {
-    /// Stage, drain, promote, and activate Queue/Cron targets without overlapping generations.
-    fn promote(
-        &self,
-        request: ProductPromotionRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<(), PlatformError>> + Send + '_>>;
-}
-
-/// Immutable authority needed by the Queue/Cron promotion coordinator.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ProductPromotionRequest {
-    /// Owning instance.
-    pub instance_id: InstanceId,
-    /// Worker whose active version changes.
-    pub worker_id: WorkerId,
-    /// Validated ready target version.
-    pub version_id: VersionId,
-    /// Exact v4 operation that creates the immutable Deployment.
-    pub source: DeploymentSource,
-    /// Closed Cloudflare deployment annotations persisted with the traffic assignment.
-    pub annotations: BTreeMap<String, String>,
-    /// Script-level observability fields committed with the active Deployment.
-    pub observability: Option<WorkerObservabilityPatch>,
-    /// Audit request identity.
-    pub request_id: RequestId,
-    /// Control-plane wall time.
-    pub now_ms: i64,
 }
 
 #[cfg(any(test, feature = "test-support"))]

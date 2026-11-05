@@ -36,16 +36,13 @@ pub(super) fn inspect_local_components(
 
     let hold_local = inspect.as_ref().is_some_and(|root| root.lock_available);
     let cache_dir = loaded.config.data.path.join("cache").join("artifacts");
-    let cache_meta = std::fs::symlink_metadata(&cache_dir);
+    let cache_meta = std::fs::metadata(&cache_dir);
     if !hold_local && inspect.is_some() {
         checks.push(skipped(
             "cache_integrity",
             "data directory exclusive lock is held by another instance",
         ));
-    } else if cache_meta
-        .as_ref()
-        .is_ok_and(|m| !m.file_type().is_symlink() && m.file_type().is_dir())
-    {
+    } else if cache_meta.as_ref().is_ok_and(|m| m.file_type().is_dir()) {
         match ArtifactCache::inspect_existing(cache_dir) {
             Ok(cache) => match cache.sample_integrity() {
                 Ok(sample) if sample.corrupt => checks.push(failed(
@@ -303,6 +300,7 @@ pub(super) async fn inspect_object_storage(
 pub(super) async fn inspect_full(
     loaded: &LoadedConfig,
     mode: DoctorMode,
+    scope: ServiceScope,
     inspect: Option<&open_compute_storage::inspect::DataRootInspect>,
     db_ok: Option<&open_compute_storage::identity::StableIdentity>,
     object_backend: Option<&ObjectBackend>,
@@ -314,6 +312,7 @@ pub(super) async fn inspect_full(
         runtime::run_full_extras(
             checks,
             loaded,
+            scope,
             root,
             object_backend,
             db_ok.map(|i| i.instance_id),

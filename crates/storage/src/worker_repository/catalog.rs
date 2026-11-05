@@ -58,12 +58,6 @@ impl<'a> WorkerRepository<'a> {
         max_live: u32,
     ) -> Result<(WorkerRecord, RouteRecord), PlatformError> {
         validate_worker_name(name)?;
-        if is_system_reserved_worker_name(name) {
-            return Err(PlatformError::new(
-                ErrorCode::WorkerNameConflict,
-                "Worker name is reserved for platform-owned versions",
-            ));
-        }
         if max_live == 0 {
             return Err(PlatformError::new(
                 ErrorCode::LimitInvalid,
@@ -80,7 +74,7 @@ impl<'a> WorkerRepository<'a> {
                 .query_row(
                     "SELECT COUNT(*) FROM workers
                      WHERE (SELECT instance_id FROM instance_identity) = ?1 AND deleted_at_ms IS NULL AND ownership = 'tenant'",
-                    [instance_id.to_string()],
+                    [instance_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -97,7 +91,7 @@ impl<'a> WorkerRepository<'a> {
                   route_generation, created_at_ms, updated_at_ms, deleted_at_ms, ownership)
                  VALUES (?1, ?2, NULL, ?3, 1, ?4, ?4, NULL, 'tenant')",
                     params![
-                        worker_id.to_string(),
+                        worker_id,
                         name,
                         do_storage_id,
                         now_ms
@@ -115,7 +109,7 @@ impl<'a> WorkerRepository<'a> {
                  (worker_id, generation, enabled, head_sampling_rate, logs_enabled,
                   logs_head_sampling_rate, invocation_logs, persist, updated_at_ms)
                  VALUES (?1, 1, 1, NULL, 1, NULL, 1, 1, ?2)",
-                params![worker_id.to_string(), now_ms],
+                params![worker_id, now_ms],
             )
             .map_err(|_| db_error())?;
             tx.execute(
@@ -132,7 +126,7 @@ impl<'a> WorkerRepository<'a> {
                   path_prefix, entrypoint, state,
                   generation, created_at_ms, updated_at_ms, deleted_at_ms)
                  VALUES (?1, ?1, ?2, 'worker', 'local', '/', NULL, 'active', 1, ?3, ?3, NULL)",
-                params![route_id, worker_id.to_string(), now_ms],
+                params![route_id, worker_id, now_ms],
             )
             .map_err(|_| db_error())?;
             audit(
@@ -190,17 +184,13 @@ impl<'a> WorkerRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = stmt
-                .query_map([instance_id.to_string()], map_worker)
+                .query_map([instance_id], map_worker)
                 .map_err(|_| db_error())?;
             collect_rows(rows)
         })
     }
 
     /// List one bounded, filtered, and sorted page of tenant Workers.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "SQLite boundary inputs mirror authoritative persisted fields"
-    )]
     pub fn list_workers_page(
         &self,
         instance_id: InstanceId,
@@ -310,139 +300,7 @@ impl<'a> WorkerRepository<'a> {
         instance_id: InstanceId,
         worker_id: WorkerId,
     ) -> Result<WorkerRecord, PlatformError> {
-        let worker = self.get_worker(instance_id, worker_id)?;
-        require_tenant_worker(&worker)?;
-        Ok(worker)
-    }
-
-    /// Ensure the release-owned dashboard Worker exists as a system-owned version slot.
-    pub fn ensure_system_dashboard_worker(
-        &self,
-        instance_id: InstanceId,
-        request_id: RequestId,
-        now_ms: i64,
-    ) -> Result<WorkerRecord, PlatformError> {
-        if let Some(record) = self.get_system_owned_version(SystemOwnedVersionKind::Dashboard)? {
-            return self.get_worker(instance_id, record.worker_id);
-        }
-        self.create_system_dashboard_worker(instance_id, request_id, now_ms)
-    }
-
-    /// Read one persisted system-owned version pin.
-    pub fn get_system_owned_version(
-        &self,
-        kind: SystemOwnedVersionKind,
-    ) -> Result<Option<SystemOwnedVersionRecord>, PlatformError> {
-        self.db.with_read(|conn| {
-            conn.query_row(
-                "SELECT kind, worker_id, active_version_id, assets_sha256,
-                        updated_at_ms
-                 FROM system_owned_versions WHERE kind = ?1",
-                [kind.as_str()],
-                map_system_owned_version,
-            )
-            .optional()
-            .map_err(|_| db_error())
-        })
-    }
-
-    /// Persist the active dashboard version pin after bootstrap or promotion.
-    pub fn pin_system_owned_version(
-        &self,
-        record: &SystemOwnedVersionRecord,
-    ) -> Result<(), PlatformError> {
-        self.db.with_immediate(|tx| {
-            let changed = tx
-                .execute(
-                    "INSERT INTO system_owned_versions
-                     (kind, worker_id, active_version_id, assets_sha256, updated_at_ms)
-                     VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(kind) DO UPDATE SET
-                       worker_id = excluded.worker_id,
-                       active_version_id = excluded.active_version_id,
-                       assets_sha256 = excluded.assets_sha256,
-                       updated_at_ms = excluded.updated_at_ms",
-                    params![
-                        record.kind.as_str(),
-                        record.worker_id.to_string(),
-                        record.active_version_id.as_ref().map(ToString::to_string),
-                        record.assets_sha256.as_slice(),
-                        record.updated_at_ms,
-                    ],
-                )
-                .map_err(|_| db_error())?;
-            if changed != 1 {
-                return Err(invariant());
-            }
-            Ok(())
-        })
-    }
-
-    fn create_system_dashboard_worker(
-        self,
-        instance_id: InstanceId,
-        request_id: RequestId,
-        now_ms: i64,
-    ) -> Result<WorkerRecord, PlatformError> {
-        let worker_id = WorkerId::generate();
-        let do_storage_id = Uuid::now_v7().to_string();
-        self.db.with_immediate(|tx| {
-            require_instance(tx, instance_id)?;
-            let inserted = tx
-                .execute(
-                    "INSERT INTO workers
-                     (id, name, active_deployment_id, do_storage_id,
-                      route_generation, created_at_ms, updated_at_ms, deleted_at_ms, ownership)
-                     VALUES (?1, ?2, NULL, ?3, 1, ?4, ?4, NULL, 'system')",
-                    params![
-                        worker_id.to_string(),
-                        SYSTEM_DASHBOARD_WORKER_NAME,
-                        do_storage_id,
-                        now_ms
-                    ],
-                )
-                .map_err(|_| db_error())?;
-            if inserted != 1 {
-                return Err(invariant());
-            }
-            tx.execute(
-                "INSERT INTO worker_observability_settings
-                 (worker_id, generation, enabled, head_sampling_rate, logs_enabled,
-                  logs_head_sampling_rate, invocation_logs, persist, updated_at_ms)
-                 VALUES (?1, 1, 0, NULL, 0, NULL, 0, 0, ?2)",
-                params![worker_id.to_string(), now_ms],
-            )
-            .map_err(|_| db_error())?;
-            tx.execute(
-                "INSERT INTO system_owned_versions
-                 (kind, worker_id, active_version_id, assets_sha256, updated_at_ms)
-                 VALUES ('dashboard', ?1, NULL, zeroblob(32), ?2)",
-                params![worker_id.to_string(), now_ms],
-            )
-            .map_err(|_| db_error())?;
-            audit(
-                tx,
-                "worker.create.system",
-                "worker",
-                &worker_id.to_string(),
-                request_id,
-                br#"{"state":"system","name":"open-compute-dashboard"}"#,
-                now_ms,
-            )?;
-            Ok(WorkerRecord {
-                id: worker_id,
-                instance_id,
-                name: SYSTEM_DASHBOARD_WORKER_NAME.to_owned(),
-                active_deployment_id: None,
-                active_version_id: None,
-                do_storage_id,
-                route_generation: 1,
-                created_at_ms: now_ms,
-                updated_at_ms: now_ms,
-                deleted_at_ms: None,
-                ownership: WorkerOwnership::System,
-            })
-        })
+        self.get_worker(instance_id, worker_id)
     }
 
     /// Read one Worker and enforce its instance boundary.
@@ -458,7 +316,7 @@ impl<'a> WorkerRepository<'a> {
                         do_storage_id, route_generation, created_at_ms, updated_at_ms, deleted_at_ms,
                         ownership, active_deployment_id
                  FROM workers WHERE id = ?1 AND (SELECT instance_id FROM instance_identity) = ?2",
-                params![worker_id.to_string(), instance_id.to_string()],
+                params![worker_id, instance_id],
                 map_worker,
             )
             .optional()
@@ -479,7 +337,7 @@ impl<'a> WorkerRepository<'a> {
                 "SELECT generation, enabled, head_sampling_rate, logs_enabled,
                         logs_head_sampling_rate, invocation_logs, persist, updated_at_ms
                  FROM worker_observability_settings WHERE worker_id = ?1",
-                [worker_id.to_string()],
+                [worker_id],
                 map_observability_settings,
             )
             .optional()
@@ -502,7 +360,6 @@ impl<'a> WorkerRepository<'a> {
         validate_sampling_rate(settings.logs_head_sampling_rate)?;
         self.db.with_immediate(|tx| {
             let worker = require_live_worker(tx, instance_id, worker_id)?;
-            require_tenant_worker(&worker)?;
             if worker.route_generation != expected_route_generation {
                 return Err(PlatformError::new(
                     ErrorCode::IdempotencyConflict,
@@ -514,7 +371,7 @@ impl<'a> WorkerRepository<'a> {
                     "SELECT generation, enabled, head_sampling_rate, logs_enabled,
                             logs_head_sampling_rate, invocation_logs, persist, updated_at_ms
                      FROM worker_observability_settings WHERE worker_id = ?1",
-                    [worker_id.to_string()],
+                    [worker_id],
                     map_observability_settings,
                 )
                 .optional()
@@ -540,7 +397,7 @@ impl<'a> WorkerRepository<'a> {
                         settings.invocation_logs,
                         settings.persist,
                         now_ms,
-                        worker_id.to_string(),
+                        worker_id,
                         i64::try_from(current.generation).map_err(|_| invariant())?,
                     ],
                 )
@@ -554,7 +411,7 @@ impl<'a> WorkerRepository<'a> {
                 params![
                     i64::try_from(route_generation).map_err(|_| invariant())?,
                     now_ms,
-                    worker_id.to_string(),
+                    worker_id,
                     i64::try_from(worker.route_generation).map_err(|_| invariant())?,
                 ],
             )

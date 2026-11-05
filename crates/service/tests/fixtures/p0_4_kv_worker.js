@@ -1,6 +1,20 @@
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (path === "/concurrent-put") {
+      await env.CACHE.put("concurrent", "shared-value");
+      const listed = await env.CACHE.list({ prefix: "concurrent" });
+      return Response.json(listed.keys.map((key) => key.name));
+    }
+    if (path === "/concurrent-get") {
+      const value = await env.CACHE.get("concurrent");
+      const withMetadata = await env.CACHE.getWithMetadata("concurrent");
+      return Response.json([value, withMetadata.value, withMetadata.metadata]);
+    }
+    if (path === "/concurrent-delete") {
+      await env.CACHE.delete("concurrent");
+      return new Response("deleted");
+    }
     const code = async (run) => {
       let synchronous = true;
       try {
@@ -61,35 +75,51 @@ export default {
       }
     }
     if (path === "/large") {
-      const streamOf = (bytes) => {
-        let emitted = 0;
-        return new ReadableStream({
-          pull(controller) {
-            if (emitted >= bytes) { controller.close(); return; }
-            const size = Math.min(1024 * 1024, bytes - emitted);
-            const chunk = new Uint8Array(size);
-            chunk.fill(7);
-            emitted += size;
-            controller.enqueue(chunk);
+      let phase = "prepare";
+      try {
+        const streamOf = (bytes) => {
+          let emitted = 0;
+          return new ReadableStream({
+            pull(controller) {
+              if (emitted >= bytes) { controller.close(); return; }
+              const size = Math.min(1024 * 1024, bytes - emitted);
+              const chunk = new Uint8Array(size);
+              chunk.fill(7);
+              emitted += size;
+              controller.enqueue(chunk);
+            }
+          });
+        };
+        const limit = 25 * 1024 * 1024;
+        phase = "put-limit";
+        await env.CACHE.put("large", streamOf(limit));
+        phase = "reject-overflow";
+        let rejected = false;
+        try { await env.CACHE.put("large", streamOf(limit + 1)); } catch { rejected = true; }
+        phase = "open-stream";
+        const reader = (await env.CACHE.get("large", "stream")).getReader();
+        phase = "read-stream";
+        let total = 0;
+        let first = null;
+        let last = null;
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+          if (first === null && next.value.byteLength) first = next.value[0];
+          if (next.value.byteLength) last = next.value[next.value.byteLength - 1];
+          total += next.value.byteLength;
+        }
+        return new Response(`${total}:${first}:${last}:${rejected}`);
+      } catch (error) {
+        let code = "UNCLASSIFIED";
+        if (error instanceof Error) {
+          for (const known of ["KV_VALUE_TOO_LARGE", "KV_UNAVAILABLE", "KV_INTERNAL_PROTOCOL_ERROR", "BINDING_PROTOCOL_ERROR", "KV_BUSY", "KV_STORAGE_FULL", "KV_RESULT_UNKNOWN"]) {
+            if (error.message.includes(known)) code = known;
           }
-        });
-      };
-      const limit = 25 * 1024 * 1024;
-      await env.CACHE.put("large", streamOf(limit));
-      let rejected = false;
-      try { await env.CACHE.put("large", streamOf(limit + 1)); } catch { rejected = true; }
-      const reader = (await env.CACHE.get("large", "stream")).getReader();
-      let total = 0;
-      let first = null;
-      let last = null;
-      for (;;) {
-        const next = await reader.read();
-        if (next.done) break;
-        if (first === null && next.value.byteLength) first = next.value[0];
-        if (next.value.byteLength) last = next.value[next.value.byteLength - 1];
-        total += next.value.byteLength;
+          if (/network connection lost|HTTP connection was lost/i.test(error.message)) code = "CONNECTION_LOST";
+        }
+        return Response.json({ phase, code }, { status: 500 });
       }
-      return new Response(`${total}:${first}:${last}:${rejected}`);
     }
     if (path === "/cancel") {
       const reader = (await env.CACHE.get("large", "stream")).getReader();

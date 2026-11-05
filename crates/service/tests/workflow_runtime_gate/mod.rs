@@ -7,12 +7,11 @@ mod output_gate;
 mod workflow_support;
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use open_compute_core::workflow::{WorkflowDurableConfig, WorkflowStepDeclaration};
 use open_compute_core::{WorkflowFence, WorkflowInstanceId, WorkflowToken};
-use open_compute_runtime::GenerationAuthRegistry;
 use open_compute_service::runtime_bridge::{WorkflowOutcome, WorkflowRunRequest};
 use open_compute_service::workflow_http::WorkflowApiState;
 use open_compute_storage::scheduler::SchedulerStore;
@@ -26,7 +25,6 @@ use workflow_support::{Harness, decode_workflow_json, encode_workflow_json};
 
 #[derive(Clone)]
 struct Backend {
-    auth: GenerationAuthRegistry,
     db: Arc<Mutex<Connection>>,
 }
 
@@ -95,21 +93,8 @@ fn result(db: &Connection, id: &str, ordinal: i64) -> Value {
 async fn handle(
     State(backend): State<Backend>,
     Path(operation): Path<String>,
-    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> (StatusCode, Json<Value>) {
-    if !backend.auth.authorize(
-        headers
-            .get("x-open-compute-binding-token")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-        headers
-            .get("x-open-compute-startup-generation")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-    ) {
-        return (StatusCode::NOT_FOUND, Json(json!({})));
-    }
     let mut db = backend.db.lock().unwrap();
     let tx = db.transaction().unwrap();
     let id = body["instanceId"].as_str().unwrap();
@@ -362,7 +347,7 @@ fn envelope(db: &Connection, mode: &str) -> WorkflowRunRequest {
     let id = WorkflowInstanceId::generate();
     db.execute(
         "INSERT INTO runs VALUES (?1,'running',?2)",
-        params![id.to_string(), "11".repeat(32)],
+        params![id, "11".repeat(32)],
     )
     .unwrap();
     WorkflowRunRequest {
@@ -387,34 +372,27 @@ import { connect } from 'cloudflare:sockets';
 let observedPrivateGrant=false;
 async function rawTcpProbe(config) {
   const payload = new Uint8Array([21, 22, 23, 24]);
-  const socket = connect({ hostname: config.hostname, port: Number(config.tcpPort) }, {
-    allowHalfOpen: true, secureTransport: 'off',
-  });
-  await socket.opened;
-  const writer = socket.writable.getWriter();
-  await writer.write(new TextEncoder().encode(`ECHO ${payload.byteLength}\n`));
-  await writer.write(payload);
-  await writer.close();
-  writer.releaseLock();
-  const echoed = new Uint8Array(await new Response(socket.readable).arrayBuffer());
-  await socket.close();
-  await socket.closed;
-  let denied = false;
-  const privateSocket = connect({
-    hostname: config.privateHostname, port: Number(config.tcpPort),
-  });
-  try {
-    await privateSocket.opened;
-    await privateSocket.close();
-  } catch {
-    denied = true;
-    try { await privateSocket.close(); } catch {}
+  const sizes = [];
+  for (const hostname of [config.hostname, config.privateHostname]) {
+    const socket = connect({ hostname, port: Number(config.tcpPort) }, {
+      allowHalfOpen: true, secureTransport: 'off',
+    });
+    await socket.opened;
+    const writer = socket.writable.getWriter();
+    await writer.write(new TextEncoder().encode(`ECHO ${payload.byteLength}\n`));
+    await writer.write(payload);
+    await writer.close();
+    writer.releaseLock();
+    const echoed = new Uint8Array(await new Response(socket.readable).arrayBuffer());
+    await socket.close();
+    await socket.closed;
+    if (echoed.length !== payload.length
+        || !echoed.every((value, index) => value === payload[index])) {
+      throw new Error('Workflow raw TCP echo mismatch');
+    }
+    sizes.push(echoed.length);
   }
-  if (echoed.length !== payload.length
-      || !echoed.every((value, index) => value === payload[index])) {
-    throw new Error('Workflow raw TCP echo mismatch');
-  }
-  return { bytes: echoed.length, denied };
+  return { bytes: sizes[0], privateBytes: sizes[1] };
 }
 function observe(value) {
   if (value && typeof value==='object'

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P1 soak: rotate stacks every 5 min, restart container every 15 min, track recovery.
+# P1 soak: standalone runs one hour; release runs 10 min with three verified recoveries.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -22,7 +22,7 @@ if [ "${STRESS_SOAK_ABBREV:-0}" = "1" ]; then
   SOAK_TOTAL_SEC=900
   ROTATE_SEC=60
   SOAK_INJECT_RESTART=1
-  RESTART_INTERVAL_SEC=300
+  RESTART_INTERVAL_SEC=225
   SOAK_SCALE=0.1
   SOAK_HTTP_CONCURRENCY=10
   SOAK_KV_CONCURRENCY=8
@@ -34,7 +34,7 @@ if [ "${STRESS_SOAK_ABBREV:-0}" = "1" ]; then
   SOAK_FETCH_CONCURRENCY=10
   SOAK_MEGA_CONCURRENCY=3
   SOAK_RECOVER_SETTLE_SEC=5
-  printf 'Soak abbreviated mode (STRESS_SOAK_ABBREV=1): 15 min total, restart every 5 min\n' >&2
+  printf 'Soak abbreviated mode (STRESS_SOAK_ABBREV=1): 15 min total, three restarts\n' >&2
 else
   SOAK_TOTAL_SEC=3600
   ROTATE_SEC=300
@@ -51,6 +51,22 @@ else
   SOAK_MEGA_CONCURRENCY=6
   SOAK_RECOVER_SETTLE_SEC=15
 fi
+
+configure_soak_schedule() {
+  if [ -n "${STRESS_DEADLINE_EPOCH:-}" ]; then
+    case "$STRESS_DEADLINE_EPOCH" in *[!0-9]*) echo 'Invalid stress deadline' >&2; return 1 ;; esac
+    # Reserve one minute for the last request drain and report writes.
+    soak_deadline=$((STRESS_DEADLINE_EPOCH - 60))
+    SOAK_TOTAL_SEC=600
+    if [ "$((soak_deadline - $(date +%s)))" -lt "$SOAK_TOTAL_SEC" ]; then
+      echo 'Stress budget cannot fit the minimum 10-minute restart-recovery soak' >&2
+      return 1
+    fi
+    ROTATE_SEC=60
+    RESTART_INTERVAL_SEC=150
+  fi
+}
+configure_soak_schedule
 
 STACK_NAMES="http kv d1 r2 queue do workflow fetch scenario_mega"
 for stack in $STACK_NAMES; do
@@ -74,7 +90,14 @@ log_soak_event() {
 run_stack_soak() {
   stack=$1
   duration=$2
+  local rotation_started
+  rotation_started=$(date +%s)
   recover_before_sample "$SOAK_RECOVER_SETTLE_SEC"
+  if [ -n "${STRESS_DEADLINE_EPOCH:-}" ]; then
+    # Release rotations include readiness time, so every stack fits the window.
+    duration=$((duration - $(date +%s) + rotation_started))
+    [ "$duration" -gt 0 ] || { echo 'No soak sampling time after readiness' >&2; return 1; }
+  fi
   case "$stack" in
     http)
       run_duration_concurrent http "$SOAK_HTTP_CONCURRENCY" "$duration" "/stack/http/ping" GET "" \
@@ -118,7 +141,10 @@ run_stack_soak() {
         "${STRESS_RUN_DIR}/lat-scenario_mega.txt" "${STRESS_RUN_DIR}/err-scenario_mega.txt"
       ;;
   esac
-  recover_before_sample "$SOAK_RECOVER_SETTLE_SEC"
+  # The next release rotation checks readiness; restart injection also settles.
+  if [ -z "${STRESS_DEADLINE_EPOCH:-}" ]; then
+    recover_before_sample "$SOAK_RECOVER_SETTLE_SEC"
+  fi
 }
 
 post_restart_verify() {
@@ -171,11 +197,25 @@ stack_list="http kv d1 r2 queue do workflow fetch scenario_mega"
 
 log_soak_event "soak_start" "total_sec=${SOAK_TOTAL_SEC} rotate_sec=${ROTATE_SEC}"
 
-while [ "$(date +%s)" -lt "$soak_end" ]; do
+while [ "$(date +%s)" -lt "$soak_end" ] \
+  || { [ -n "${STRESS_DEADLINE_EPOCH:-}" ] && [ "$restart_count" -lt 3 ]; }; do
+  phase_end=$soak_end
+  if [ -n "${STRESS_DEADLINE_EPOCH:-}" ]; then
+    [ "$(date +%s)" -lt "$soak_deadline" ] || break
+    # Continue rotations past ten minutes only when recoveries are still missing.
+    if [ "$restart_count" -lt 3 ]; then phase_end=$soak_deadline; fi
+  fi
   stack=$(printf '%s\n' $stack_list | sed -n "$((stack_idx % 9 + 1))p")
   stack_idx=$((stack_idx + 1))
-  remaining=$((soak_end - $(date +%s)))
+  remaining=$((phase_end - $(date +%s)))
   phase_duration=$ROTATE_SEC
+  if [ -n "${STRESS_DEADLINE_EPOCH:-}" ] && [ "$stack_idx" -le 9 ]; then
+    # Share restart overhead across the remaining stacks without dropping samples.
+    rotation_budget=$(((soak_end - $(date +%s)) / (10 - stack_idx)))
+    if [ "$rotation_budget" -gt 0 ] && [ "$phase_duration" -gt "$rotation_budget" ]; then
+      phase_duration=$rotation_budget
+    fi
+  fi
   if [ "$phase_duration" -gt "$remaining" ]; then
     phase_duration=$remaining
   fi
@@ -184,11 +224,13 @@ while [ "$(date +%s)" -lt "$soak_end" ]; do
   fi
 
   log_soak_event "stack_begin" "stack=${stack} duration=${phase_duration}"
+  printf "Soak progress: stack=%s elapsed=%ss/%ss restarts=%s/3\n" "$stack" "$(($(date +%s) - soak_start))" "$SOAK_TOTAL_SEC" "$restart_count"
   run_stack_soak "$stack" "$phase_duration"
   log_soak_event "stack_end" "stack=${stack}"
 
   if [ "${SOAK_INJECT_RESTART:-0}" = "1" ] \
-    && [ "$(date +%s)" -lt "$soak_end" ] \
+    && [ "$restart_count" -lt 3 ] \
+    && [ "$(date +%s)" -lt "$phase_end" ] \
     && [ "$(date +%s)" -ge "$next_restart" ]; then
     inject_restart "$((restart_count + 1))"
     restart_count=$((restart_count + 1))
@@ -199,6 +241,7 @@ while [ "$(date +%s)" -lt "$soak_end" ]; do
 done
 
 log_soak_event "soak_end" "restarts=${restart_count} anomalies=$(anomaly_count)"
+[ "$restart_count" -eq 3 ] || { echo "Expected three verified restarts" >&2; exit 1; }
 
 check_container_restarts || true
 

@@ -1,10 +1,5 @@
 //! In-process HTTP S3-compatible test server.
 
-#![allow(
-    missing_docs,
-    reason = "test-only mock fields are intentionally direct fixture controls"
-)]
-
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -302,9 +297,11 @@ impl Drop for MockS3 {
     }
 }
 
+mod checksums;
 mod handler;
 mod http;
 
+use checksums::{assemble_parts, hash_part, hash_put};
 use handler::handle_conn;
 use http::*;
 

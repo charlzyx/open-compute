@@ -5,7 +5,7 @@ use super::*;
 use crate::{
     container_broker::{ProviderContract, QualifiedContainerProvider},
     http::HttpState,
-    p3_3_test_support::RuntimeFeatureFixture,
+    runtime_feature_fixture::RuntimeFeatureFixture,
 };
 use axum::{
     Router,
@@ -294,7 +294,7 @@ pub(crate) fn insert_object(
     let transaction = connection
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
-    transaction.execute("INSERT INTO do_objects(namespace_resource_id,object_id,generation,state,created_at_ms,updated_at_ms) VALUES(?1,?2,1,'ready',8,8)", rusqlite::params![namespace.to_string(),object.to_string()]).unwrap();
+    transaction.execute("INSERT INTO do_objects(namespace_resource_id,object_id,generation,state,created_at_ms,updated_at_ms) VALUES(?1,?2,1,'ready',8,8)", rusqlite::params![namespace,object.to_string()]).unwrap();
     transaction.commit().unwrap();
     object
 }
@@ -307,15 +307,6 @@ pub(crate) fn registration(
         .lease(service.instance_id(), identity)
         .unwrap();
     service.registration(&lease).unwrap()
-}
-
-pub(crate) fn generation() -> (GenerationAuthRegistry, GenerationCredential) {
-    let auth = GenerationAuthRegistry::new();
-    auth.activate_for_test(open_compute_core::SecretString::new(
-        "container-unit-generation",
-    ));
-    let credential = auth.credential().unwrap();
-    (auth, credential)
 }
 
 pub(crate) struct Fixture {

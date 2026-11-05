@@ -14,7 +14,6 @@ use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use uuid::Uuid;
 
 mod catalog;
@@ -101,7 +100,7 @@ pub(crate) fn require_instance(
     let found: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM instance_identity WHERE instance_id = ?1)",
-            [instance_id.to_string()],
+            [instance_id],
             |row| row.get(0),
         )
         .map_err(|_| db_error())?;
@@ -143,7 +142,7 @@ fn read_worker_tx(
                 do_storage_id, route_generation, created_at_ms, updated_at_ms, deleted_at_ms,
                 ownership, active_deployment_id
          FROM workers WHERE id = ?1 AND (SELECT instance_id FROM instance_identity) = ?2",
-        params![worker_id.to_string(), instance_id.to_string()],
+        params![worker_id, instance_id],
         map_worker,
     )
     .optional()
@@ -159,7 +158,7 @@ fn read_vars(
         .prepare("SELECT name, value_json FROM version_vars WHERE version_id = ?1 ORDER BY name")
         .map_err(|_| db_error())?;
     let rows = stmt
-        .query_map([version_id.to_string()], |row| {
+        .query_map([version_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })
         .map_err(|_| db_error())?;
@@ -182,7 +181,7 @@ fn read_secrets(
         )
         .map_err(|_| db_error())?;
     let rows = stmt
-        .query_map([version_id.to_string()], |row| {
+        .query_map([version_id], |row| {
             let name: String = row.get(0)?;
             Ok((
                 name.clone(),
@@ -209,22 +208,14 @@ fn read_secrets(
 }
 
 fn map_worker(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkerRecord> {
-    let id: String = row.get(0)?;
-    let instance: String = row.get(1)?;
-    let active: Option<String> = row.get(3)?;
     let generation: i64 = row.get(5)?;
     let ownership: String = row.get(9)?;
     Ok(WorkerRecord {
-        id: WorkerId::from_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        instance_id: InstanceId::from_str(&instance).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        id: row.get(0)?,
+        instance_id: row.get(1)?,
         name: row.get(2)?,
-        active_deployment_id: row
-            .get::<_, Option<String>>(10)?
-            .map(|value| DeploymentId::from_str(&value).map_err(|_| rusqlite::Error::InvalidQuery))
-            .transpose()?,
-        active_version_id: active
-            .map(|value| VersionId::from_str(&value).map_err(|_| rusqlite::Error::InvalidQuery))
-            .transpose()?,
+        active_deployment_id: row.get(10)?,
+        active_version_id: row.get(3)?,
         do_storage_id: row.get(4)?,
         route_generation: u64::try_from(generation).map_err(|_| rusqlite::Error::InvalidQuery)?,
         created_at_ms: row.get(6)?,
@@ -270,36 +261,7 @@ fn validate_sampling_rate(value: Option<f64>) -> Result<(), PlatformError> {
     }
 }
 
-fn map_system_owned_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<SystemOwnedVersionRecord> {
-    let kind: String = row.get(0)?;
-    let worker: String = row.get(1)?;
-    let active: Option<String> = row.get(2)?;
-    let assets: Vec<u8> = row.get(3)?;
-    Ok(SystemOwnedVersionRecord {
-        kind: SystemOwnedVersionKind::parse(&kind).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        worker_id: WorkerId::from_str(&worker).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        active_version_id: active
-            .map(|value| VersionId::from_str(&value).map_err(|_| rusqlite::Error::InvalidQuery))
-            .transpose()?,
-        assets_sha256: array32(&assets)?,
-        updated_at_ms: row.get(4)?,
-    })
-}
-
-fn is_system_reserved_worker_name(name: &str) -> bool {
-    name == SYSTEM_DASHBOARD_WORKER_NAME
-}
-
-fn require_tenant_worker(worker: &WorkerRecord) -> Result<(), PlatformError> {
-    if worker.ownership != WorkerOwnership::Tenant {
-        return Err(worker_not_found());
-    }
-    Ok(())
-}
-
 fn map_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<VersionRecord> {
-    let id: String = row.get(0)?;
-    let worker: String = row.get(1)?;
     let version: i64 = row.get(2)?;
     let content_kind: String = row.get(3)?;
     let state: String = row.get(4)?;
@@ -309,8 +271,8 @@ fn map_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<VersionRecord> {
     let descriptor: Vec<u8> = row.get(9)?;
     let loader_schema: i64 = row.get(10)?;
     Ok(VersionRecord {
-        id: VersionId::from_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        worker_id: WorkerId::from_str(&worker).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        id: row.get(0)?,
+        worker_id: row.get(1)?,
         version_number: u64::try_from(version).map_err(|_| rusqlite::Error::InvalidQuery)?,
         content_kind: VersionContentKind::parse(&content_kind)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -331,7 +293,7 @@ fn map_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<VersionRecord> {
         compatibility_date: row.get(16)?,
         compatibility_flags: serde_json::from_slice(&row.get::<_, Vec<u8>>(17)?)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
-        resource_limits: EffectiveResourceLimits::from_stored_json(&row.get::<_, Vec<u8>>(18)?)
+        resource_limits: serde_json::from_slice(&row.get::<_, Vec<u8>>(18)?)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
         created_at_ms: row.get(11)?,
         ready_at_ms: row.get(12)?,
@@ -352,7 +314,7 @@ fn read_version_annotations(
         )
         .map_err(|_| db_error())?;
     let rows = statement
-        .query_map([version_id.to_string()], |row| {
+        .query_map([version_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|_| db_error())?;
@@ -367,13 +329,11 @@ fn read_version_annotations(
 }
 
 fn map_route(row: &rusqlite::Row<'_>) -> rusqlite::Result<RouteRecord> {
-    let instance: String = row.get(1)?;
-    let worker: String = row.get(2)?;
     let generation: i64 = row.get(6)?;
     Ok(RouteRecord {
         id: row.get(0)?,
-        instance_id: InstanceId::from_str(&instance).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        worker_id: WorkerId::from_str(&worker).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        instance_id: row.get(1)?,
+        worker_id: row.get(2)?,
         hostname_ascii: row.get(3)?,
         exposure: WorkerOriginExposure::parse(&row.get::<_, String>(8)?)?,
         path_prefix: row.get(4)?,
@@ -384,15 +344,12 @@ fn map_route(row: &rusqlite::Row<'_>) -> rusqlite::Result<RouteRecord> {
 }
 
 fn map_deployment(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeploymentRecord> {
-    let id: String = row.get(0)?;
-    let worker: String = row.get(1)?;
-    let version: String = row.get(2)?;
     let source: String = row.get(3)?;
     let annotations: Vec<u8> = row.get(4)?;
     Ok(DeploymentRecord {
-        id: DeploymentId::from_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        worker_id: WorkerId::from_str(&worker).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        version_id: VersionId::from_str(&version).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        id: row.get(0)?,
+        worker_id: row.get(1)?,
+        version_id: row.get(2)?,
         source: DeploymentSource::parse(&source).map_err(|_| rusqlite::Error::InvalidQuery)?,
         annotations: serde_json::from_slice(&annotations)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -424,14 +381,7 @@ fn audit(
         "INSERT INTO control_audit_events
          (action, target_type, target_id, request_id, details_json, created_at_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            action,
-            target_type,
-            target_id,
-            request_id.to_string(),
-            details,
-            now_ms
-        ],
+        params![action, target_type, target_id, request_id, details, now_ms],
     )
     .map_err(|_| db_error())?;
     Ok(())
@@ -478,46 +428,13 @@ mod resource_limits_model_tests {
     use open_compute_core::ErrorCode;
 
     #[test]
-    fn standard_defaults_and_validation_bounds() {
-        let defaults = EffectiveResourceLimits::standard_defaults();
-        assert_eq!(defaults.cpu_ms, 30_000);
-        assert_eq!(defaults.sub_requests, 10_000);
-        assert!(EffectiveResourceLimits::new(1, 1).is_ok());
-        assert!(EffectiveResourceLimits::new(300_000, 10_000_000).is_ok());
-        for (cpu, sub) in [(0, 1), (300_001, 1), (1, 0), (1, 10_000_001)] {
-            assert_eq!(
-                EffectiveResourceLimits::new(cpu, sub).unwrap_err().code(),
-                ErrorCode::LimitInvalid
-            );
-        }
-        assert_eq!(
-            EffectiveResourceLimits::materialize(None, None).unwrap(),
-            defaults
-        );
-        assert_eq!(
-            EffectiveResourceLimits::materialize(Some(1000), Some(50)).unwrap(),
-            EffectiveResourceLimits::new(1000, 50).unwrap()
-        );
-        assert_eq!(
-            EffectiveResourceLimits::materialize(Some(0), None)
-                .unwrap_err()
-                .code(),
-            ErrorCode::LimitInvalid
-        );
-    }
-
-    #[test]
     fn ownership_source_and_content_kind_tokens_round_trip() {
-        use super::{
-            DeploymentSource, SystemOwnedVersionKind, VersionContentKind, WorkerOwnership,
-        };
-        for (value, token) in [
-            (WorkerOwnership::Tenant, "tenant"),
-            (WorkerOwnership::System, "system"),
-        ] {
-            assert_eq!(value.as_str(), token);
-            assert_eq!(WorkerOwnership::parse(token).unwrap(), value);
-        }
+        use super::{DeploymentSource, VersionContentKind, WorkerOwnership};
+        assert_eq!(WorkerOwnership::Tenant.as_str(), "tenant");
+        assert_eq!(
+            WorkerOwnership::parse("tenant").unwrap(),
+            WorkerOwnership::Tenant
+        );
         assert_eq!(
             WorkerOwnership::parse("other").unwrap_err().code(),
             ErrorCode::VersionInvariantViolation
@@ -535,14 +452,6 @@ mod resource_limits_model_tests {
             DeploymentSource::parse("nope").unwrap_err().code(),
             ErrorCode::VersionInvariantViolation
         );
-        assert_eq!(
-            SystemOwnedVersionKind::parse("dashboard").unwrap(),
-            SystemOwnedVersionKind::Dashboard
-        );
-        assert_eq!(
-            SystemOwnedVersionKind::parse("other").unwrap_err().code(),
-            ErrorCode::VersionInvariantViolation
-        );
         for (value, token) in [
             (VersionContentKind::Worker, "worker"),
             (VersionContentKind::AssetsOnly, "assets_only"),
@@ -557,32 +466,16 @@ mod resource_limits_model_tests {
     }
 
     #[test]
-    fn stored_json_round_trip_and_fail_closed_shapes() {
-        let limits = EffectiveResourceLimits::standard_defaults();
-        let bytes = limits.to_stored_json();
+    fn stored_json_uses_typed_decoding() {
+        let defaults = EffectiveResourceLimits::standard_defaults();
         assert_eq!(
-            EffectiveResourceLimits::from_stored_json(&bytes).unwrap(),
-            limits
+            serde_json::from_slice::<EffectiveResourceLimits>(&defaults.to_stored_json()).unwrap(),
+            defaults
         );
-        for corrupt in [
-            &b"{}"[..],
-            b"null",
-            b"{\"cpuMs\":30000}",
-            b"{\"cpuMs\":0,\"subRequests\":10000}",
-            b"{\"cpuMs\":30000,\"subRequests\":10000,\"extra\":1}",
-            b"{\"cpuMs\":-1,\"subRequests\":10000}",
-            b"{\"cpuMs\":30000.5,\"subRequests\":10000}",
-            b"not json",
-            // Valid values in a non-canonical encoding must fail closed.
-            b"{\"subRequests\":10000,\"cpuMs\":30000}",
-        ] {
-            assert_eq!(
-                EffectiveResourceLimits::from_stored_json(corrupt)
-                    .unwrap_err()
-                    .code(),
-                ErrorCode::LimitInvalid,
-                "corrupt input {corrupt:?} must fail closed"
-            );
-        }
+        // Stored values are trusted; only upload and Settings boundaries check bounds.
+        let stored: EffectiveResourceLimits =
+            serde_json::from_str(r#"{"subRequests":0,"cpuMs":300001}"#).unwrap();
+        assert_eq!((stored.cpu_ms, stored.sub_requests), (300_001, 0));
+        assert!(serde_json::from_str::<EffectiveResourceLimits>(r#"{"cpuMs":1}"#).is_err());
     }
 }

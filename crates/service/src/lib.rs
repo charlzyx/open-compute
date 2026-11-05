@@ -1,7 +1,5 @@
 //! Production `ocd` service library: config load, health, metrics, doctor, and run.
 
-#![deny(missing_docs)]
-
 pub mod ai_provider;
 pub mod ai_search_backend;
 pub mod ai_search_config;
@@ -36,7 +34,6 @@ mod d1_backup;
 mod d1_coordinator;
 mod d1_protocol;
 mod d1_session;
-pub mod dashboard;
 pub mod dashboard_auth;
 #[cfg(test)]
 mod dashboard_tests;
@@ -71,9 +68,6 @@ mod observability_backend;
 mod observability_filter;
 mod operator_http;
 pub mod operator_session;
-mod p2_3_promotion;
-#[cfg(test)]
-mod p3_3_test_support;
 mod queue_api;
 pub mod queue_backend;
 pub mod r2_api;
@@ -87,6 +81,8 @@ mod resources;
 pub mod run;
 pub mod runtime_bridge;
 mod runtime_diagnostics;
+#[cfg(test)]
+mod runtime_feature_fixture;
 pub mod runtime_generation;
 pub mod scheduler;
 pub mod search_api;
@@ -109,25 +105,6 @@ mod worker_cli;
 pub mod workers_http;
 pub mod workflow_backend;
 pub mod workflow_http;
-
-/// Compose the production promotion owner for real-process integration fixtures.
-/// This entry point is absent from ordinary production builds.
-#[cfg(feature = "test-support")]
-#[must_use]
-pub fn product_promotion_for_test(
-    storage: std::sync::Arc<open_compute_storage::PlatformStorage>,
-    scheduler: std::sync::Arc<open_compute_storage::scheduler::SchedulerStore>,
-    validator: std::sync::Arc<dyn open_compute_workers::RuntimeValidator>,
-) -> std::sync::Arc<dyn open_compute_workers::ProductPromotionCoordinator> {
-    std::sync::Arc::new(
-        p2_3_promotion::P23PromotionCoordinator::new(
-            storage,
-            scheduler,
-            std::time::Duration::from_secs(1),
-        )
-        .with_runtime_validator(validator),
-    )
-}
 
 /// Attach the production Cloudflare v4 instance context to an HTTP test state.
 ///
@@ -163,7 +140,6 @@ pub use binding_backend::{
 pub use cli::{Cli, Command, execute};
 pub use d1_api::D1ApiState;
 pub use d1_backend::D1BindingService;
-pub use dashboard::{DashboardDispatch, bootstrap_dashboard};
 pub use do_lifecycle::DurableObjectLifecycleService;
 pub use embedded_dashboard::embedded_dashboard_files;
 pub use exit::{ExitClass, emit_failure};

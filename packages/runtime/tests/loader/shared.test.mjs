@@ -12,7 +12,7 @@ const {
 } = await importRuntime("loader/shared.ts", {
   "./snapshot.js": moduleUrl("export function assertSnapshot() {}"),
   "./python-snapshot.js": moduleUrl(
-    "export function resolvePythonSnapshot(env, snapshot, scope, token) { return env.snapshotRead(snapshot, scope, token); }",
+    "export function resolvePythonSnapshot(env, snapshot, scope) { return env.snapshotRead(snapshot, scope); }",
   ),
 });
 
@@ -320,10 +320,10 @@ test("runtime snapshot cache drops oldest entries past the byte budget", async (
     expected: "a".repeat(64),
     routeGeneration: 1,
   });
-  await resolveSnapshot(env, envelope("worker-a"), "runtime", "generation");
-  await resolveSnapshot(env, envelope("worker-b"), "runtime", "generation");
-  await resolveSnapshot(env, envelope("worker-c"), "runtime", "generation");
-  await resolveSnapshot(env, envelope("worker-a"), "runtime", "generation");
+  await resolveSnapshot(env, envelope("worker-a"), "runtime");
+  await resolveSnapshot(env, envelope("worker-b"), "runtime");
+  await resolveSnapshot(env, envelope("worker-c"), "runtime");
+  await resolveSnapshot(env, envelope("worker-a"), "runtime");
   assert.deepEqual(requests, ["worker-a", "worker-b", "worker-c", "worker-a"]);
 });
 
@@ -337,7 +337,6 @@ test("dynamic Worker validation delegates experimental flags to workerd", async 
         limits: { cpuMs: 30_000, subRequests: 1_000 },
       },
       "runtime",
-      "generation",
     ),
     {
       compatibilityDate: "2026-09-08",
@@ -371,18 +370,17 @@ test("runtime snapshot rejects a route generation changed during source resoluti
     routeGeneration: 1,
   };
   await assert.rejects(
-    resolveSnapshot(env, envelope, "runtime", "generation"),
+    resolveSnapshot(env, envelope, "runtime"),
     /VERSION_INVARIANT_VIOLATION/,
   );
   generation = 1;
   assert.equal(
-    (await resolveSnapshot(env, envelope, "runtime", "generation"))
-      .routeGeneration,
+    (await resolveSnapshot(env, envelope, "runtime")).routeGeneration,
     1,
   );
   assert.equal(
     requests[0].headers["x-open-compute-startup-generation"],
-    "generation",
+    undefined,
   );
   assert.equal(JSON.parse(requests[0].body).startupGeneration, undefined);
 });
@@ -399,7 +397,6 @@ test("deployment startup rejects raw Python before any runtime preparation or do
           limits: { cpuMs: 30_000, subRequests: 1_000 },
         },
         "runtime",
-        "generation",
       ),
     /PYTHON_PREPARED_ARTIFACT_MISSING/,
   );
@@ -420,10 +417,9 @@ test("Python artifact is read only during cold assembly, never metadata resoluti
   const bytes = new Uint8Array(16);
   const env = {
     RUNTIME_SOURCE: { fetch: async () => Response.json(snapshot) },
-    snapshotRead(value, scope, token) {
+    snapshotRead(value, scope) {
       assert.deepEqual(value, snapshot);
       assert.equal(scope, "runtime");
-      assert.equal(token, "generation");
       reads += 1;
       return bytes;
     },
@@ -434,13 +430,12 @@ test("Python artifact is read only during cold assembly, never metadata resoluti
         env,
         { loaderKey: snapshot.loaderKey, expected: snapshot.workerCodeSha256 },
         "runtime",
-        "generation",
       ),
       snapshot,
     );
   assert.equal(reads, 0);
   assert.equal(
-    (await snapshotWorkerCode(env, snapshot, "runtime", "generation"))
+    (await snapshotWorkerCode(env, snapshot, "runtime"))
       .openComputePythonSnapshot,
     bytes,
   );
@@ -454,16 +449,25 @@ test("Python artifact is read only during cold assembly, never metadata resoluti
       env,
       { ...snapshot, pythonPreparedSha256: "A".repeat(64) },
       "runtime",
-      "generation",
     ),
     /VERSION_INVARIANT_VIOLATION/,
-  );
-  await assert.rejects(
-    snapshotWorkerCode(env, snapshot, "runtime", null),
-    /BINDING_PROTOCOL_ERROR/,
   );
   assert.equal(reads, 1);
   const { pythonPreparedSha256, ...raw } = snapshot;
   assert.ok(pythonPreparedSha256);
   assert.equal(pythonPreparationCode(raw).openComputePythonSnapshot, undefined);
+});
+
+test("WorkerCode forwards the Version limits object directly", async () => {
+  const limits = { cpuMs: 30_000, subRequests: 10_000 };
+  const code = await snapshotWorkerCode(
+    {},
+    {
+      compatibilityDate: "2026-09-08",
+      compatibilityFlags: [],
+      limits,
+    },
+    "runtime",
+  );
+  assert.equal(code.limits, limits);
 });

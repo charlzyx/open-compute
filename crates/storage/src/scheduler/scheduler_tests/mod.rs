@@ -30,7 +30,7 @@ fn projection(
 }
 
 fn open_store(temp: &tempfile::TempDir, now_ms: i64) -> SchedulerStore {
-    let path = temp.path().join("scheduler.sqlite");
+    let path = temp.path().join("control.sqlite");
     if !path.exists() {
         std::fs::OpenOptions::new()
             .write(true)
@@ -69,13 +69,13 @@ fn queue_and_cron_projections_reject_another_instance() {
     );
     assert_eq!(
         store
-            .ensure_cron_schedule_projection(&CronScheduleProjection {
+            .insert_cron_schedule(&NewCronSchedule {
                 activation_id: CronActivationId::generate(),
                 instance_id: other,
                 worker_id: WorkerId::generate(),
                 version_id: VersionId::generate(),
                 execution_generation: 1,
-                activation_generation: 1,
+
                 expression: "* * * * *".to_owned(),
                 expression_sha256: [1; 32],
                 parser_version: 1,
@@ -105,13 +105,9 @@ mod scheduler_registry_is_contiguous_and_future_schema_fails_closed;
 
 mod reopening_current_schema_preserves_definition_identity_and_alarm_rows;
 
-mod overwrite_claim_and_conditional_completion_are_token_fenced;
+mod overwrite_claim_preserves_object_authority;
 
 mod due_order_is_stable_and_batches_are_bounded;
-
-mod expired_lease_recovers_with_a_new_random_claim_token;
-
-mod recovery_is_bounded_and_workload_summary_includes_lease_deadline;
 
 mod concurrent_claim_transactions_never_duplicate_an_alarm;
 
@@ -130,7 +126,7 @@ mod durable_object_queue_operation_survives_message_retention_until_finalize;
 mod queue_producer_persists_v8_content_type;
 
 mod queue_backlog_tests;
-mod queue_consumer_claim_completion_recovery_and_dlq_are_token_fenced;
+mod queue_consumer_completion_restart_and_dlq_preserve_attempts;
 
 mod cron_slots_retries_and_unknown_recovery_preserve_logical_identity;
 

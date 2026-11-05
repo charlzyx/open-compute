@@ -2,7 +2,6 @@ use super::super::ERROR_HEADER;
 use super::super::tests::{authorized_binding, storage};
 use super::*;
 use open_compute_core::{DurableObjectsConfig, MetricsConfig};
-use open_compute_runtime::GenerationAuthRegistry;
 use open_compute_workers::ResourcePins;
 
 #[derive(Default)]
@@ -71,6 +70,35 @@ async fn stream_budget_global_and_per_resource_limits_are_hard() {
 }
 
 #[tokio::test]
+async fn aborted_staging_preserves_a_pending_writers_directory() {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let (_temp, storage) = storage();
+    let binding = authorized_binding();
+    let paths = open_compute_storage::kv::KvPaths::open(storage.data_dir().root()).unwrap();
+    let request_id = open_compute_core::RequestId::generate().to_string();
+    let first = paths
+        .create_write_staging(binding.resource.id, &request_id)
+        .unwrap();
+    let directory = first.parent().unwrap();
+    let mut staged = Some((first.clone(), tokio::fs::File::open(&first).await.unwrap()));
+    assert!(std::fs::symlink_metadata(directory).unwrap().is_dir());
+    cleanup_staged(&mut staged).await;
+    assert!(staged.is_none());
+    assert!(!first.exists());
+    let next_path = directory.join(open_compute_core::RequestId::generate().to_string());
+    let next = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&next_path)
+        .unwrap();
+    drop(next);
+    std::fs::remove_file(next_path).unwrap();
+    assert_eq!(paths.cleanup_write_staging().unwrap(), 0);
+    assert!(!directory.exists());
+}
+
+#[tokio::test]
 async fn streaming_put_frame_stages_exact_bytes_and_cleans_every_terminal_path() {
     let (_temp, storage) = storage();
     let binding = authorized_binding();
@@ -123,6 +151,15 @@ async fn streaming_put_frame_stages_exact_bytes_and_cleans_every_terminal_path()
         .join(binding.resource.id.to_string());
     assert!(resource_stage.join(request_id).is_file());
     drop(value);
+    assert!(!resource_stage.join(request_id).exists());
+    assert!(std::fs::read_dir(&resource_stage).unwrap().next().is_none());
+    assert_eq!(
+        open_compute_storage::kv::KvPaths::open(storage.data_dir().root())
+            .unwrap()
+            .cleanup_write_staging()
+            .unwrap(),
+        0
+    );
     assert!(!resource_stage.exists());
     let idle_metrics = metrics.render(&open_compute_core::PlatformStatus::starting());
     assert!(idle_metrics.contains("kv_active_streams 0"));
@@ -461,7 +498,7 @@ async fn frame_dispatch_releases_pins_on_protocol_executor_and_timeout_failures(
     ) -> Response {
         let state = BackendState {
             storage,
-            auth: GenerationAuthRegistry::new(),
+
             pins: pins.clone(),
             executor,
             metrics: None,
@@ -586,4 +623,112 @@ async fn frame_dispatch_releases_pins_on_protocol_executor_and_timeout_failures(
         .unwrap();
     }
     assert_eq!(pins.count(binding.resource.id), 0);
+}
+
+#[tokio::test]
+async fn rejected_streaming_put_advertises_connection_close() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let (_temp, storage) = storage();
+    let binding = authorized_binding();
+    let state = BackendState {
+        storage: storage.clone(),
+
+        pins: ResourcePins::new(),
+        executor: Arc::new(RecordingExecutor::default()),
+        metrics: None,
+        stream_budget: StreamBudget::new(2, 1),
+        r2: None,
+        d1: None,
+        do_config: DurableObjectsConfig::default(),
+        scheduler: None,
+        queue: None,
+        workflow: None,
+        assets: None,
+        services: None,
+        cache: None,
+        images: None,
+        document_parser: None,
+        ai_search: None,
+        artifacts: None,
+        browser: None,
+    };
+    let staging = storage
+        .data_dir()
+        .root()
+        .join("kv/.staging-write")
+        .join(binding.resource.id.to_string());
+    let router = axum::Router::new().route(
+        "/",
+        axum::routing::post(move |request: Request| {
+            let state = state.clone();
+            let binding = binding.clone();
+            async move {
+                let pin = state.pins.try_pin(binding.resource.id).unwrap();
+                dispatch(
+                    state,
+                    binding,
+                    Operation::Put,
+                    "550e8400-e29b-41d4-a716-446655440000".to_owned(),
+                    request,
+                    pin,
+                )
+                .await
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+            .unwrap();
+    });
+    let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+    let header = serde_json::to_vec(&serde_json::json!({"key":"oversize"})).unwrap();
+    let frame_length = 4 + header.len() + open_compute_storage::kv::KV_MAX_VALUE_BYTES + 1;
+    let mut request = format!("POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{frame_length:x}\r\n").into_bytes();
+    request.extend_from_slice(&u32::try_from(header.len()).unwrap().to_be_bytes());
+    request.extend_from_slice(&header);
+    request.resize(
+        request.len() + open_compute_storage::kv::KV_MAX_VALUE_BYTES + 1,
+        7,
+    );
+    request.extend_from_slice(b"\r\n");
+    client.write_all(&request).await.unwrap();
+    let mut headers = Vec::new();
+    tokio::time::timeout(super::super::BACKEND_TIMEOUT, async {
+        while !headers.ends_with(b"\r\n\r\n") {
+            let mut byte = [0_u8; 1];
+            client.read_exact(&mut byte).await.unwrap();
+            headers.push(byte[0]);
+            assert!(headers.len() < 16384);
+        }
+    })
+    .await
+    .unwrap();
+    let headers = String::from_utf8(headers).unwrap().to_ascii_lowercase();
+    assert!(headers.starts_with("http/1.1 413"));
+    drop(client);
+    stop.send(()).unwrap();
+    tokio::time::timeout(super::super::BACKEND_TIMEOUT, server)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(std::fs::read_dir(&staging).unwrap().next().is_none());
+    assert_eq!(
+        open_compute_storage::kv::KvPaths::open(storage.data_dir().root())
+            .unwrap()
+            .cleanup_write_staging()
+            .unwrap(),
+        0
+    );
+    assert!(!staging.exists());
+    assert!(
+        headers.contains("connection: close"),
+        "an unread oversized upload must advertise connection closure before the peer can pool it"
+    );
 }

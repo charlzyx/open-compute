@@ -84,6 +84,24 @@ async fn assets_only_pipeline_commits_real_refs_without_fabricating_worker_code(
     );
     assert!(result.version.artifact_sha256.is_none());
     assert!(result.version.main_module.is_none());
+    assert!(result.deployment.is_some());
+    let cron = open_compute_storage::cron::CronRepository::new(storage.db());
+    assert!(cron.version_declarations(&result.version).unwrap().is_empty());
+    assert!(cron.live_for_worker(worker.id).unwrap().is_empty());
+    storage
+        .db()
+        .with_read(|connection| {
+            let configs: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM version_cron_configs WHERE version_id = ?1",
+                    [result.version.id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(configs, 0);
+            Ok(())
+        })
+        .unwrap();
     let stored = open_compute_storage::assets::VersionAssetsRepository::new(storage.db())
         .get(result.version.id)
         .unwrap()

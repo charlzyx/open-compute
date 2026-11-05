@@ -55,7 +55,6 @@ fn workflow_doctor_fails_closed_when_authority_is_unavailable() {
     let root = tempfile::tempdir().unwrap();
     let loaded = LoadedConfig {
         path: root.path().join("open-compute.toml"),
-        sha256: String::new(),
         config: open_compute_core::PlatformConfig::local_test_config(),
     };
     let check = workflow::inspect(&loaded, &root.path().join("missing"));
@@ -107,14 +106,13 @@ async fn full_runtime_checks_require_exclusive_authority_and_skip_missing_remote
     .unwrap();
     let loaded = LoadedConfig {
         path: temporary.path().join("open-compute.toml"),
-        sha256: String::new(),
         config,
     };
 
     let busy = inspect_data_root(&loaded.config.data).unwrap();
     assert!(!busy.holds_inspect_lock());
     let mut checks = Vec::new();
-    runtime::run_full_extras(&mut checks, &loaded, &busy, None, None).await;
+    runtime::run_full_extras(&mut checks, &loaded, ServiceScope::User, &busy, None, None).await;
     assert_eq!(checks.len(), 1);
     assert_eq!(checks[0].status, CheckStatus::Failed);
     assert_eq!(checks[0].code, Some(ErrorCode::DataDirInUse.as_str()));
@@ -124,7 +122,15 @@ async fn full_runtime_checks_require_exclusive_authority_and_skip_missing_remote
     let available = inspect_data_root(&loaded.config.data).unwrap();
     assert!(available.holds_inspect_lock());
     checks.clear();
-    runtime::run_full_extras(&mut checks, &loaded, &available, None, None).await;
+    runtime::run_full_extras(
+        &mut checks,
+        &loaded,
+        ServiceScope::User,
+        &available,
+        None,
+        None,
+    )
+    .await;
     assert!(checks.iter().any(|check| {
         check.name == "object_storage_canary" && check.status == CheckStatus::Skipped
     }));
@@ -159,7 +165,6 @@ fn bootstrapped_loaded(
     .unwrap();
     let loaded = LoadedConfig {
         path: temporary.path().join("open-compute.toml"),
-        sha256: String::new(),
         config,
     };
     (loaded, storage)
@@ -170,7 +175,7 @@ async fn doctor_report_basic_covers_bootstrapped_authority() {
     let temporary = tempfile::tempdir().unwrap();
     let (loaded, storage) = bootstrapped_loaded(&temporary);
     drop(storage);
-    let report = doctor_report(&loaded, DoctorMode::Basic, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Basic, ServiceScope::User, None).await;
     assert_eq!(report.command, "doctor");
     assert_eq!(report.schema_version, 1);
     assert!(report.checks.iter().any(|c| c.name == "config"));
@@ -195,10 +200,9 @@ async fn doctor_report_missing_data_dir_skips_authority_checks() {
     config.data.master_key_file = config.data.path.join("keys/master.key");
     let loaded = LoadedConfig {
         path: temporary.path().join("open-compute.toml"),
-        sha256: String::new(),
         config,
     };
-    let report = doctor_report(&loaded, DoctorMode::Basic, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Basic, ServiceScope::User, None).await;
     assert!(report.failed());
     assert!(
         report
@@ -218,7 +222,7 @@ async fn doctor_report_missing_data_dir_skips_authority_checks() {
 async fn doctor_report_full_skips_when_lock_held() {
     let temporary = tempfile::tempdir().unwrap();
     let (loaded, storage) = bootstrapped_loaded(&temporary);
-    let report = doctor_report(&loaded, DoctorMode::Full, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Full, ServiceScope::User, None).await;
     drop(storage);
     assert!(report.checks.iter().any(|c| {
         c.name == "object_storage_canary"
@@ -233,7 +237,7 @@ async fn doctor_report_marks_config_when_metrics_limits_invalid() {
     let (mut loaded, storage) = bootstrapped_loaded(&temporary);
     drop(storage);
     loaded.config.metrics.max_label_value_bytes = 1;
-    let report = doctor_report(&loaded, DoctorMode::Basic, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Basic, ServiceScope::User, None).await;
     let config = report
         .checks
         .iter()
@@ -250,7 +254,7 @@ async fn doctor_report_flags_impossible_free_space_thresholds() {
     drop(storage);
     loaded.config.data.free_space_hard_bytes = u64::MAX;
     loaded.config.data.free_space_soft_bytes = u64::MAX;
-    let report = doctor_report(&loaded, DoctorMode::Basic, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Basic, ServiceScope::User, None).await;
     assert!(
         report.checks.iter().any(|c| {
             c.name == "free_space" && matches!(c.status, CheckStatus::Failed | CheckStatus::Warning)
@@ -269,7 +273,7 @@ async fn doctor_report_full_with_available_lock_runs_extras() {
     let temporary = tempfile::tempdir().unwrap();
     let (loaded, storage) = bootstrapped_loaded(&temporary);
     drop(storage);
-    let report = doctor_report(&loaded, DoctorMode::Full, None).await;
+    let report = doctor_report(&loaded, DoctorMode::Full, ServiceScope::User, None).await;
     assert!(
         report
             .checks

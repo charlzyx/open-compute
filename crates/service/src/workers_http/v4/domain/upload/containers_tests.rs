@@ -5,7 +5,6 @@ use crate::workers_http::v4::multipart::parse_worker_upload;
 use axum::body::Body;
 use axum::extract::{FromRequest as _, Multipart};
 use axum::http::{Request, header};
-use open_compute_runtime::GenerationAuthRegistry;
 use open_compute_workers::{BundleLimits, CanonicalBundle, ModuleInput, ModuleType, VersionPins};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -19,7 +18,7 @@ fn api(fixture: &Fixture) -> WorkerApiState {
     WorkerApiState::new(
         Arc::clone(&fixture.service.storage),
         fixture.service.artifacts.clone(),
-        WorkerdTransport::for_test_endpoint(GenerationAuthRegistry::new(), 9),
+        WorkerdTransport::for_test_endpoint(std::path::Path::new("/tmp/missing.sock")),
         VersionPins::new(),
         BundleLimits::default(),
         Duration::from_millis(10),
@@ -35,7 +34,7 @@ async fn container_upload_projection_requires_matching_same_worker_sqlite_export
     let second = fixture.admit_image("alternate").await;
     let api = api(&fixture);
     let instance = fixture.service.instance_id();
-    let mut input = UploadInput::new(metadata("ContainerClass"));
+    let mut input = UploadInput::new(metadata("ContainerClass")).unwrap();
     input
         .apply_containers(&api, instance, fixture._artifacts.worker, None)
         .unwrap();
@@ -60,7 +59,7 @@ async fn container_upload_projection_requires_matching_same_worker_sqlite_export
             format!("registry/app@sha256:{}", hex::encode(second)),
         ),
     ]);
-    let mut named_input = UploadInput::new(named.clone());
+    let mut named_input = UploadInput::new(named.clone()).unwrap();
     named_input
         .apply_containers(&api, instance, fixture._artifacts.worker, None)
         .unwrap();
@@ -78,17 +77,20 @@ async fn container_upload_projection_requires_matching_same_worker_sqlite_export
     );
     assert!(
         UploadInput::new(named)
+            .unwrap()
             .apply_containers(&api, instance, fixture._artifacts.worker, None)
             .is_err()
     );
 
     assert!(
         UploadInput::new(metadata("ContainerClass"))
+            .unwrap()
             .apply_containers(&api, instance, WorkerId::generate(), None)
             .is_err()
     );
     assert!(
         UploadInput::new(metadata("MissingClass"))
+            .unwrap()
             .apply_containers(&api, instance, fixture._artifacts.worker, None)
             .is_err()
     );
@@ -102,6 +104,7 @@ async fn container_upload_projection_requires_matching_same_worker_sqlite_export
         invalid.exports = Some(serde_json::from_value(json!({"ContainerClass":value})).unwrap());
         assert!(
             UploadInput::new(invalid)
+                .unwrap()
                 .apply_containers(&api, instance, fixture._artifacts.worker, None)
                 .is_err()
         );
@@ -109,7 +112,7 @@ async fn container_upload_projection_requires_matching_same_worker_sqlite_export
     let empty: WorkerUploadMetadata =
         serde_json::from_value(json!({"main_module":"index.js","compatibility_date":"2026-09-08"}))
             .unwrap();
-    let mut empty = UploadInput::new(empty);
+    let mut empty = UploadInput::new(empty).unwrap();
     empty
         .apply_containers(&api, instance, fixture._artifacts.worker, None)
         .unwrap();
@@ -242,20 +245,23 @@ async fn container_cf_declarative_multipart_prepares_sqlite_without_legacy_migra
     assert_eq!(repo.list_namespaces(instance).unwrap().len(), before);
     assert!(
         UploadInput::new(upload.metadata.clone())
+            .unwrap()
             .apply_containers(&api, instance, worker, None)
             .is_err()
     );
     assert!(
         UploadInput::new(upload.metadata.clone())
+            .unwrap()
             .apply_containers(&api, instance, worker, Some("wrong-migration"))
             .is_err()
     );
     assert!(
         UploadInput::new(upload.metadata.clone())
+            .unwrap()
             .apply_containers(&api, instance, WorkerId::generate(), Some(migration.tag()))
             .is_err()
     );
-    let mut input = UploadInput::new(upload.metadata);
+    let mut input = UploadInput::new(upload.metadata).unwrap();
     input
         .apply_containers(&api, instance, worker, Some(migration.tag()))
         .unwrap();

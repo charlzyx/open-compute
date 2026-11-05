@@ -15,15 +15,12 @@ pub(super) struct ComposedPlatform {
     pub(super) images: Arc<ImageBindingService>,
     pub(super) browser: Option<Arc<crate::browser::BrowserService>>,
     pub(super) document_parser: Arc<DocumentParserBindingService>,
-    pub(super) generation_auth: GenerationAuthRegistry,
-    pub(super) binding_generation_auth: GenerationAuthRegistry,
-    pub(super) observability_generation_auth: GenerationAuthRegistry,
-    pub(super) runtime_source_listener: tokio::net::TcpListener,
-    pub(super) runtime_source_addr: SocketAddr,
-    pub(super) binding_backend_listener: tokio::net::TcpListener,
-    pub(super) binding_backend_addr: SocketAddr,
-    pub(super) observability_backend_listener: tokio::net::TcpListener,
-    pub(super) observability_backend_addr: SocketAddr,
+    pub(super) runtime_source_listener: http::PrivateUnixListener,
+    pub(super) runtime_source_addr: std::path::PathBuf,
+    pub(super) binding_backend_listener: http::PrivateUnixListener,
+    pub(super) binding_backend_addr: std::path::PathBuf,
+    pub(super) observability_backend_listener: http::PrivateUnixListener,
+    pub(super) observability_backend_addr: std::path::PathBuf,
     pub(super) compiler: StaticConfigCompiler,
     pub(super) maintenance_backend: open_compute_artifacts::ObjectBackend,
     pub(super) maintenance_object_storage: open_compute_core::ObjectStorageConfig,
@@ -49,7 +46,6 @@ pub(super) struct ComposedPlatform {
     pub(super) maintenance_do_lifecycle: DurableObjectLifecycleService,
     pub(super) binding_executor: Arc<SqliteKvBindingExecutor>,
     pub(super) binding_ai_search: Arc<AiSearchBindingService>,
-    pub(super) dashboard_dispatch: Arc<RwLock<Option<crate::dashboard::DashboardDispatch>>>,
     pub(super) generation_startup_id: StartupId,
     pub(super) dashboard_auth: Arc<crate::dashboard_auth::DashboardAuth>,
     pub(super) state: HttpState,
@@ -133,7 +129,6 @@ fn compose_scheduler(
         .with_metrics(metrics.clone())
         .with_health(health.clone()),
     );
-    scheduler_service.repair_products(1_000)?;
     scheduler_service.repair_workflows(32)?;
     Ok(scheduler_service)
 }
@@ -281,9 +276,6 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         response_cache_manager,
         images,
         document_parser,
-        generation_auth,
-        binding_generation_auth,
-        observability_generation_auth,
         runtime_source_listener,
         runtime_source_addr,
         binding_backend_listener,
@@ -335,7 +327,7 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         redactor.clone(),
     )?;
     let supervisor_handle: Arc<Mutex<Option<Arc<WorkerdSupervisor>>>> = Arc::new(Mutex::new(None));
-    let transport = WorkerdTransport::new(generation_auth.clone(), supervisor_handle.clone())
+    let transport = WorkerdTransport::new(supervisor_handle.clone())
         .with_version_pins(version_pins.clone())
         .with_service_invocations(service_invocations.as_ref().clone());
     let browser = compose_browser(
@@ -438,16 +430,7 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
     .with_local_extensions(local_extensions)
     .with_response_cache(response_cache_manager.clone())
     .with_queue_consumer_limit(loaded.config.queues.max_consumer_concurrency)
-    .with_product_promoter(Arc::new(
-        P23PromotionCoordinator::new(
-            storage.clone(),
-            scheduler_store.clone(),
-            Duration::from_millis(loaded.config.scheduler.shutdown_drain_ms),
-        )
-        .with_runtime_validator(Arc::new(transport.clone())),
-    ))
     .with_observability(observability.clone());
-    let dashboard_dispatch = Arc::new(RwLock::new(None));
     let generation_startup_id = StartupId::generate();
     let dashboard_auth = opts.dashboard_auth.clone().unwrap_or_else(|| {
         Arc::new(crate::dashboard_auth::DashboardAuth::new(
@@ -470,7 +453,6 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         loaded.config.artifacts.clone(),
         opts.artifact_requests()?,
     )?)
-    .with_dashboard_dispatch(dashboard_dispatch.clone())
     .with_dashboard_auth(dashboard_auth.clone())
     .with_browser(browser.clone())
     .with_containers(containers)
@@ -526,9 +508,6 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         response_cache_manager,
         images,
         document_parser,
-        generation_auth,
-        binding_generation_auth,
-        observability_generation_auth,
         runtime_source_listener,
         runtime_source_addr,
         binding_backend_listener,
@@ -560,7 +539,6 @@ pub(super) async fn compose(prepared: PreparedPlatform) -> Result<ComposedPlatfo
         maintenance_do_lifecycle,
         binding_executor,
         binding_ai_search,
-        dashboard_dispatch,
         generation_startup_id,
         dashboard_auth,
         state,

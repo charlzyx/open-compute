@@ -1,4 +1,5 @@
 use super::*;
+use crate::embedded_dashboard::embedded_dashboard_files;
 use crate::health::HealthCoordinator;
 use crate::instance_registry::{InstanceRecord, RegisteredObjectAuthority, ServiceScope};
 use crate::metrics::MetricsRegistry;
@@ -340,12 +341,16 @@ async fn daemon_discovery_requires_global_admin_and_loopback_management_host() {
 
 #[tokio::test]
 async fn dashboard_shell_uses_a_running_enabled_instance_before_authentication() {
+    let index = embedded_dashboard_files()
+        .iter()
+        .find(|(path, _)| *path == "index.html")
+        .unwrap()
+        .1;
     let id = InstanceId::generate();
     let record = InstanceRecord {
         instance_id: id.to_string(),
         name: Some("dashboard".to_owned()),
         canonical_config_path: "/unused/dashboard.toml".to_owned(),
-        config_sha256: String::new(),
         data_path: "/unused/dashboard".to_owned(),
         object_authority: RegisteredObjectAuthority::Local,
         public_base_domain: None,
@@ -380,13 +385,9 @@ async fn dashboard_shell_uses_a_running_enabled_instance_before_authentication()
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        let body = to_bytes(response.into_body(), 4096).await.unwrap();
-        assert!(
-            std::str::from_utf8(&body)
-                .unwrap()
-                .contains("dashboard is not ready")
-        );
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(body.as_ref(), index);
     }
     for (method, path, expected) in [
         (Method::POST, "/operator/", StatusCode::NOT_FOUND),
@@ -428,7 +429,6 @@ async fn dashboard_shell_uses_a_running_enabled_instance_before_authentication()
         instance_id: second_id.to_string(),
         name: Some("second".to_owned()),
         canonical_config_path: "/unused/second.toml".to_owned(),
-        config_sha256: String::new(),
         data_path: "/unused/second".to_owned(),
         object_authority: RegisteredObjectAuthority::Local,
         public_base_domain: None,
@@ -475,13 +475,9 @@ async fn dashboard_shell_uses_a_running_enabled_instance_before_authentication()
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body = to_bytes(response.into_body(), 4096).await.unwrap();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("dashboard is not ready")
-    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(body.as_ref(), index);
 }
 
 #[tokio::test]
@@ -493,7 +489,6 @@ async fn dashboard_session_is_shared_across_registered_instances() {
             instance_id: first_id.to_string(),
             name: Some("first".to_owned()),
             canonical_config_path: "/unused/first.toml".to_owned(),
-            config_sha256: String::new(),
             data_path: "/unused/first".to_owned(),
             object_authority: RegisteredObjectAuthority::Local,
             public_base_domain: None,
@@ -505,7 +500,6 @@ async fn dashboard_session_is_shared_across_registered_instances() {
             instance_id: second_id.to_string(),
             name: Some("second".to_owned()),
             canonical_config_path: "/unused/second.toml".to_owned(),
-            config_sha256: String::new(),
             data_path: "/unused/second".to_owned(),
             object_authority: RegisteredObjectAuthority::Local,
             public_base_domain: None,
@@ -588,7 +582,6 @@ async fn stopped_instance_keeps_only_its_registered_discovery_scope() {
         instance_id: id.to_string(),
         name: Some("dev".to_owned()),
         canonical_config_path: "/unused/compute.toml".to_owned(),
-        config_sha256: String::new(),
         data_path: "/unused/data".to_owned(),
         object_authority: RegisteredObjectAuthority::Local,
         public_base_domain: Some("a.example.com".to_owned()),

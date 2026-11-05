@@ -12,7 +12,6 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::Read as _;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr as _;
 use uuid::Uuid;
@@ -132,15 +131,18 @@ impl RestoreTarget {
             sqlite_busy_timeout_ms,
         )?;
         restore_artifact_directories(&self.staging, manifest)?;
-        normalize_restored_scheduler(
-            &self.staging.join("scheduler.sqlite"),
-            sqlite_busy_timeout_ms,
-            manifest.created_at_ms,
-            manifest
-                .instance_id
-                .parse()
-                .map_err(|_| restore_invalid())?,
-        )?;
+        // Legacy scheduler files remain untouched for the startup import.
+        if !self.staging.join("scheduler.sqlite").exists() {
+            normalize_restored_scheduler(
+                &self.staging.join("control.sqlite"),
+                sqlite_busy_timeout_ms,
+                manifest.created_at_ms,
+                manifest
+                    .instance_id
+                    .parse()
+                    .map_err(|_| restore_invalid())?,
+            )?;
+        }
         crate::data_dir::initialize_restored_layout(&self.staging).map_err(|error| {
             restore_stage(
                 &error,
@@ -201,13 +203,10 @@ fn validate_staging(
     }
     for entry in &manifest.files {
         let path = root.join(&entry.restore_path);
-        crate::fs::validate_owned_file(&path, true)
+        crate::fs::validate_owned_file(&path)
             .map_err(|error| restore_stage(&error, "restore staged file ownership is invalid"))?;
         let metadata = std::fs::metadata(&path).map_err(|_| restore_invalid())?;
-        if metadata.len() != entry.size
-            || metadata.permissions().mode() & 0o777 != 0o600
-            || hash_file(&path)? != entry.sha256
-        {
+        if metadata.len() != entry.size || hash_file(&path)? != entry.sha256 {
             return Err(PlatformError::new(
                 ErrorCode::RestoreInvalid,
                 "restore staged file bytes do not match the authenticated manifest",
@@ -232,11 +231,24 @@ fn validate_staging(
             "restore control identity does not match the authenticated manifest",
         ));
     }
-    crate::scheduler::inspect_scheduler_schema_version(
-        &root.join("scheduler.sqlite"),
-        busy_timeout_ms,
-    )
-    .map_err(|error| restore_stage(&error, "restore scheduler authority is invalid"))?;
+    if root.join("scheduler.sqlite").exists() {
+        let mut legacy = Connection::open_with_flags(
+            root.join("scheduler.sqlite"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )
+        .map_err(|_| restore_invalid())?;
+        crate::schema_migrations::inspect(
+            &mut legacy,
+            crate::schema_migrations::DatabaseKind::Scheduler,
+        )
+        .map_err(|error| restore_stage(&error, "restore scheduler authority is invalid"))?;
+    } else {
+        crate::scheduler::inspect_scheduler_schema_version(
+            &root.join("control.sqlite"),
+            busy_timeout_ms,
+        )
+        .map_err(|error| restore_stage(&error, "restore scheduler authority is invalid"))?;
+    }
     validate_resource_catalog(root, busy_timeout_ms, manifest)
         .map_err(|error| restore_stage(&error, "restore resource catalog is invalid"))?;
     validate_artifact_catalog(root, busy_timeout_ms, manifest)
@@ -431,7 +443,7 @@ fn validate_owned_resource_db(
     entry: &open_compute_core::SnapshotFileV1,
     busy_timeout_ms: u64,
 ) -> Result<(), PlatformError> {
-    let path = crate::control_db::leaf_nofollow_path(&root.join(&entry.restore_path))?;
+    let path = crate::control_db::canonical_database_path(&root.join(&entry.restore_path))?;
     let mut connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
@@ -540,7 +552,7 @@ fn enumerate_regular_files(root: &Path) -> Result<BTreeSet<String>, PlatformErro
 }
 
 fn sqlite_quick_check(path: &Path, busy_timeout_ms: u64) -> Result<(), PlatformError> {
-    let open_path = crate::control_db::leaf_nofollow_path(path)?;
+    let open_path = crate::control_db::canonical_database_path(path)?;
     let connection = Connection::open_with_flags(
         open_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,

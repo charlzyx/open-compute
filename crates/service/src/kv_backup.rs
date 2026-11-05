@@ -146,10 +146,6 @@ pub(crate) async fn create_backup(
 }
 
 /// Restore a ready KV backup as a new namespace and return its immutable ID.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the restore command keeps its authority, identity, and audit inputs explicit"
-)]
 pub(crate) async fn restore_backup(
     api: &KvApiState,
     metrics: &MetricsRegistry,
@@ -325,12 +321,6 @@ fn restore_downloaded_namespace(
     let resource = match reservation {
         ResourceCreateReservation::Complete(response) => {
             return Ok(CreateResourceOutcome::Replay(response));
-        }
-        ResourceCreateReservation::Failed(_) => {
-            return Err(PlatformError::new(
-                ErrorCode::ResourceInvariantViolation,
-                "KV restore idempotency is in a failed state",
-            ));
         }
         ResourceCreateReservation::Reserved(resource)
         | ResourceCreateReservation::Continue(resource) => resource,

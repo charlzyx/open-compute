@@ -3,7 +3,6 @@
 
 import argparse
 import errno
-import fcntl
 from collections import namedtuple
 import concurrent.futures
 from contextlib import nullcontext
@@ -15,17 +14,15 @@ from pathlib import Path
 import platform
 import re
 import resource
-import select
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 
-# This CLI imports repository-local policy; do not create disposable source-tree
-# bytecode (or change the frozen input set) while discovering/running tests.
+# This CLI imports repository-local policy; keep disposable bytecode out of the source tree.
 sys.dont_write_bytecode = True
 from gate_cases import (
     ONCE,
@@ -37,6 +34,7 @@ from gate_cases import (
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_JOBS = min(4, os.cpu_count() or 1)
+CI_PROGRESS_LOCK = threading.RLock()
 Target = namedtuple('Target', 'package_id name kind cwd exclusive cases', defaults=[None])
 TypedTarget = namedtuple(
     'TypedTarget',
@@ -53,97 +51,195 @@ SERVICE_LIB_TARGET = 'open-compute-service.lib.open_compute_service'
 # shared kernel socket buffers in a
 # parallel measurement. Keep the workload intact and isolate its test process.
 CARGO_TARGETS = {
-    'p0-1': ('open-compute-service', 'p0_1_gate', True),
+    'daemon': ('open-compute-service', 'p0_1_gate', True),
     # W2 adds CPU condemnation plus a SIGSTOP/restart cycle; keep that real-process
     # pressure out of the independently parallelized version and parser probes.
-    'p0-2': ('open-compute-service', 'p0_2_runtime_gate', True),
-    'p0-3': ('open-compute-service', 'p0_3_resource_binding_gate', False),
-    'p0-4': ('open-compute-service', 'p0_4_kv_gate', False),
-    # The 241 MB concurrent upload/readback matrix loses its HTTP stream under
+    'workers': ('open-compute-service', 'p0_2_runtime_gate', True),
+    'bindings': ('open-compute-service', 'p0_3_resource_binding_gate', False),
+    'kv': ('open-compute-service', 'p0_4_kv_gate', False),
+    # The concurrent upload/readback matrix loses its HTTP stream under
     # coverage when it contends with the service-library process.
-    'p0-5': ('open-compute-service', 'p0_5_r2_gate', True),
-    'p0-6': ('open-compute-service', 'p0_6_d1_gate', False),
-    'p0-7': ('open-compute-service', 'p0_7_durable_objects_gate', False),
-    'p0-8': ('open-compute-service', 'p0_8_scheduler_do_alarms_gate', False),
-    'p0-exit': ('open-compute-service', 'p0_exit_gate', False),
-    'p1-conformance': ('open-compute-service', 'p1_conformance', False),
-    'p1-security': ('open-compute-service', 'p1_security', False),
-    'p1-crash': ('open-compute-service', 'p1_crash_process', False),
-    'p1-snapshot': ('open-compute-service', 'p1_snapshot_restore', False),
-    'p2-1': ('open-compute-service', 'p2_1_scheduler_hardening_gate', False),
-    'p2-2': ('open-compute-service', 'p2_2_queue_producer_gate', False),
+    'r2': ('open-compute-service', 'p0_5_r2_gate', True),
+    'd1': ('open-compute-service', 'p0_6_d1_gate', False),
+    'durable-objects': ('open-compute-service', 'p0_7_durable_objects_gate', False),
+    'alarms': ('open-compute-service', 'p0_8_scheduler_do_alarms_gate', False),
+    'core-products': ('open-compute-service', 'p0_exit_gate', False),
+    'capabilities': ('open-compute-service', 'p1_conformance', False),
+    'isolation': ('open-compute-service', 'p1_security', False),
+    'crash-recovery': ('open-compute-service', 'p1_crash_process', False),
+    'snapshots': ('open-compute-service', 'p1_snapshot_restore', False),
+    'scheduler': ('open-compute-service', 'p2_1_scheduler_hardening_gate', False),
+    'queues': ('open-compute-service', 'p2_2_queue_producer_gate', False),
     'workflow-runtime': ('open-compute-service', 'workflow_runtime_gate', False),
     'workflow-recovery': ('open-compute-service', 'workflow_recovery_gate', False),
-    'p2-exit': ('open-compute-service', 'p2_exit_gate', False),
-    'p3-assets': ('open-compute-service', 'p3_assets_gate', False),
+    'queue-workflow-recovery': ('open-compute-service', 'p2_exit_gate', False),
+    'assets': ('open-compute-service', 'p3_assets_gate', False),
     'dashboard': ('open-compute-service', 'dashboard_gate', False),
-    'p3-services-hard': ('open-compute-service', 'p3_services_hard', False),
-    'p3-services-product': ('open-compute-service', 'p3_services_product', False),
-    'p3-services-events': ('open-compute-service', 'p3_services_events', False),
-    'p3-services-recovery': ('open-compute-service', 'p3_services_recovery', False),
-    'p3-cache-images': ('open-compute-service', 'p3_cache_images_gate', False),
+    'services-rpc': ('open-compute-service', 'p3_services_hard', False),
+    'services-product': ('open-compute-service', 'p3_services_product', False),
+    'services-events': ('open-compute-service', 'p3_services_events', False),
+    'services-recovery': ('open-compute-service', 'p3_services_recovery', False),
+    'cache-images': ('open-compute-service', 'p3_cache_images_gate', False),
     # Coverage instrumentation makes this real-workerd/search/provider matrix
     # contend with other process-heavy Gates and produce spurious backend failures.
-    'p5-search': ('open-compute-service', 'p5_search_gate', True),
-    'p6-cf-resources': ('open-compute-service', 'p6_cf_resource_gate', False),
-    'p22-browser-run': ('open-compute-service', 'p22_browser_run', True),
-    'p23-containers': ('open-compute-service', 'p23_containers', True),
-    'p6-cloudflare-sdk': ('open-compute-service', 'cloudflare_sdk_gate', False),
-    'p20-cf-cli': ('open-compute-service', 'p20_cf_cli', False),
+    'search': ('open-compute-service', 'p5_search_gate', True),
+    'recorded': ('open-compute-service', 'recorded_contracts', True),
+    'cf-resources': ('open-compute-service', 'p6_cf_resource_gate', False),
+    'browser': ('open-compute-service', 'p22_browser_run', True),
+    'containers': ('open-compute-service', 'p23_containers', True),
+    'cloudflare-sdk': ('open-compute-service', 'cloudflare_sdk_gate', False),
+    'cf-cli': ('open-compute-service', 'p20_cf_cli', False),
     # Python snapshots and several fresh daemon generations own one serial scenario.
-    'p21-python-main': ('open-compute-service', 'p21_python_main', True),
-    'p21-python-frameworks': ('open-compute-service', 'p21_python_frameworks', True),
-    'p21-python-services': ('open-compute-service', 'p21_python_services', True),
-    'p21-python-queues': ('open-compute-service', 'p21_python_queues', True),
-    'p21-python-durable-objects': ('open-compute-service', 'p21_python_durable_objects', True),
-    'p21-python-workflows': ('open-compute-service', 'p21_python_workflows', True),
-    'p21-python-runtime': ('open-compute-service', 'p21_python_runtime', True),
+    'python-main': ('open-compute-service', 'p21_python_main', True),
+    'python-frameworks': ('open-compute-service', 'p21_python_frameworks', True),
+    'python-services': ('open-compute-service', 'p21_python_services', True),
+    'python-queues': ('open-compute-service', 'p21_python_queues', True),
+    'python-durable-objects': ('open-compute-service', 'p21_python_durable_objects', True),
+    'python-workflows': ('open-compute-service', 'p21_python_workflows', True),
+    'python-runtime': ('open-compute-service', 'p21_python_runtime', True),
     # Finish independent work together before the remaining exclusive barriers.
     'workflow-product': ('open-compute-service', 'workflow_product_gate', True),
     'runtime': ('open-compute-runtime', 'supervisor', True),
     'single-binary': ('open-compute-service', 'single_binary', True),
 }
 TYPED_TARGETS = {
-    'p3-contract': (None, 'p3-contract', False),
-    'p3-cf-diff': (None, 'p3-cf-diff', True),
-    'p5-ai-provider-qualification': (None, 'p5-ai-provider-qualification', True),
+    'contract': (None, 'contract', False),
+    'cf-diff': (None, 'cf-diff', True),
+    'ai-provider-qualification': (None, 'ai-provider-qualification', True),
     's3-provider-qualification': (None, 's3-provider-qualification', True),
 }
 TARGETS = {**CARGO_TARGETS, **TYPED_TARGETS}
-P3_PRODUCT_TARGETS = [
-    'p3-assets', 'p3-services-hard', 'p3-services-product', 'p3-services-events',
-    'p3-services-recovery', 'p3-cache-images', 'dashboard',
-    'p21-python-main', 'p21-python-frameworks', 'p21-python-services', 'p21-python-queues',
-    'p21-python-durable-objects',
-    'p21-python-workflows',
-    'p21-python-runtime',
+PRODUCT_SCENARIOS = [
+    'assets', 'services-rpc', 'services-product', 'services-events',
+    'services-recovery', 'cache-images', 'dashboard',
+    'python-main', 'python-frameworks', 'python-services', 'python-queues',
+    'python-durable-objects',
+    'python-workflows',
+    'python-runtime',
 ]
 GROUPS = {
-    'p0': [name for name in CARGO_TARGETS if name.startswith('p0-')],
-    'p1': [name for name in CARGO_TARGETS if name.startswith('p1-')],
-    'p2': [name for name in CARGO_TARGETS if name.startswith('p2-') or name.startswith('workflow-')],
-    'p3': [
-        'p3-contract',
-        *[name for name in CARGO_TARGETS if name.startswith('p0-')],
-        *[name for name in CARGO_TARGETS if name.startswith('p1-')],
-        *[name for name in CARGO_TARGETS if name.startswith('p2-') or name.startswith('workflow-')],
-        *P3_PRODUCT_TARGETS,
+    'core': [
+        'daemon', 'workers', 'bindings', 'kv', 'r2', 'd1', 'durable-objects', 'alarms',
+        'core-products',
     ],
-    'p3-services': [
-        'p3-services-hard', 'p3-services-product', 'p3-services-events',
-        'p3-services-recovery',
+    'platform': [
+        'capabilities', 'isolation', 'crash-recovery', 'snapshots',
     ],
-    'p3-isolation': ['p1-security', *P3_PRODUCT_TARGETS],
-    'p3-recovery': [
-        'p1-crash', 'p1-snapshot', 'p2-exit', 'workflow-recovery', *P3_PRODUCT_TARGETS,
+    'scheduling': [
+        'scheduler', 'queues', 'workflow-runtime', 'workflow-recovery', 'queue-workflow-recovery',
+        'workflow-product',
     ],
-    # Queue/Cron share the immutable loader matrix; selecting both never duplicates it.
-    'p2-3': ['p0-2'],
-    'p1-8': ['p0-7', 'p1-conformance'],
-    'workflow': ['workflow-runtime', 'workflow-recovery', 'workflow-product'],
-    'all': [*CARGO_TARGETS, 'p3-contract'],
-    'p5': ['p5-search', 'p5-ai-provider-qualification'],
+    'services': [
+        'services-rpc', 'services-product', 'services-events', 'services-recovery',
+    ],
+    'product-isolation': ['isolation', *PRODUCT_SCENARIOS],
+    'product-recovery': [
+        'crash-recovery', 'snapshots', 'queue-workflow-recovery', 'workflow-recovery',
+        *PRODUCT_SCENARIOS,
+    ],
+    'hibernation': [
+        'durable-objects', 'capabilities',
+    ],
+    'workflow': [
+        'workflow-runtime', 'workflow-recovery', 'workflow-product',
+    ],
+    'all': [*CARGO_TARGETS, 'contract'],
+    'search-qualification': [
+        'search', 'ai-provider-qualification',
+    ],
 }
+GROUPS['products'] = ['contract', 'recorded', *GROUPS['core'], *GROUPS['platform'],
+                      *GROUPS['scheduling'], *PRODUCT_SCENARIOS]
+
+
+# Balanced from release 41490630149 with --jobs 2 and exclusive barriers.
+# Keep the service-library case partitions together for discovery validation.
+COVERAGE_SHARDS = (
+    (
+        'open-compute-service.lib.open_compute_service',
+        'open-compute-service.test.msrv_audit',
+        'open-compute-storage.lib.open_compute_storage',
+        'open-compute-workers.lib.open_compute_workers',
+        'service-process-lifecycle',
+    ),
+    (
+        'alarms',
+        'assets',
+        'containers',
+        'kv',
+        'open-compute-runtime.bin.open-compute-supervisor-fixture',
+        'open-compute-service.bin.host-extension-test-provider',
+        'python-workflows',
+        'queue-workflow-recovery',
+        'search',
+        'services-product',
+        'single-binary',
+    ),
+    (
+        'bindings',
+        'browser',
+        'cache-images',
+        'cloudflare-sdk',
+        'd1',
+        'dashboard',
+        'open-compute-artifacts.lib.open_compute_artifacts',
+        'open-compute-core.lib.open_compute_core',
+        'open-compute-document-parser.test.corpus',
+        'open-compute-service.bin.ocd',
+        'open-compute-service.test.ai_provider_contract',
+        'open-compute-service.test.cli',
+        'open-compute-service.test.p1_reliability',
+        'open-compute-service.test.p5_snapshot_restore',
+        'python-main',
+        'python-runtime',
+        'python-services',
+        'runtime',
+        'services-rpc',
+        'snapshots',
+        'workers',
+        'workflow-recovery',
+        'workflow-runtime',
+    ),
+    (
+        'capabilities',
+        'cf-cli',
+        'cf-resources',
+        'contract',
+        'core-products',
+        'crash-recovery',
+        'daemon',
+        'durable-objects',
+        'isolation',
+        'open-compute-document-parser.lib.open_compute_document_parser',
+        'open-compute-document-parser.test.ocr',
+        'open-compute-images.lib.open_compute_images',
+        'open-compute-p1-fuzz.bin.p1-fuzz',
+        'open-compute-runtime.lib.open_compute_runtime',
+        'open-compute-search.lib.open_compute_search',
+        'open-compute-vendor-schema.bin.open-compute-vendor-schema',
+        'python-durable-objects',
+        'python-frameworks',
+        'python-queues',
+        'queues',
+        'r2',
+        'recorded',
+        'scheduler',
+        'services-events',
+        'services-recovery',
+        'workflow-product',
+    ),
+)
+
+
+def coverage_shard(targets, value):
+    """Fail closed when Cargo adds a target until its shard is assigned here."""
+    assigned = [name for shard in COVERAGE_SHARDS for name in shard]
+    if len(assigned) != len(set(assigned)) or set(assigned) != targets.keys():
+        raise ValueError("coverage shard partition must equal the full workspace target inventory")
+    if not re.fullmatch(r"[1-4]/4", value):
+        raise ValueError("--shard must be i/4 with i between 1 and 4")
+    members = set(COVERAGE_SHARDS[int(value[0]) - 1])
+    return {name: target for name, target in targets.items() if name in members}
 
 
 def prevent_macos_sleep():
@@ -283,7 +379,7 @@ def verify_case_inventory(targets, prepared):
 def resolve_targets(selected, workspace):
     """Use Cargo's workspace inventory; unaudited targets remain exclusive."""
     metadata = json.loads(subprocess.check_output(
-        ['mbx', 'metadata', '--locked', '--offline',
+        ['cargo', 'metadata', '--locked', '--offline',
          '--no-deps', '--format-version=1'], cwd=ROOT, text=True))
     known = {(package, name): (label, exclusive)
              for label, (package, name, exclusive) in CARGO_TARGETS.items()}
@@ -319,18 +415,18 @@ def resolve_targets(selected, workspace):
     typed = {}
     if workspace or set(TYPED_TARGETS) & set(selected):
         bun = None
-        if workspace or {'p3-contract', 'p3-cf-diff', 'p5-ai-provider-qualification'} & set(selected):
+        if workspace or {'contract', 'cf-diff', 'ai-provider-qualification'} & set(selected):
             bun = shutil.which('bun')
             if bun is None:
                 raise ValueError('bun is required for typed conformance targets')
-        if workspace or 'p3-contract' in selected:
-            typed['p3-contract'] = TypedTarget(
+        if workspace or 'contract' in selected:
+            typed['contract'] = TypedTarget(
                 None,
-                'p3-contract',
+                'contract',
                 'bun-test',
                 str(ROOT),
                 False,
-                tuple(sorted(ONCE['p3-contract'] + TIMING.get('p3-contract', ()))),
+                tuple(sorted(ONCE['contract'] + TIMING.get('contract', ()))),
                 bun,
                 (str(ROOT / 'test/conformance/check.ts'),),
                 ('--list',),
@@ -339,14 +435,14 @@ def resolve_targets(selected, workspace):
                 'light',
                 'conformance-check',
             )
-        if 'p3-cf-diff' in selected:
-            typed['p3-cf-diff'] = TypedTarget(
+        if 'cf-diff' in selected:
+            typed['cf-diff'] = TypedTarget(
                 None,
-                'p3-cf-diff',
+                'cf-diff',
                 'cloudflare-differential',
                 str(ROOT),
                 True,
-                tuple(sorted(ONCE['p3-cf-diff'] + TIMING.get('p3-cf-diff', ()))),
+                tuple(sorted(ONCE['cf-diff'] + TIMING.get('cf-diff', ()))),
                 bun,
                 (str(ROOT / 'test/conformance/differential.ts'),),
                 ('--list',),
@@ -354,28 +450,28 @@ def resolve_targets(selected, workspace):
                     'PATH', 'HOME', 'OPEN_COMPUTE_CF_MUTATION_ACK',
                     'OPEN_COMPUTE_CF_ACCOUNT_ID', 'OPEN_COMPUTE_CF_ACCOUNT_ALIAS',
                     'OPEN_COMPUTE_CF_CLI', 'CLOUDFLARE_API_TOKEN',
-                    'OPEN_COMPUTE_ENDPOINT', 'OPEN_COMPUTE_ACCOUNT_ID',
+                    'OPEN_COMPUTE_ENDPOINT', 'OPEN_COMPUTE_PUBLIC_ENDPOINT', 'OPEN_COMPUTE_ACCOUNT_ID',
                     'OPEN_COMPUTE_ADMIN_TOKEN',
                 ),
                 1800,
                 'external-exclusive',
                 'differential-runner',
             )
-        if 'p5-ai-provider-qualification' in selected:
-            typed['p5-ai-provider-qualification'] = TypedTarget(
+        if 'ai-provider-qualification' in selected:
+            typed['ai-provider-qualification'] = TypedTarget(
                 None,
-                'p5-ai-provider-qualification',
+                'ai-provider-qualification',
                 'bun-test',
                 str(ROOT),
                 True,
-                tuple(sorted(ONCE['p5-ai-provider-qualification'])),
+                tuple(sorted(ONCE['ai-provider-qualification'])),
                 bun,
                 (str(ROOT / 'test/conformance/ai-provider-qualification.ts'),),
                 ('--list',),
                 (
                     'PATH', 'HOME', 'RUSTFLAGS', 'CARGO_HOME', 'RUSTUP_HOME',
-                    'CARGO_INCREMENTAL', 'MBX_CACHE_EXPORT_GROUP', 'MBX_CACHE_LINKS',
-                    'MBX_GC_AUTO', 'OPEN_COMPUTE_TEST_WORKERD',
+                    'CARGO_INCREMENTAL',
+                    'OPEN_COMPUTE_TEST_WORKERD',
                     'OPEN_COMPUTE_BUILD_WORKERD_ARCHIVE', 'OPEN_COMPUTE_BUILD_CADDY',
                     'BAILIAN_API_HOST', 'BAILIAN_API_KEY', 'DEEPSEEK_API_KEY',
                     'COHERE_API_KEY',
@@ -400,8 +496,7 @@ def resolve_targets(selected, workspace):
                 ('--list',),
                 (
                     'PATH', 'HOME', 'RUSTFLAGS', 'CARGO_HOME', 'RUSTUP_HOME',
-                    'CARGO_INCREMENTAL', 'MBX_CACHE_EXPORT_GROUP', 'MBX_CACHE_LINKS',
-                    'MBX_GC_AUTO',
+                    'CARGO_INCREMENTAL',
                     'OPEN_COMPUTE_TEST_R2_S3_ENDPOINT',
                     'OPEN_COMPUTE_TEST_R2_S3_REGION',
                     'OPEN_COMPUTE_TEST_R2_S3_BUCKET',
@@ -425,7 +520,7 @@ def resolve_targets(selected, workspace):
         resolved = dict(sorted(found.items(), key=lambda item: (
             0 if item[0] == 'open-compute-service.test.cli' else
             1 if item[0] == 'single-binary' else
-            2 if item[0] == 'p5-search' else 4 if item[1].exclusive else 3,
+            2 if item[0] == 'search' else 4 if item[1].exclusive else 3,
             item[0])))
         resolved.update(typed)
         return resolved
@@ -447,15 +542,14 @@ def source_identity_excluded(name):
 
 def source_identity():
     names = subprocess.check_output(
-        ['git', '-c', 'core.excludesFile=/dev/null', 'ls-files', '-z', '--cached', '--others',
-         '--exclude-standard'], cwd=ROOT,
+        ['git', '-c', 'core.excludesFile=/dev/null', 'ls-files', '-z', '--cached'], cwd=ROOT,
     ).split(b'\0')
     result = hashlib.sha256()
     for name in sorted(set(names) - {b''}):
         if source_identity_excluded(name):
             continue
         # Designs/history are not runtime inputs. Maintained references include
-        # embedded runbooks and conformance fixtures, so they must remain frozen.
+        # embedded runbooks and conformance fixtures, so include them in the report identity.
         if name.startswith(b'docs/') and not name.startswith(b'docs/references/'):
             continue
         path = ROOT / os.fsdecode(name)
@@ -502,7 +596,7 @@ def container_inputs_identity():
     """Freeze the explicit P23 OCI graphs, declared Broker contract and built Worker bytes."""
     configured = os.environ.get('OPEN_COMPUTE_TEST_CONTAINERS_INPUT')
     if not configured:
-        raise ValueError('p23-containers requires OPEN_COMPUTE_TEST_CONTAINERS_INPUT')
+        raise ValueError('containers requires OPEN_COMPUTE_TEST_CONTAINERS_INPUT')
     path = Path(configured)
     if not path.is_absolute() or path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
         raise ValueError('P23 input JSON must be an absolute bounded regular file')
@@ -577,12 +671,12 @@ def container_inputs_identity():
 
 def verify_selected_inputs(targets, *, probe_version=True):
     """L0 typed checks need only frozen manifests; Cargo product Gates need runtime inputs."""
-    if 'p0-1' in targets and not (shutil.which('/usr/sbin/lsof') or shutil.which('lsof')):
-        raise ValueError('p0-1 requires lsof; install the process Gate tool before running')
+    if 'daemon' in targets and not (shutil.which('/usr/sbin/lsof') or shutil.which('lsof')):
+        raise ValueError('daemon requires lsof; install the process Gate tool before running')
     if (any(not isinstance(target, TypedTarget) for target in targets.values())
-            or 'p5-ai-provider-qualification' in targets):
+            or 'ai-provider-qualification' in targets):
         result = verify_inputs(probe_version=probe_version)
-        if 'p23-containers' in targets:
+        if 'containers' in targets:
             result['containers'] = container_inputs_identity()
         return result
     return {
@@ -592,54 +686,7 @@ def verify_selected_inputs(targets, *, probe_version=True):
     }
 
 
-def compilation_phase_barrier(report):
-    """Wait for the resource owner before any test process can start."""
-    event = os.environ.pop('OPEN_COMPUTE_GATE_BUILD_EVENT_FD', None)
-    resume = os.environ.pop('OPEN_COMPUTE_GATE_RUN_CONTINUE_FD', None)
-    if event is None and resume is None:
-        return
-    if (event is None or resume is None
-            or not re.fullmatch('[0-9]{1,10}', event)
-            or not re.fullmatch('[0-9]{1,10}', resume)):
-        raise ValueError('compilation handoff requires two pipe descriptors')
-    event_fd, resume_fd = int(event), int(resume)
-    if min(event_fd, resume_fd) < 3 or event_fd == resume_fd:
-        raise ValueError('compilation handoff requires distinct dedicated pipes')
-    try:
-        for fd, access in ((event_fd, os.O_WRONLY), (resume_fd, os.O_RDONLY)):
-            if (not stat.S_ISFIFO(os.fstat(fd).st_mode)
-                    or fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_ACCMODE != access):
-                raise ValueError('compilation handoff requires a writable and a readable pipe')
-        source = report['source_sha256']
-        if not re.fullmatch('[0-9a-f]{64}', source):
-            raise ValueError('compilation handoff requires the current source digest')
-        report['compilation_handoff'] = {'resumed': False, 'source_sha256': source}
-        message = json.dumps({'phase': 'compiled', 'source_sha256': source,
-                              'targets': len(report['targets'])}).encode() + b'\n'
-        if os.write(event_fd, message) != len(message):
-            raise RuntimeError('compilation handoff notification was incomplete')
-        expected = f'RUN {source}\n'.encode()
-        response = b''
-        deadline = time.monotonic() + 120
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not select.select([resume_fd], [], [], remaining)[0]:
-                raise TimeoutError('compilation handoff did not restore the test resource limits')
-            part = os.read(resume_fd, len(expected) + 1 - len(response))
-            if not part:
-                break
-            response += part
-            if len(response) > len(expected):
-                raise RuntimeError('compilation handoff response was too long')
-        if response != expected:
-            raise RuntimeError('compilation handoff did not authorize the current source')
-        report['compilation_handoff']['resumed'] = True
-    finally:
-        os.close(event_fd)
-        os.close(resume_fd)
-
-
-def build_targets(targets, directory, workspace):
+def build_targets(targets, directory, workspace, *, coverage_targets=None):
     cargo_targets = {name: target for name, target in targets.items()
                      if not isinstance(target, TypedTarget)}
     artifacts = {name: target.executable for name, target in targets.items()
@@ -668,7 +715,7 @@ def build_targets(targets, directory, workspace):
     for names in expected.values():
         if len(names) > 1 and set(names) != allowed_aliases:
             raise RuntimeError(f'Cargo test executable has duplicate Gate owners: {sorted(names)}')
-    command = ['mbx', 'test', '--locked', '--offline',
+    command = ['cargo', 'test', '--locked', '--offline',
                '--all-features', '--no-run', '--message-format=json']
     if workspace:
         command += ['--workspace', '--all-targets']
@@ -715,22 +762,38 @@ def build_targets(targets, directory, workspace):
         if object_dir.exists() or object_dir.is_symlink():
             raise RuntimeError(f'refusing to overwrite coverage objects: {object_dir}')
         object_dir.mkdir(mode=0o700)
-        for index, executable in enumerate(sorted(set(coverage_executables))):
+        executables = sorted(set(coverage_executables))
+        if coverage_targets is not None:
+            # Retain this shard's tests and shared child binaries, so merge does not need four full workspaces.
+            all_tests = {Path(artifacts[name]) for name in cargo_targets}
+            selected_tests = {Path(artifacts[name]) for name in cargo_targets if name in coverage_targets}
+            executables = [path for path in executables if path not in all_tests or path in selected_tests]
+        print(f'Preserving {len(executables)} coverage objects: '
+              f'{sum(path.stat().st_size for path in executables)} bytes', flush=True)
+        for index, executable in enumerate(executables):
             destination = object_dir / f'{index:03d}-{executable.name}'
+            filesystem = os.statvfs(object_dir)
+            print(f'Coverage object {index + 1}/{len(executables)}: '
+                  f'bytes={executable.stat().st_size} '
+                  f'available={filesystem.f_bavail * filesystem.f_frsize}', flush=True)
             # Filesystem clones preserve bytes when Cargo replaces its cache
             # without allocating another full object set for each run.
-            if sys.platform in ('darwin', 'linux'):
-                command = (['/bin/cp', '-c', '-p'] if sys.platform == 'darwin'
-                           else ['cp', '--reflink=auto', '--preserve=mode,timestamps'])
+            if sys.platform == 'linux':
+                # GNU cp already copies bytes when this filesystem cannot clone.
+                subprocess.check_call(['cp', '--reflink=auto', '--preserve=mode,timestamps',
+                                       str(executable), str(destination)])
+            elif sys.platform == 'darwin':
                 try:
-                    subprocess.check_call(
-                        [*command, str(executable), str(destination)],
-                        stderr=subprocess.DEVNULL,
-                    )
-                    continue
+                    subprocess.check_call(['/bin/cp', '-c', '-p', str(executable), str(destination)],
+                                          stderr=subprocess.DEVNULL)
                 except (OSError, subprocess.CalledProcessError):
-                    pass  # Other filesystems still require independent copies.
-            shutil.copy2(executable, destination)
+                    shutil.copy2(executable, destination)
+            else:
+                shutil.copy2(executable, destination)
+            filesystem = os.statvfs(object_dir)
+            print(f'Preserved coverage object {index + 1}/{len(executables)}: '
+                  f'allocated={destination.stat().st_blocks * 512} '
+                  f'available={filesystem.f_bavail * filesystem.f_frsize}', flush=True)
         filesystem = os.statvfs(ROOT)
         print('Coverage filesystem (blocks, free, available, block bytes): '
               f'{filesystem.f_blocks}, {filesystem.f_bfree}, '
@@ -738,6 +801,15 @@ def build_targets(targets, directory, workspace):
     return artifacts, {'invocations': 1, 'seconds': time.monotonic() - start,
                        'executables': {name: digest(Path(artifacts[name])) for name in cargo_targets},
                        'typed_targets': typed_inputs}
+
+
+def ci_progress(name, phase, status, seconds=None):
+    """Expose only runner-owned target state while retaining private process logs locally."""
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        with CI_PROGRESS_LOCK:
+            print('CI_GATE_PROGRESS ' + json.dumps({
+                'target': name, 'phase': phase, 'status': status, 'seconds': seconds,
+            }), flush=True)
 
 
 def execute_target(name, executable, directory, target, *, list_only=False):
@@ -758,7 +830,7 @@ def execute_target(name, executable, directory, target, *, list_only=False):
     # Native tests also spawn cf/Bun. Their compile caches must not leak into TMPDIR.
     env['BUN_RUNTIME_TRANSPILER_CACHE_PATH'] = '0'
     env['NODE_DISABLE_COMPILE_CACHE'] = '1'
-    if name == 'p5-search':
+    if name == 'search':
         env.setdefault('OPEN_COMPUTE_TEST_EMBEDDING_API_KEY', 'fixture-secret')
     # Repetition belongs only to this runner, including when a test spawns its own fixture.
     env.pop('OPEN_COMPUTE_GATE_ROUNDS', None)
@@ -779,6 +851,7 @@ def execute_target(name, executable, directory, target, *, list_only=False):
                 arguments = ['--list'] if list_only else ['--test-threads=1', '--nocapture']
                 if not list_only and target.cases:
                     arguments += ['--exact', *target.cases]
+            ci_progress(name, 'prepare' if list_only else 'test', 'START')
             process = subprocess.run([executable, *arguments], cwd=cwd, env=env,
                                      stdout=output, stderr=errors,
                                      timeout=600 if list_only else target.timeout
@@ -857,7 +930,10 @@ def execute_target(name, executable, directory, target, *, list_only=False):
         result['exit_code'] = 1
         result['error'] = 'process output contains a secret canary; inspect retained evidence locally'
     phase = 'prepare ' if list_only else ''
-    print(f'{phase}{name}: {"PASS" if result["exit_code"] == 0 else "FAIL"} {result["seconds"]:.2f}s', flush=True)
+    with CI_PROGRESS_LOCK:
+        print(f'{phase}{name}: {"PASS" if result["exit_code"] == 0 else "FAIL"} {result["seconds"]:.2f}s', flush=True)
+        ci_progress(name, phase.strip() or 'test',
+                    'PASS' if result['exit_code'] == 0 else 'FAIL', round(result['seconds'], 2))
     return result
 
 
@@ -991,30 +1067,22 @@ def write_contract_report(directory, report):
     report['contract_verdict'] = result['platformVerdict']
 
 
-def reject_duplicate_final(source, inputs):
-    """Refuse another full final run of the same frozen source and verified inputs."""
-    root = ROOT / '.temp/gate-run'
-    for path in [*root.glob('*/report.json'), *root.glob('failed/*/report.json')]:
-        report = json.loads(path.read_text())
-        if (report.get('purpose') == 'final' and report.get('workspace') is True
-                and report.get('source_sha256') == source and report.get('inputs') == inputs):
-            raise ValueError(f'full final Gate already attempted for these frozen inputs: {path}; '
-                             'inspect failures and run affected targets before new acceptance')
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('targets', nargs='*', help='Gate targets/groups; use --list to inspect the plan')
     parser.add_argument('--workspace', action='store_true',
-                        help='all Cargo test executables once; final mode repeats only product timing cases')
+                        help='all Cargo test executables; diagnostic rounds repeat only product timing cases')
+    parser.add_argument('--shard', help='workspace coverage partition i/4 (all targets must be assigned)')
     parser.add_argument('--jobs', type=int, default=DEFAULT_JOBS,
                         help='audited independent processes (default: min(4, CPU count))')
     parser.add_argument('--list', action='store_true', help='validate and print the exact plan without building or running')
     parser.add_argument('--keep-going', action='store_true',
                         help='collect failures from every selected target once; never retry')
-    parser.add_argument('--final', action='store_true',
-                        help='one uninstrumented acceptance round after source freeze')
+    parser.add_argument('--refresh', action='store_true',
+                        help='refresh portable recordings after successful live cf-diff')
     args = parser.parse_args()
+    if args.shard and not args.workspace:
+        raise ValueError('--shard requires --workspace')
     rounds = rounds_from_env()
     validate_registry(TARGETS)
     validate_contract_case_mapping()
@@ -1023,22 +1091,23 @@ def main():
     flags = ' '.join(os.environ.get(name, '') for name in [
         'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', '__CARGO_LLVM_COV_RUSTC_WRAPPER_RUSTFLAGS'])
     coverage = bool(os.environ.get('CARGO_LLVM_COV') or 'instrument-coverage' in flags)
-    if args.final and (rounds != 1 or coverage):
-        raise ValueError('--final requires one uninstrumented round')
-    if args.workspace and not (args.final or coverage or args.list):
-        raise ValueError('workspace execution requires --final after source freeze; '
-                         'development checks select affected targets with --keep-going')
     if rounds == 3 and (os.environ.get('CARGO_LLVM_COV') or 'instrument-coverage' in flags):
-        raise ValueError('final timing rounds require uninstrumented executables; coverage runs once')
+        raise ValueError('diagnostic timing rounds require uninstrumented executables; coverage runs once')
     if not args.workspace and not args.targets:
         raise ValueError('select Gate targets or --workspace')
     if not 1 <= args.jobs <= (os.cpu_count() or 1):
         raise ValueError('--jobs must be between 1 and the host CPU count')
     selected = selection(args.targets)
-    targets = resolve_targets(selected, args.workspace)
+    if args.refresh and (args.workspace or selected != ['cf-diff']):
+        raise ValueError('--refresh requires only cf-diff')
+    build_inventory = resolve_targets(selected, args.workspace)
+    targets = coverage_shard(build_inventory, args.shard) if args.shard else build_inventory
+    if args.refresh:
+        target = targets['cf-diff']
+        targets['cf-diff'] = target._replace(argv=(*target.argv, '--refresh'))
     plans = round_plan(targets, rounds)
     plan = {'rounds': rounds, 'jobs': args.jobs, 'workspace': args.workspace, 'targets': list(targets),
-            'purpose': 'final' if args.final else 'coverage' if coverage else
+            'purpose': 'coverage' if coverage else
                        'diagnostic' if rounds == 3 else 'development',
             'repetition_policy': 'complete-once-timing-three', 'round_plan': plan_summary(plans),
             'exclusive': [name for name, target in targets.items() if target.exclusive],
@@ -1051,13 +1120,11 @@ def main():
         return 0
     inputs = verify_selected_inputs(targets)
     source = source_identity()
-    if args.final and args.workspace:
-        reject_duplicate_final(source, inputs)
     run_id = f'{time.strftime("%Y%m%dT%H%M%S")}-{uuid.uuid4().hex[:8]}'
     directory = ROOT / '.temp/gate-run' / run_id
     directory.mkdir(parents=True, mode=0o700)
     report = {**plan, 'source_sha256': source,
-        'source_scope': ('repository inputs including docs/references; excludes generated Python caches '
+        'source_scope': ('tracked repository inputs including docs/references; excludes generated Python caches '
                          'and unconsumed docs plans/history'),
         'revision': subprocess.check_output(
         ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'inputs': inputs,
@@ -1070,8 +1137,15 @@ def main():
     start = time.monotonic()
     cpu_start = resource.getrusage(resource.RUSAGE_CHILDREN)
     try:
-        artifacts, report['build'] = build_targets(targets, directory, args.workspace)
-        compilation_phase_barrier(report)
+        ci_progress('workspace', 'compile', 'START')
+        try:
+            artifacts, report['build'] = build_targets(
+                build_inventory, directory, args.workspace,
+                **({'coverage_targets': targets} if args.shard else {}))
+        except BaseException:
+            ci_progress('workspace', 'compile', 'FAIL', round(time.monotonic() - start, 2))
+            raise
+        ci_progress('workspace', 'compile', 'PASS', round(time.monotonic() - start, 2))
         preparation_start = time.monotonic()
         prepared = run_round(
             {name: target._replace(exclusive=False) for name, target in targets.items()},
@@ -1086,9 +1160,6 @@ def main():
         report['inventory_verified'] = True
         report['test_cases'] = sum(len(target.cases) for planned in plans for target in planned.values())
         for number, planned in enumerate(plans, 1):
-            if source_identity() != source or verify_selected_inputs(
-                    targets, probe_version=False) != inputs:
-                raise RuntimeError('source or verified inputs changed during the Gate')
             print(f'Gate round {number}/{len(plans)}; jobs={args.jobs}; targets={len(planned)}', flush=True)
             round_start = time.monotonic()
             results = run_round(planned, artifacts, directory / f'round-{number}', args.jobs,
@@ -1097,12 +1168,11 @@ def main():
                                       'targets': results})
             if len(results) != len(planned) or any(result['exit_code'] for result in results):
                 raise RuntimeError('Gate failed; no retries or subsequent rounds')
-        if source_identity() != source or verify_selected_inputs(
-                targets, probe_version=False) != inputs:
-            raise RuntimeError('source or verified inputs changed during the Gate')
         report['status'] = 'passed'
     except (Exception, KeyboardInterrupt) as error:
         report['error'] = str(error)
+        # Evidence writes can fail too; emit the original cause before touching storage.
+        print(report['error'], file=sys.stderr, flush=True)
     finally:
         report['seconds'] = time.monotonic() - start
         cpu_end = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -1117,18 +1187,25 @@ def main():
             report['status'] = 'failed'
         if report['status'] != 'passed':
             failed = ROOT / '.temp/gate-run/failed'
-            failed.mkdir(exist_ok=True)
-            destination = failed / run_id
-            if destination.exists():
-                raise RuntimeError(f'refusing to overwrite retained evidence: {destination}')
-            directory.rename(destination)
-            # Keep report paths accurate after retaining the failed run.
-            report = json.loads(json.dumps(report).replace(str(directory), str(destination)))
-            directory = destination
-        (directory / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-        print(f'Gate {report["status"]}: {report["seconds"]:.2f}s; report={directory / "report.json"}', flush=True)
-        if 'error' in report:
-            print(report['error'], file=sys.stderr)
+            try:
+                failed.mkdir(exist_ok=True)
+                destination = failed / run_id
+                if destination.exists():
+                    raise RuntimeError(f'refusing to overwrite retained evidence: {destination}')
+                directory.rename(destination)
+                # Keep report paths accurate after retaining the failed run.
+                report = json.loads(json.dumps(report).replace(str(directory), str(destination)))
+                directory = destination
+            except OSError as error:
+                report['retention_error'] = str(error)
+                print(f'Gate evidence retention failed: {error}', file=sys.stderr, flush=True)
+        try:
+            (directory / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        except OSError as error:
+            report['status'] = 'failed'
+            print(f'Gate report write failed: {error}', file=sys.stderr, flush=True)
+        else:
+            print(f'Gate {report["status"]}: {report["seconds"]:.2f}s; report={directory / "report.json"}', flush=True)
     return 0 if report['status'] == 'passed' else 1
 
 

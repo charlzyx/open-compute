@@ -24,9 +24,12 @@ use backups::UpgradeBackups;
 use backups::backup_path;
 pub use backups::run_upgrade_restore;
 
+#[cfg(any(test, feature = "test-support"))]
+pub use crate::release_http::FixtureReleaseHttp;
+
 pub use crate::release_http::{
-    DEFAULT_RELEASE_DOWNLOAD_BASE, FixtureReleaseHttp, LiveReleaseHttp, MAX_BINARY_BYTES,
-    MAX_METADATA_BYTES, RELEASE_HTTP_TIMEOUT, ReleaseHttp,
+    DEFAULT_RELEASE_DOWNLOAD_BASE, LiveReleaseHttp, MAX_BINARY_BYTES, MAX_METADATA_BYTES,
+    RELEASE_HTTP_TIMEOUT, ReleaseHttp,
 };
 
 /// Supported formal release targets.
@@ -382,7 +385,6 @@ pub async fn run_upgrade(
     let updated = InstallReceipt {
         schema_version: install_receipt::RECEIPT_SCHEMA_VERSION,
         version: manifest.version.clone(),
-        sha256: digest,
         target: options.target.clone(),
         binary_path: options.binary_path.to_string_lossy().into_owned(),
         method: receipt.method,
@@ -728,7 +730,12 @@ fn verify_staged_version(path: &Path, expected: &str) -> Result<(), PlatformErro
         ));
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    if !text.contains(expected) {
+    if text
+        .split_whitespace()
+        .nth(1)
+        .filter(|version| is_stable_semver(version))
+        != Some(expected)
+    {
         return Err(PlatformError::new(
             ErrorCode::ReleaseUnsupported,
             "staged binary version does not match the release identity",

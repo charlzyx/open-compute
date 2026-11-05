@@ -1,7 +1,5 @@
 //! P0.2 Workers control/data-plane contracts.
 
-#![deny(missing_docs)]
-
 pub mod ai_search;
 pub mod assets;
 pub mod bundle;
@@ -54,11 +52,10 @@ pub use kv::KvResourceDriver;
 pub use pins::{VersionPin, VersionPins};
 pub use pipeline::{
     CreateVersionOutcome, CreateVersionRequest, CreateVersionResult, ModuleBindingKind,
-    ProductPromotionCoordinator, ProductPromotionRequest, QueueConsumerInput, RuntimeValidator,
-    ValidationCandidate, VersionAiInput, VersionBindingInput, VersionBundle, VersionCacheInput,
-    VersionCachePolicyInput, VersionContent, VersionController, VersionImagesInput,
-    VersionModuleBindingInput, VersionResourceLimitsInput, VersionRuntimeFeatures,
-    VersionServiceInput, VersionVersionMetadataInput,
+    QueueConsumerInput, RuntimeValidator, ValidationCandidate, VersionAiInput, VersionBindingInput,
+    VersionBundle, VersionCacheInput, VersionCachePolicyInput, VersionContent, VersionController,
+    VersionImagesInput, VersionModuleBindingInput, VersionRuntimeFeatures, VersionServiceInput,
+    VersionVersionMetadataInput,
 };
 pub use queue_lifecycle::{
     CreateQueueOutcome, CreateQueueRequest, CreateQueueResult, DeleteQueueResult, QueueController,

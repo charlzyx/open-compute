@@ -16,9 +16,9 @@ use open_compute_core::{
     ResponseCacheConfig, RuntimeConfig, StartupId, SystemClock,
 };
 use open_compute_runtime::{
-    DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry, OsJitter,
-    PlatformReleaseMeta, StaticConfigCompiler, SupervisorState, WorkerdSupervisor,
-    WorkerdSupervisorOptions, verify_runtime_binary,
+    DirectoryServicePath, ExternalServiceAddress, OsJitter, PlatformReleaseMeta,
+    StaticConfigCompiler, SupervisorState, WorkerdSupervisor, WorkerdSupervisorOptions,
+    verify_runtime_binary,
 };
 use open_compute_service::asset_backend::AssetBindingService;
 use open_compute_service::cache_backend::CacheBindingService;
@@ -224,10 +224,6 @@ fn pixel_base64() -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "scenario helpers keep distinct fixture identities explicit"
-)]
 fn request(
     account_id: open_compute_core::InstanceId,
     worker_id: open_compute_core::WorkerId,
@@ -367,7 +363,6 @@ async fn open_image_session(
     account: open_compute_core::InstanceId,
     worker: open_compute_core::WorkerId,
     version: &open_compute_storage::worker_repository::VersionRecord,
-    generation: &str,
     bytes: &[u8],
 ) {
     let (_, bindings) = version_runtime_features(storage.db(), version.id).unwrap();
@@ -385,7 +380,6 @@ async fn open_image_session(
                 .header("x-open-compute-worker-id", worker.to_string())
                 .header("x-open-compute-version-id", version.id.to_string())
                 .header("x-open-compute-descriptor-sha256", hex::encode(descriptor))
-                .header("x-open-compute-startup-generation", generation)
                 .body(Body::from(bytes.to_vec()))
                 .unwrap(),
         )

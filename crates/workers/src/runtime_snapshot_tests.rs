@@ -49,12 +49,14 @@ impl RuntimeValidator for RecordsLoaderRevocation {
     }
 }
 
-struct GenerationChangesAfterAdmission {
+struct GenerationChangesAfterCommit {
     admitted: StartupId,
     current: StartupId,
+    storage: Arc<PlatformStorage>,
+    worker_id: WorkerId,
 }
 
-impl RuntimeValidator for GenerationChangesAfterAdmission {
+impl RuntimeValidator for GenerationChangesAfterCommit {
     fn validate(
         &self,
         _candidate: ValidationCandidate,
@@ -74,7 +76,16 @@ impl RuntimeValidator for GenerationChangesAfterAdmission {
     }
 
     fn current_generation(&self) -> Option<StartupId> {
-        Some(self.current)
+        let committed = WorkerRepository::new(self.storage.db())
+            .get_worker(self.storage.identity().instance_id, self.worker_id)
+            .unwrap()
+            .active_deployment_id
+            .is_some();
+        Some(if committed {
+            self.current
+        } else {
+            self.admitted
+        })
     }
 }
 
@@ -100,9 +111,11 @@ async fn deployment_is_quarantined_when_runtime_generation_changes_during_commit
     let controller = VersionController::new(
         &storage,
         artifact_store(&mock),
-        Arc::new(GenerationChangesAfterAdmission {
+        Arc::new(GenerationChangesAfterCommit {
             admitted: StartupId::generate(),
             current: StartupId::generate(),
+            storage: storage.clone(),
+            worker_id: worker.id,
         }),
         BundleLimits::default(),
     );
@@ -439,7 +452,7 @@ async fn version_pipeline_uploads_validates_promotes_and_replays() {
         "UPDATE version_services SET props_json = ?1 WHERE version_id = ?2 AND binding_name = 'CATALOG'",
         rusqlite::params![
             br#"{"z":[1,{"__proto__":"ordinary JSON data"}],"constructor":{"enabled":true}}"#,
-            version_id.to_string()
+            version_id
         ],
     )
     .unwrap();
@@ -459,7 +472,7 @@ async fn version_pipeline_uploads_validates_promotes_and_replays() {
         "UPDATE version_services SET props_json = ?1 WHERE version_id = ?2 AND binding_name = 'CATALOG'",
         rusqlite::params![
             canonical_service_props,
-            version_id.to_string()
+            version_id
         ],
     )
     .unwrap();
@@ -467,7 +480,7 @@ async fn version_pipeline_uploads_validates_promotes_and_replays() {
         .unwrap();
     conn.execute(
         "UPDATE worker_versions SET worker_code_sha256 = zeroblob(32) WHERE id = ?1",
-        [version_id.to_string()],
+        [version_id],
     )
     .unwrap();
     drop(conn);

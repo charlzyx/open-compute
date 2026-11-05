@@ -2,26 +2,21 @@
 
 use crate::compile::ConfigRole;
 use crate::fsutil::{
-    MAX_ASSETS_TOTAL_BYTES, hex_sha256, list_files_sorted, open_dir_nofollow,
-    read_regular_nofollow, reject_symlink_escape,
+    MAX_ASSETS_TOTAL_BYTES, contained_in, hex_sha256, list_files_sorted, open_dir,
+    read_regular_file,
 };
 use crate::verify::VerifiedRuntime;
-use open_compute_core::{DurableObjectsConfig, ErrorCode, PlatformError, SecretString};
+use open_compute_core::{DurableObjectsConfig, ErrorCode, PlatformError};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 const DIGEST_TAG: &[u8] = b"open-compute-static-config-v1\0";
-pub(crate) const TOKEN_PLACEHOLDER: &str = "__OPEN_COMPUTE_INTERNAL_TOKEN__";
-pub(crate) const DO_RPC_HOST_PLACEHOLDER: &str = "__OPEN_COMPUTE_DO_RPC_HOST__";
-pub(crate) const BINDING_TOKEN_PLACEHOLDER: &str = "__OPEN_COMPUTE_BINDING_TOKEN__";
-pub(crate) const OBSERVABILITY_TOKEN_PLACEHOLDER: &str = "__OPEN_COMPUTE_OBSERVABILITY_TOKEN__";
 pub(crate) const SYSTEM_COMPATIBILITY_DATE_PLACEHOLDER: &str =
     "__OPEN_COMPUTE_SYSTEM_COMPATIBILITY_DATE__";
 pub(crate) const SYSTEM_COMPATIBILITY_FLAGS_PLACEHOLDER: &str =
     "__OPEN_COMPUTE_SYSTEM_COMPATIBILITY_FLAGS__";
 pub(crate) const SYSTEM_COMPATIBILITY_FLAGS_JSON_PLACEHOLDER: &str =
     "__OPEN_COMPUTE_SYSTEM_COMPATIBILITY_FLAGS_JSON__";
-pub(crate) const TOKEN_HEX_LEN: usize = 64;
 type DurableObjectPolicyPlaceholder = (&'static str, fn(&DurableObjectsConfig) -> String);
 const DO_POLICY_PLACEHOLDERS: [DurableObjectPolicyPlaceholder; 5] = [
     ("__OPEN_COMPUTE_DO_MAX_OBJECT_NAME_BYTES__", |v| {
@@ -104,17 +99,17 @@ pub(crate) fn load_assets(
     assets_dir: &Path,
 ) -> Result<(Vec<u8>, WorkerFiles, PathBuf), PlatformError> {
     crate::fsutil::require_absolute(assets_dir)?;
-    let _ = open_dir_nofollow(assets_dir)?;
+    let _ = open_dir(assets_dir)?;
     let config_path = assets_dir.join("config.capnp");
-    reject_symlink_escape(assets_dir, &config_path)?;
-    let template = read_regular_nofollow(&config_path)?;
+    contained_in(assets_dir, &config_path)?;
+    let template = read_regular_file(&config_path)?;
     let workers_dir = assets_dir.join("dist");
-    reject_symlink_escape(assets_dir, &workers_dir)?;
+    contained_in(assets_dir, &workers_dir)?;
     let files = list_files_sorted(&workers_dir)?;
     let mut workers = Vec::new();
     let mut total = template.len() as u64;
     for path in files {
-        reject_symlink_escape(assets_dir, &path)?;
+        contained_in(assets_dir, &path)?;
         let rel = path
             .strip_prefix(assets_dir)
             .map_err(|_| {
@@ -125,7 +120,7 @@ pub(crate) fn load_assets(
             })?
             .to_string_lossy()
             .replace('\\', "/");
-        let bytes = read_regular_nofollow(&path)?;
+        let bytes = read_regular_file(&path)?;
         total = total.saturating_add(bytes.len() as u64);
         if total > MAX_ASSETS_TOTAL_BYTES {
             return Err(PlatformError::new(
@@ -163,59 +158,40 @@ fn asset_bytes_sha256(template: &[u8], workers: &[(String, Vec<u8>)]) -> String 
     hex::encode(hasher.finalize())
 }
 
-pub(crate) fn render_config_with_tokens(
-    template: &str,
-    token: &SecretString,
-    binding_token: &SecretString,
-    observability_token: &SecretString,
-) -> Result<String, PlatformError> {
-    validate_token(token)?;
-    validate_token(binding_token)?;
-    validate_token(observability_token)?;
-    if token.expose() == binding_token.expose()
-        || token.expose() == observability_token.expose()
-        || binding_token.expose() == observability_token.expose()
-    {
-        return Err(PlatformError::new(
-            ErrorCode::RuntimeInvalid,
-            "internal service tokens must be distinct",
-        ));
-    }
-    if template.matches(DO_RPC_HOST_PLACEHOLDER).count() != 1
-        || template.matches(TOKEN_PLACEHOLDER).count() != 1
-        || template.matches(BINDING_TOKEN_PLACEHOLDER).count() != 1
-        || template.matches(OBSERVABILITY_TOKEN_PLACEHOLDER).count() != 1
-    {
+pub(crate) fn render_config(template: &str, socket: &Path) -> Result<String, PlatformError> {
+    validate_socket_path(socket)?;
+    if template.matches("__OPEN_COMPUTE_INGRESS_ADDRESS__").count() != 1 {
         return Err(PlatformError::new(
             ErrorCode::ConfigCompileFailed,
-            "config template must contain each private credential placeholder exactly once",
+            "config template must contain one ingress address placeholder",
         ));
     }
-    Ok(template
-        .replace(
-            DO_RPC_HOST_PLACEHOLDER,
-            &format!("{}.do-router.invalid:1", token.expose()),
-        )
-        .replace(TOKEN_PLACEHOLDER, token.expose())
-        .replace(BINDING_TOKEN_PLACEHOLDER, binding_token.expose())
-        .replace(
-            OBSERVABILITY_TOKEN_PLACEHOLDER,
-            observability_token.expose(),
-        ))
+    let address = format!(
+        "unix:{}",
+        socket.to_str().ok_or_else(|| PlatformError::new(
+            ErrorCode::ConfigInvalid,
+            "Unix socket path is not UTF-8"
+        ))?
+    );
+    // JSON string escaping also escapes the characters significant in Cap'n Proto text.
+    Ok(template.replace(
+        "\"__OPEN_COMPUTE_INGRESS_ADDRESS__\"",
+        &serde_json::to_string(&address).map_err(|_| {
+            PlatformError::new(ErrorCode::ConfigInvalid, "Unix socket address is invalid")
+        })?,
+    ))
 }
 
-pub(crate) fn validate_token(token: &SecretString) -> Result<(), PlatformError> {
-    let value = token.expose();
-    if value.len() != TOKEN_HEX_LEN || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+/// Named Unix sockets must fit every supported host before config rendering or binding.
+pub fn validate_socket_path(path: &Path) -> Result<(), PlatformError> {
+    if !path.is_absolute()
+        || path.to_str().is_none()
+        || path.as_os_str().as_encoded_bytes().len() > 103
+        || path.as_os_str().as_encoded_bytes().contains(&0)
+    {
         return Err(PlatformError::new(
-            ErrorCode::RuntimeInvalid,
-            "internal token must be a 256-bit hex string",
-        ));
-    }
-    if value.bytes().any(|b| b.is_ascii_uppercase()) {
-        return Err(PlatformError::new(
-            ErrorCode::RuntimeInvalid,
-            "internal token must be a 256-bit hex string",
+            ErrorCode::ConfigInvalid,
+            "Unix socket path must be absolute and at most 103 bytes",
         ));
     }
     Ok(())
@@ -227,57 +203,38 @@ pub(crate) fn digest_for(
     lock_bytes: &[u8],
     runtime: &VerifiedRuntime,
     platform: &PlatformReleaseMeta,
-    token: &SecretString,
-    binding_token: &SecretString,
-    observability_token: &SecretString,
+    ingress_socket: &Path,
 ) -> Result<(String, String, WorkerFiles), PlatformError> {
-    digest_for_with_tokens_and_policy(
+    digest_for_with_policy(
         assets_dir,
         lock_bytes,
         runtime,
         platform,
-        token,
-        binding_token,
-        observability_token,
+        ingress_socket,
         &DurableObjectsConfig::default(),
         None,
         ConfigRole::Runtime,
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "runtime boundary inputs keep distinct capabilities explicit"
-)]
-pub(crate) fn digest_for_with_tokens_and_policy(
+pub(crate) fn digest_for_with_policy(
     assets_dir: &Path,
     lock_bytes: &[u8],
     runtime: &VerifiedRuntime,
     platform: &PlatformReleaseMeta,
-    token: &SecretString,
-    binding_token: &SecretString,
-    observability_token: &SecretString,
+    ingress_socket: &Path,
     durable_objects: &DurableObjectsConfig,
     container_provider: Option<&crate::ContainerProviderConfig>,
     role: ConfigRole,
 ) -> Result<(String, String, WorkerFiles), PlatformError> {
     let (template, workers, _) = load_assets(assets_dir)?;
-    if let Some(expected) = runtime.expected_assets_sha256
-        && asset_bytes_sha256(&template, &workers) != expected
-    {
-        return Err(PlatformError::new(
-            ErrorCode::RuntimeInvalid,
-            "runtime compiler inputs do not match the embedded payload",
-        ));
-    }
     let template_str = std::str::from_utf8(&template).map_err(|_| {
         PlatformError::new(
             ErrorCode::ConfigCompileFailed,
             "config template is not UTF-8",
         )
     })?;
-    let rendered =
-        render_config_with_tokens(template_str, token, binding_token, observability_token)?;
+    let rendered = render_config(template_str, ingress_socket)?;
     let rendered = render_do_policy(rendered, durable_objects)?;
     let rendered = crate::tenant_admission::render(rendered)?;
     let rendered = crate::container_provider::render(&rendered, container_provider)?;

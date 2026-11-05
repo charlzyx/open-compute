@@ -12,26 +12,14 @@ embedding 模型事实混在一起的配置模型。
 - profile 由 operator 显式定义并可被多个模型复用，冻结精确维度、tokenizer revision／artifact digest 和输入上限；open-compute 不隐式猜测模型事实。
 - 未配置任何 backend 仍是合法的离线部署；配置加载完整校验 backend/model/profile 引用和 artifact 声明，`ocd` 组合 AI Search 服务时读取并校验 tokenizer bytes。provider 暂时不可达只影响实际调用，启动不探测 provider、不下载模型或 tokenizer。
 
-## 当前问题
-
-当前 `[ai.providers.*].base_url` 必须是 canonical `/v1` root，随后 client 分别拼接 `/embeddings` 和
-`/chat/completions`。这种模型存在四个问题：
-
-1. `https://provider.example/compatible-mode/v1` 之类带前缀的 root 会被当前校验拒绝；endpoint 派生逻辑也会用 `/v1` 覆盖原 path，无法接入 #41 的 provider。
-2. 一个 provider 同时承担供应商身份、认证、协议和多个操作地址，无法表达 embeddings/chat 位于不同地址的常见部署。
-3. embedding model 配置要求重复填写维度、metric、token 上限、tokenizer family/revision/path/SHA；其中 metric 实际只能是 cosine。
-4. embedding alias 仍受硬编码 Cloudflare model 表约束，新增兼容模型必须修改生产代码，operator catalog 并不真正通用。
-
-只放宽 `base_url` 的 path 校验仍然保留操作路由拼接和多操作耦合，因此不是本阶段的最终模型。
-
 ## 权责模型
 
-| 层级 | 负责 | 不负责 |
-| --- | --- | --- |
-| Backend | 一种固定 wire protocol、完整 endpoint URL、认证方式、受限静态 headers | 模型维度、tokenizer、索引 metric、tenant alias |
-| Embedding profile | 维度、输入 token 上限、精确 tokenizer、是否发送 dimensions 参数 | endpoint、secret、远端模型名 |
-| Model mapping | tenant-visible alias 到 backend、remote model、profile 的映射 | transport 实现、tokenizer bytes |
-| Resolved contract | 展开并冻结所有影响 chunk/embed/index 的非 secret 事实 | secret value、并发、timeout 等运行策略 |
+| 层级              | 负责                                                                  | 不负责                                         |
+| ----------------- | --------------------------------------------------------------------- | ---------------------------------------------- |
+| Backend           | 一种固定 wire protocol、完整 endpoint URL、认证方式、受限静态 headers | 模型维度、tokenizer、索引 metric、tenant alias |
+| Embedding profile | 维度、输入 token 上限、精确 tokenizer、是否发送 dimensions 参数       | endpoint、secret、远端模型名                   |
+| Model mapping     | tenant-visible alias 到 backend、remote model、profile 的映射         | transport 实现、tokenizer bytes                |
+| Resolved contract | 展开并冻结所有影响 chunk/embed/index 的非 secret 事实                 | secret value、并发、timeout 等运行策略         |
 
 `backend` 是一次具体操作的调用目标，不是供应商账户的抽象。协议使用闭集；P5.2 首先提供
 `openai_embeddings_v1` 和 `openai_chat_completions_v1`，不引入任意 JSON template、脚本或动态 adapter。
@@ -184,24 +172,6 @@ embedding 语义，不触发 reindex。静态 header 可能参与上游 deployme
 不匹配或旧 contract shape 一律 fail closed；不保留 `[ai.providers]`、`base_url`、隐式 path append、旧字段 alias 或双读路径。
 已经发布的 SQLite migration bytes 保持不变；若实现需要 schema 变化，只追加下一条 migration。已有旧 contract 数据不被静默修复或
 猜测，operator 必须用新配置显式启动一次受 generation fence 保护的重建。
-
-## 实施范围
-
-- 用 `backends` 替换 `providers`，让 core config、path/secret resolution、header validation、doctor、health、support bundle 和示例共同使用一个模型。
-- 增加 operator embedding profile registry，删除 Cloudflare alias switch、公开单值 metric 及重复
-  `request_dimensions` 数值。
-- 让 embeddings/chat client 直接使用 backend endpoint 和协议；收敛共同的 bounded HTTP/auth/status 逻辑，不增加 pass-through
-  wrapper。
-- 更新 AI Search contract hashing、tokenizer registry、reindex 判定和 restart validation；移除 superseded 类型、字段和测试 fixture。
-- 更新 operator 配置文档、默认配置注释、Cloudflare compatibility/deviation 描述及 #41 的验收证据。
-
-## 非目标
-
-- 任意 request/response transform、用户脚本、动态 module 或自定义 JSON template；
-- 自动模型发现、启动时 capability probe、tokenizer/model 下载；
-- provider fallback、负载均衡、跨 provider retry、成本路由或 multi-region control plane；
-- Azure-specific query authentication、多个 secret headers、tenant-controlled headers 或非 OpenAI-compatible adapter；
-- 改变独立 Vectorize 的公开 metric 支持面。
 
 ## 验收结果
 

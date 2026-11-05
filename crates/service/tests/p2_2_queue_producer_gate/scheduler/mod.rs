@@ -14,9 +14,8 @@ use open_compute_core::{
     WorkflowFence, WorkflowId, WorkflowInstanceId, WorkflowToken, WorkflowVersionId,
 };
 use open_compute_runtime::{
-    DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry, OsJitter,
-    PlatformReleaseMeta, StaticConfigCompiler, WorkerdSupervisor, WorkerdSupervisorOptions,
-    verify_runtime_binary,
+    DirectoryServicePath, ExternalServiceAddress, OsJitter, PlatformReleaseMeta,
+    StaticConfigCompiler, WorkerdSupervisor, WorkerdSupervisorOptions, verify_runtime_binary,
 };
 use open_compute_service::asset_backend::AssetBindingService;
 use open_compute_service::runtime_bridge::{
@@ -26,8 +25,7 @@ use open_compute_service::runtime_bridge::{
 use open_compute_service::scheduler::SchedulerService;
 use open_compute_service::service_invocations::ServiceInvocationRegistry;
 use open_compute_service::{
-    SqliteKvBindingExecutor, bind_binding_backend, product_promotion_for_test,
-    serve_binding_backend_with_assets,
+    SqliteKvBindingExecutor, bind_binding_backend, serve_binding_backend_with_assets,
 };
 use open_compute_storage::PlatformStorage;
 use open_compute_storage::durable_objects::DO_NAMESPACE_SCHEMA_VERSION;
@@ -390,10 +388,6 @@ async fn send_text(
     assert_eq!(response.status, 200, "{}", response.body);
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "scenario helpers keep distinct fixture identities explicit"
-)]
 async fn post(
     transport: &WorkerdTransport,
     account_id: InstanceId,

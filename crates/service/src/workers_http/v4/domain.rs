@@ -17,14 +17,13 @@ use open_compute_storage::resources::ResourceRepository;
 use open_compute_storage::runtime_features::BuiltinBindingKind;
 use open_compute_storage::services::ServiceTarget;
 use open_compute_storage::worker_repository::{
-    DeploymentSource, VersionSnapshot, WorkerRecord, WorkerRepository,
+    DeploymentSource, EffectiveResourceLimits, VersionSnapshot, WorkerRecord, WorkerRepository,
 };
 use open_compute_storage::workflows::{WorkflowDefinitionReservation, WorkflowRepository};
 use open_compute_workers::{
     CreateVersionOutcome, CreateVersionRequest, ModuleBindingKind, RuntimeValidator,
     ServiceDescriptor, VersionBindingInput, VersionBundle, VersionCachePolicyInput, VersionContent,
-    VersionController, VersionModuleBindingInput, VersionResourceLimitsInput,
-    VersionRuntimeFeatures, VersionServiceInput,
+    VersionController, VersionModuleBindingInput, VersionRuntimeFeatures, VersionServiceInput,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -33,10 +32,6 @@ pub(super) use super::authority::{ensure_worker, resolve_instance, worker_by_nam
 pub(super) use super::cloning::{CloneVersionOptions, clone_version};
 use super::errors::{invalid, invariant, unsupported};
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the immutable Version creation boundary keeps authority and audit inputs explicit"
-)]
 pub(super) async fn create_from_upload(
     api: &WorkerApiState,
     account_authority: &V4InstanceContext,
@@ -86,10 +81,6 @@ pub(super) async fn create_from_upload(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "transport boundary inputs mirror the wire contract"
-)]
 async fn create_from_prepared_upload(
     api: &WorkerApiState,
     account_authority: &V4InstanceContext,
@@ -103,7 +94,7 @@ async fn create_from_prepared_upload(
     now_ms: i64,
     migration: Option<&super::do_lifecycle::PreparedDoMigration>,
 ) -> Result<CreateVersionOutcome, PlatformError> {
-    let mut input = UploadInput::new(upload.metadata);
+    let mut input = UploadInput::new(upload.metadata)?;
     let previous = worker
         .active_version_id
         .map(|version| {
@@ -170,9 +161,6 @@ async fn create_from_prepared_upload(
         api.bundle_limits,
     )
     .with_queue_consumer_limit(api.max_queue_consumer_concurrency);
-    if let Some(promoter) = &api.product_promoter {
-        controller = controller.with_product_promoter(promoter.clone());
-    }
     if let Some(migration) = migration {
         controller = controller.with_durable_object_migration(migration.plan().clone());
     }
@@ -229,7 +217,7 @@ pub(super) async fn validate_new_upload(
     if !upload.metadata.containers.is_empty() {
         api.require_containers().await?;
     }
-    let mut input = UploadInput::new(upload.metadata.clone());
+    let mut input = UploadInput::new(upload.metadata.clone())?;
     input.apply_inheritance(api, None, strict_inheritance)?;
     input.apply_explicit_bindings(
         api,

@@ -9,9 +9,11 @@ use axum::response::Response;
 use axum::routing::get;
 use open_compute_core::{ErrorCode, InstanceId, PlatformError};
 use open_compute_storage::worker_repository::{
-    RouteRecord, WorkerOriginExposure, WorkerOwnership, WorkerRepository,
+    RouteRecord, WorkerOriginExposure, WorkerRepository,
 };
 use serde::{Deserialize, Serialize};
+
+include!("worker_origins_models.rs");
 
 pub(super) fn router() -> Router<HttpState> {
     Router::new()
@@ -25,12 +27,6 @@ pub(super) fn router() -> Router<HttpState> {
                 .put(set_worker_public_origin)
                 .delete(delete_worker_public_origin),
         )
-}
-
-#[derive(Serialize)]
-struct PublicOriginBinding {
-    name: String,
-    url: String,
 }
 
 pub(super) async fn worker_public_origin(
@@ -113,12 +109,6 @@ pub(super) async fn worker_endpoints(
         }
         Err(error) => platform_error(&error, context),
     }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PublicOriginInput {
-    name: String,
 }
 
 pub(super) async fn set_worker_public_origin(
@@ -210,7 +200,7 @@ fn tenant_worker_id(
     workers
         .list_workers(account)?
         .into_iter()
-        .find(|worker| worker.name == name && worker.ownership == WorkerOwnership::Tenant)
+        .find(|worker| worker.name == name)
         .map(|worker| worker.id)
         .ok_or_else(|| PlatformError::new(ErrorCode::WorkerNotFound, "Worker not found"))
 }
@@ -248,27 +238,4 @@ pub(super) fn project_worker_endpoint(
             .public_gateway_serving()
             .then(|| public_origin_endpoint(route)),
     }
-}
-
-#[derive(Serialize)]
-pub(super) struct WorkerEndpoint {
-    id: String,
-    kind: WorkerEndpointKind,
-    url: String,
-    scope: WorkerEndpointScope,
-    created_on: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum WorkerEndpointKind {
-    LocalOrigin,
-    PublicOrigin,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum WorkerEndpointScope {
-    LocalMachine,
-    PublicNetwork,
 }

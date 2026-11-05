@@ -42,7 +42,7 @@ async fn p2_chain_preserves_queue_handoff_frozen_workflow_and_due_work_across_si
         hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .build_http();
     let database = Connection::open_with_flags(
-        fixture.data.join("scheduler.sqlite"),
+        fixture.data.join("control.sqlite"),
         OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
@@ -162,7 +162,7 @@ async fn p2_chain_preserves_queue_handoff_frozen_workflow_and_due_work_across_si
     assert_eq!(next_attempt.attempt, attempt.attempt);
     assert_eq!(next_fence.instance_generation, fence.instance_generation);
     let store = SchedulerStore::open(
-        &fixture.data.join("scheduler.sqlite"),
+        &fixture.data.join("control.sqlite"),
         5000,
         p0_exit_support::now_ms(),
         fixture.account,
@@ -314,7 +314,7 @@ async fn p2_chain_preserves_queue_handoff_frozen_workflow_and_due_work_across_si
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     let store = SchedulerStore::open(
-        &fixture.data.join("scheduler.sqlite"),
+        &fixture.data.join("control.sqlite"),
         5000,
         p0_exit_support::now_ms(),
         fixture.account,
@@ -435,7 +435,7 @@ fn grant(database: &Connection) -> Option<(WorkflowFence, WorkflowStepAttempt)> 
         FROM workflow_instances i JOIN workflow_steps s ON s.instance_id=i.id
         WHERE i.external_instance_id='chain' AND i.state='running' AND s.ordinal=1 AND s.state='running'", [], |row| {
         Ok((WorkflowFence {
-            instance_id: row.get::<_, String>(0)?.parse().unwrap(), instance_generation: row.get(1)?,
+            instance_id: row.get(0)?, instance_generation: row.get(1)?,
             run_token: WorkflowToken::from_bytes(row.get::<_, Vec<u8>>(2)?.try_into().unwrap()),
         }, WorkflowStepAttempt {
             ordinal: row.get(3)?, attempt: row.get(4)?,

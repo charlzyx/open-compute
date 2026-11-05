@@ -5,17 +5,12 @@ pub use super::version_create::NewVersionProducts;
 /// Current immutable loader descriptor schema, including Container declarations.
 pub const LOADER_SCHEMA_VERSION: i64 = 2;
 
-/// Stable system Worker name for the operator dashboard.
-pub const SYSTEM_DASHBOARD_WORKER_NAME: &str = "open-compute-dashboard";
-
-/// Worker ownership boundary between tenant-managed and platform-owned Workers.
+/// Persisted tenant Worker ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkerOwnership {
     /// Tenant-managed Worker visible through the control API.
     Tenant,
-    /// Platform-owned Worker excluded from tenant catalog and mutation APIs.
-    System,
 }
 
 /// Crash-recoverable authority for an admitted force deletion.
@@ -33,14 +28,12 @@ impl WorkerOwnership {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Tenant => "tenant",
-            Self::System => "system",
         }
     }
 
     pub(crate) fn parse(value: &str) -> Result<Self, PlatformError> {
         match value {
             "tenant" => Ok(Self::Tenant),
-            "system" => Ok(Self::System),
             _ => Err(invariant()),
         }
     }
@@ -70,12 +63,12 @@ pub struct WorkerRecord {
     pub updated_at_ms: i64,
     /// Tombstone timestamp.
     pub deleted_at_ms: Option<i64>,
-    /// Tenant or platform ownership boundary.
+    /// Persisted tenant ownership.
     pub ownership: WorkerOwnership,
 }
 
 /// Secret-free deployment runtime-assessment aggregate.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct DeploymentRuntimeAssessmentSummary {
     /// Deployments admitted by a real runtime generation.
     pub dispatchable: u64,
@@ -84,6 +77,7 @@ pub struct DeploymentRuntimeAssessmentSummary {
     /// Whether every active pointer references a dispatchable assessment.
     pub active_runtime_dispatchable: bool,
     /// Most recent stable quarantine reason, if any.
+    #[schemars(extend("type" = "string"))]
     pub last_quarantine_reason: Option<String>,
 }
 
@@ -239,43 +233,6 @@ impl DeploymentSource {
     }
 }
 
-/// System-owned version slot tracked outside tenant Worker catalog.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SystemOwnedVersionKind {
-    /// Release-owned operator dashboard assets version.
-    Dashboard,
-}
-
-impl SystemOwnedVersionKind {
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::Dashboard => "dashboard",
-        }
-    }
-
-    pub(crate) fn parse(value: &str) -> Result<Self, PlatformError> {
-        match value {
-            "dashboard" => Ok(Self::Dashboard),
-            _ => Err(invariant()),
-        }
-    }
-}
-
-/// Persisted system-owned version pin.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SystemOwnedVersionRecord {
-    /// Version slot identity.
-    pub kind: SystemOwnedVersionKind,
-    /// Reserved system Worker identity.
-    pub worker_id: WorkerId,
-    /// Current active immutable version, when installed.
-    pub active_version_id: Option<VersionId>,
-    /// Embedded dashboard asset tree digest pinned by this slot.
-    pub assets_sha256: [u8; 32],
-    /// Last pin update timestamp.
-    pub updated_at_ms: i64,
-}
-
 /// Version lifecycle state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -408,35 +365,9 @@ impl EffectiveResourceLimits {
         )
     }
 
-    /// Canonical JSON bytes stored in the version row; unknown shapes fail closed on read.
+    /// Canonical JSON bytes stored in the Version row.
     pub fn to_stored_json(&self) -> Vec<u8> {
         serde_json::to_vec(self).unwrap_or_default()
-    }
-
-    /// Strictly decodes the stored canonical bytes. Anything but the exact canonical encoding
-    /// of in-range values is corrupt state.
-    pub fn from_stored_json(bytes: &[u8]) -> Result<Self, PlatformError> {
-        let value: serde_json::Value =
-            serde_json::from_slice(bytes).map_err(|_| limits_invalid())?;
-        let map = value.as_object().ok_or_else(limits_invalid)?;
-        if map.len() != 2 {
-            return Err(limits_invalid());
-        }
-        let cpu_ms = map
-            .get("cpuMs")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(limits_invalid)?;
-        let sub_requests = map
-            .get("subRequests")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(limits_invalid)?;
-        let cpu_ms = u32::try_from(cpu_ms).map_err(|_| limits_invalid())?;
-        let sub_requests = u32::try_from(sub_requests).map_err(|_| limits_invalid())?;
-        let limits = Self::new(cpu_ms, sub_requests)?;
-        if limits.to_stored_json() != bytes {
-            return Err(limits_invalid());
-        }
-        Ok(limits)
     }
 }
 
@@ -705,8 +636,6 @@ pub enum IdempotencyReservation {
     Complete(Vec<u8>),
     /// Same canonical request is already running.
     Running,
-    /// Same canonical request previously failed; value is the stable response envelope.
-    Failed(Vec<u8>),
 }
 
 /// Central typed repository. The raw `SQLite` connection remains private.

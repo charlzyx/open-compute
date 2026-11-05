@@ -22,9 +22,9 @@ use open_compute_core::{
     Redactor, RequestId, ResourceId, WorkerId,
 };
 use open_compute_runtime::{
-    DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry, OsJitter,
-    PlatformReleaseMeta, StaticConfigCompiler, SupervisorState, WorkerdSupervisor,
-    WorkerdSupervisorOptions, verify_runtime_binary,
+    DirectoryServicePath, ExternalServiceAddress, OsJitter, PlatformReleaseMeta,
+    StaticConfigCompiler, SupervisorState, WorkerdSupervisor, WorkerdSupervisorOptions,
+    verify_runtime_binary,
 };
 use open_compute_service::runtime_bridge::{
     DispatchTarget, WorkerdTransport, bind_runtime_source, serve_runtime_source,
@@ -115,10 +115,6 @@ async fn deploy(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "scenario helpers keep distinct fixture identities explicit"
-)]
 fn version_request(
     account_id: InstanceId,
     worker_id: WorkerId,

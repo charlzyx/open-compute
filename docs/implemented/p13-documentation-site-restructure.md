@@ -10,15 +10,15 @@ P13 将 `https://open-compute.dev/docs/` 从按产品机械拆页的目录，整
 
 英文文档位于 `/docs/`，简体中文位于 `/zh/docs/`。两种语言使用相同的一级结构：
 
-| 区域        | 用途                                                               |
-| ----------- | ------------------------------------------------------------------ |
-| Get started | 从正式 release 安装，到第一个 Worker 部署                          |
+| 区域        | 用途                                                  |
+| ----------- | ----------------------------------------------------- |
+| Get started | 从正式 release 安装，到第一个 Worker 部署             |
 | Develop     | cf 项目、本地开发、target、mode、bindings、部署与回滚 |
-| Operate     | 单机服务、配置、健康检查、备份和故障处理                           |
-| CLI         | 按任务解释当前 `ocd` 命令与共同选择规则                            |
-| Products    | 当前支持的产品、最小用法和关键差异                                 |
-| Reference   | compatibility、limits、API 和稳定合同                              |
-| Project     | 架构、源码构建、测试、workerd 与贡献入口                           |
+| Operate     | 单机服务、配置、健康检查、备份和故障处理              |
+| CLI         | 按任务解释当前 `ocd` 命令与共同选择规则               |
+| Products    | 当前支持的产品、最小用法和关键差异                    |
+| Reference   | compatibility、limits、API 和稳定合同                 |
+| Project     | 架构、源码构建、测试、workerd 与贡献入口              |
 
 Sidebar 根据当前区域切换，只展示本区内容和必要的下一步。产品保留稳定入口，但通用的开发、部署、secret、日志和运维说明不在每个产品下重复。
 

@@ -12,15 +12,15 @@ impl<'a> WorkerRepository<'a> {
                 .map_err(|_| db_error())?;
             let rows = statement
                 .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    Ok((row.get::<_, WorkerId>(0)?, row.get::<_, RequestId>(1)?))
                 })
                 .map_err(|_| db_error())?;
             let mut intents = Vec::new();
             for row in rows {
                 let (worker_id, request_id) = row.map_err(|_| db_error())?;
                 intents.push(WorkerDeleteIntent {
-                    worker_id: WorkerId::from_str(&worker_id).map_err(|_| invariant())?,
-                    request_id: RequestId::from_str(&request_id).map_err(|_| invariant())?,
+                    worker_id,
+                    request_id,
                 });
             }
             Ok(intents)
@@ -36,13 +36,12 @@ impl<'a> WorkerRepository<'a> {
         now_ms: i64,
     ) -> Result<(), PlatformError> {
         self.db.with_immediate(|tx| {
-            let worker = require_live_worker(tx, instance_id, worker_id)?;
-            require_tenant_worker(&worker)?;
+            require_live_worker(tx, instance_id, worker_id)?;
             tx.execute(
                 "INSERT INTO worker_delete_intents(worker_id, request_id, created_at_ms)
                  VALUES(?1, ?2, ?3)
                  ON CONFLICT(worker_id) DO NOTHING",
-                params![worker_id.to_string(), request_id.to_string(), now_ms],
+                params![worker_id, request_id, now_ms],
             )
             .map_err(|_| db_error())?;
             Ok(())
@@ -65,7 +64,7 @@ impl<'a> WorkerRepository<'a> {
                         do_storage_id, route_generation, created_at_ms, updated_at_ms, deleted_at_ms,
                         ownership, active_deployment_id
                  FROM workers WHERE id = ?1 AND (SELECT instance_id FROM instance_identity) = ?2",
-                    params![worker_id.to_string(), instance_id.to_string()],
+                    params![worker_id, instance_id],
                     map_worker,
                 )
                 .optional()
@@ -86,7 +85,7 @@ impl<'a> WorkerRepository<'a> {
                         compatibility_date, compatibility_flags_json,
                         resource_limits_json
                  FROM worker_versions WHERE id = ?1 AND worker_id = ?2",
-                    params![version_id.to_string(), worker_id.to_string()],
+                    params![version_id, worker_id],
                     map_version,
                 )
                 .optional()
@@ -157,7 +156,7 @@ impl<'a> WorkerRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = stmt
-                .query_map([worker_id.to_string()], map_version)
+                .query_map([worker_id], map_version)
                 .map_err(|_| db_error())?;
             collect_rows(rows)
         })
@@ -207,9 +206,9 @@ impl<'a> WorkerRepository<'a> {
                    AND w.ownership = 'tenant' AND w.deleted_at_ms IS NULL
                    AND d.state = 'ready' AND d.deleted_at_ms IS NULL",
                 params![
-                    version_id.to_string(),
-                    worker_id.to_string(),
-                    instance_id.to_string()
+                    version_id,
+                    worker_id,
+                    instance_id
                 ],
                 map_version,
             )
@@ -219,7 +218,7 @@ impl<'a> WorkerRepository<'a> {
         })
     }
 
-    /// Read one version for any Worker in the instance, including system-owned Workers.
+    /// Read one version for any Worker in the instance.
     pub fn get_worker_version(
         &self,
         instance_id: InstanceId,
@@ -236,7 +235,7 @@ impl<'a> WorkerRepository<'a> {
                         compatibility_date, compatibility_flags_json,
                         resource_limits_json
                  FROM worker_versions WHERE id = ?1 AND worker_id = ?2",
-                params![version_id.to_string(), worker_id.to_string()],
+                params![version_id, worker_id],
                 map_version,
             )
             .optional()
@@ -261,7 +260,7 @@ impl<'a> WorkerRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = statement
-                .query_map([worker_id.to_string()], map_deployment)
+                .query_map([worker_id], map_deployment)
                 .map_err(|_| db_error())?;
             collect_rows(rows)
         })
@@ -278,7 +277,7 @@ impl<'a> WorkerRepository<'a> {
         self.get_worker_deployment(instance_id, worker_id, deployment_id)
     }
 
-    /// Read one immutable Deployment for any live Worker, including system-owned Workers.
+    /// Read one immutable Deployment for any live Worker.
     pub fn get_worker_deployment(
         &self,
         instance_id: InstanceId,
@@ -290,7 +289,7 @@ impl<'a> WorkerRepository<'a> {
             conn.query_row(
                 "SELECT id,worker_id,version_id,source,annotations_json,created_at_ms,deleted_at_ms
                  FROM worker_deployments WHERE id=?1 AND worker_id=?2 AND deleted_at_ms IS NULL",
-                params![deployment_id.to_string(), worker_id.to_string()],
+                params![deployment_id, worker_id],
                 map_deployment,
             )
             .optional()
@@ -315,7 +314,7 @@ impl<'a> WorkerRepository<'a> {
                     "UPDATE worker_deployments SET deleted_at_ms=?1
                      WHERE id=?2 AND worker_id=?3 AND deleted_at_ms IS NULL
                        AND NOT EXISTS(SELECT 1 FROM workers WHERE active_deployment_id=?2)",
-                    params![now_ms, deployment_id.to_string(), worker_id.to_string()],
+                    params![now_ms, deployment_id, worker_id],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -370,7 +369,7 @@ impl<'a> WorkerRepository<'a> {
                         do_storage_id, route_generation, created_at_ms, updated_at_ms, deleted_at_ms,
                         ownership, active_deployment_id
                  FROM workers WHERE id = ?1 AND (SELECT instance_id FROM instance_identity) = ?2 AND deleted_at_ms IS NULL",
-                    params![route.worker_id.to_string(), route.instance_id.to_string()],
+                    params![route.worker_id, route.instance_id],
                     map_worker,
                 )
                 .optional()
@@ -381,7 +380,7 @@ impl<'a> WorkerRepository<'a> {
                 .query_row(
                     "SELECT id,worker_id,version_id,source,annotations_json,created_at_ms,deleted_at_ms
                      FROM worker_deployments WHERE id=?1 AND worker_id=?2 AND deleted_at_ms IS NULL",
-                    params![active_deployment.to_string(), worker.id.to_string()],
+                    params![active_deployment, worker.id],
                     map_deployment,
                 )
                 .optional()
@@ -397,7 +396,7 @@ impl<'a> WorkerRepository<'a> {
                         compatibility_date, compatibility_flags_json,
                         resource_limits_json
                  FROM worker_versions WHERE id = ?1 AND worker_id = ?2 AND state = 'ready'",
-                    params![active.to_string(), worker.id.to_string()],
+                    params![active, worker.id],
                     map_version,
                 )
                 .optional()
@@ -423,7 +422,7 @@ impl<'a> WorkerRepository<'a> {
         self.list_worker_routes(instance_id, worker_id)
     }
 
-    /// List active routes for any live Worker in the instance, including system-owned Workers.
+    /// List active routes for any live Worker in the instance.
     pub fn list_worker_routes(
         &self,
         instance_id: InstanceId,
@@ -445,7 +444,7 @@ impl<'a> WorkerRepository<'a> {
                 .map_err(|_| db_error())?;
             let rows = stmt
                 .query_map(
-                    params![instance_id.to_string(), worker_id.to_string()],
+                    params![instance_id, worker_id],
                     map_route,
                 )
                 .map_err(|_| db_error())?;
@@ -502,11 +501,10 @@ impl<'a> WorkerRepository<'a> {
     ) -> Result<(), PlatformError> {
         self.db.with_immediate(|tx| {
             let worker = require_live_worker(tx, instance_id, worker_id)?;
-            require_tenant_worker(&worker)?;
             let intent: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM worker_delete_intents WHERE worker_id=?1)",
-                    [worker_id.to_string()],
+                    [worker_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -528,14 +526,11 @@ impl<'a> WorkerRepository<'a> {
                     )
                     .map_err(|_| db_error())?;
                 let rows = statement
-                    .query_map([worker_id.to_string()], |row| row.get::<_, String>(0))
+                    .query_map([worker_id], |row| row.get::<_, VersionId>(0))
                     .map_err(|_| db_error())?;
                 let mut values = Vec::new();
                 for row in rows {
-                    values.push(
-                        VersionId::from_str(&row.map_err(|_| db_error())?)
-                            .map_err(|_| invariant())?,
-                    );
+                    values.push(row.map_err(|_| db_error())?);
                 }
                 values
             };
@@ -560,7 +555,7 @@ impl<'a> WorkerRepository<'a> {
                           AND caller.deleted_at_ms IS NULL
                           AND d.state IN ('staging', 'validating', 'ready')
                     )",
-                    params![worker_id.to_string(), instance_id.to_string()],
+                    params![worker_id, instance_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -581,8 +576,8 @@ impl<'a> WorkerRepository<'a> {
                 params![
                     i64::try_from(generation).map_err(|_| invariant())?,
                     now_ms,
-                    instance_id.to_string(),
-                    worker_id.to_string()
+                    instance_id,
+                    worker_id
                 ],
             )
             .map_err(|_| db_error())?;
@@ -595,8 +590,8 @@ impl<'a> WorkerRepository<'a> {
                 params![
                     i64::try_from(generation).map_err(|_| invariant())?,
                     now_ms,
-                    instance_id.to_string(),
-                    worker_id.to_string()
+                    instance_id,
+                    worker_id
                 ],
             )
             .map_err(|_| db_error())?;
@@ -608,14 +603,21 @@ impl<'a> WorkerRepository<'a> {
                     params![
                         i64::try_from(generation).map_err(|_| invariant())?,
                         now_ms,
-                        worker_id.to_string(),
-                        instance_id.to_string()
+                        worker_id,
+                        instance_id
                     ],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
                 return Err(worker_not_found());
             }
+            tx.execute(
+                "UPDATE workflow_definitions SET availability='unavailable',availability_code='WORKER_DELETED',updated_at_ms=?2
+                 WHERE state!='tombstoned' AND current_version_id IN
+                   (SELECT id FROM workflow_versions WHERE worker_id=?1)",
+                params![worker_id, now_ms],
+            )
+            .map_err(|_| db_error())?;
             tx.execute(
                 "DELETE FROM resource_referrers
                  WHERE referrer_kind = 'version_binding'
@@ -624,7 +626,7 @@ impl<'a> WorkerRepository<'a> {
                      JOIN worker_versions d ON d.id = b.version_id
                      WHERE d.worker_id = ?1
                    )",
-                [worker_id.to_string()],
+                [worker_id],
             )
             .map_err(|_| db_error())?;
             tx.execute(
@@ -635,7 +637,7 @@ impl<'a> WorkerRepository<'a> {
                      JOIN worker_versions d ON d.id = b.version_id
                      WHERE d.worker_id = ?1
                    )",
-                [worker_id.to_string()],
+                [worker_id],
             )
             .map_err(|_| db_error())?;
             tx.execute(
@@ -646,13 +648,13 @@ impl<'a> WorkerRepository<'a> {
                      JOIN worker_versions d ON d.id = b.version_id
                      WHERE d.worker_id = ?1
                    )",
-                [worker_id.to_string()],
+                [worker_id],
             )
             .map_err(|_| db_error())?;
             if force {
                 tx.execute(
                     "DELETE FROM worker_delete_intents WHERE worker_id=?1",
-                    [worker_id.to_string()],
+                    [worker_id],
                 )
                 .map_err(|_| db_error())?;
             }

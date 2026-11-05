@@ -8,7 +8,6 @@ use open_compute_core::{
     DURABLE_OBJECT_ID_BYTES, DURABLE_OBJECT_NAMESPACE_PREFIX_BYTES, DeterministicSchedulerClock,
     VersionId, durable_object_namespace_prefix,
 };
-use open_compute_runtime::GenerationAuthRegistry;
 use open_compute_storage::queues::QueueConfig;
 use open_compute_storage::scheduler::{
     AlarmProjection, ClaimedQueueBatch, ClaimedQueueMessage, QueueCompletionAction,
@@ -80,8 +79,7 @@ async fn kernel_run_claims_releases_and_shuts_down_without_polling() {
 
     let clock = Arc::new(DeterministicSchedulerClock::new(10));
     let fault_count = Arc::new(AtomicUsize::new(0));
-    let transport =
-        WorkerdTransport::new(GenerationAuthRegistry::new(), Arc::new(Mutex::new(None)));
+    let transport = WorkerdTransport::new(Arc::new(Mutex::new(None)));
     let scheduler = Arc::new(
         SchedulerService::new(
             store.clone(),
@@ -151,7 +149,7 @@ async fn kernel_run_reports_disabled_and_globally_paused_pools() {
         let scheduler = Arc::new(SchedulerService::new(
             store,
             storage,
-            WorkerdTransport::new(GenerationAuthRegistry::new(), Arc::new(Mutex::new(None))),
+            WorkerdTransport::new(Arc::new(Mutex::new(None))),
             config,
             open_compute_core::WorkflowsConfig::default(),
             Arc::new(DeterministicSchedulerClock::new(10)),
@@ -245,6 +243,8 @@ fn queue_disposition_precedence_and_membership_are_exact() {
     let first = open_compute_core::QueueMessageId::generate();
     let second = open_compute_core::QueueMessageId::generate();
     let batch = ClaimedQueueBatch {
+        max_retries: 3,
+        dead_letter_queue: None,
         id: open_compute_core::QueueBatchId::generate(),
         instance_id: InstanceId::generate(),
         queue_id: QueueId::generate(),
@@ -255,8 +255,7 @@ fn queue_disposition_precedence_and_membership_are_exact() {
         execution_generation: 1,
         entrypoint: None,
         retry_delay_seconds: 5,
-        claim_token: [7; 32],
-        claim_until_ms: 1_000,
+
         messages: [first, second]
             .into_iter()
             .map(|id| ClaimedQueueMessage {
@@ -419,8 +418,7 @@ async fn queue_retention_adapter_observes_pause_metrics_and_successful_sweeps() 
     let clock = Arc::new(DeterministicSchedulerClock::new(60_001));
     let metrics =
         Arc::new(MetricsRegistry::new(&MetricsConfig::default(), "test", "workerd").unwrap());
-    let transport =
-        WorkerdTransport::new(GenerationAuthRegistry::new(), Arc::new(Mutex::new(None)));
+    let transport = WorkerdTransport::new(Arc::new(Mutex::new(None)));
     let scheduler = Arc::new(
         SchedulerService::new(
             store.clone(),

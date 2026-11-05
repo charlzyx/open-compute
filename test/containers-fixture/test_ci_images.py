@@ -35,16 +35,16 @@ class ImageWorkflowTests(unittest.TestCase):
         self.assertNotIn('with-ci-macos-engine.py', body)
 
     def test_each_build_consumer_waits_for_current_run_images(self):
-        for workflow, names in [('ci.yml', ('checks', 'ai-search-qualification',
-                                            's3-provider-qualification')),
-                                ('release.yml', ('coverage', 'integration', 'package'))]:
+        for workflow, names in [('ci.yml', ('checks', 'product-gates')),
+                                ('release.yml', ('coverage-shards', 'package-other', 'ai-search-qualification',
+                                                 's3-provider-qualification'))]:
             source = (ROOT / '.github/workflows' / workflow).read_text()
             for name in names:
                 with self.subTest(workflow=workflow, job=name):
                     body = job(source, name)
                     self.assertRegex(body, r'needs: [^\n]*fixture-images')
                     self.assertEqual(body.count(PREPARE), 1)
-                    build = body.index('bun run build' if name != 'package'
+                    build = body.index('bun run build' if name != 'package-other'
                                        else './scripts/package-release.sh')
                     self.assertLess(body.index('uses: ./.github/actions/setup-open-compute'),
                                     body.index(PREPARE))
@@ -65,8 +65,6 @@ class ImageWorkflowTests(unittest.TestCase):
         self.assertIn('default: true', source)
         self.assertIn('"os":"ubuntu-24.04","architecture":"amd64"', source)
         self.assertIn('"os":"ubuntu-24.04-arm","architecture":"arm64"', source)
-        self.assertIn('backend: local', source)
-        self.assertIn('version: 1.22.0', source)
         self.assertNotIn('--image ', source)
         self.assertLess(source.index('./scripts/build-container-sidecar-source.sh'),
                         source.index('test/containers-fixture/build-images.py'))
@@ -78,83 +76,62 @@ class ImageWorkflowTests(unittest.TestCase):
         self.assertIn('X64) architecture=amd64', consumer)
         self.assertIn('ARM64) architecture=arm64', consumer)
         self.assertIn('name: p23-images-${{ steps.platform.outputs.architecture }}', consumer)
-        self.assertNotIn('run-id:', consumer)
-        self.assertNotIn('github-token:', consumer)
+        # Every cross-run consumer verifies candidate fixture provenance before download.
+        self.assertIn('run-id: ${{ inputs.run-id || github.run_id }}', consumer)
         self.assertLess(consumer.index('test/containers-fixture/consume-images.py'),
                         consumer.index('echo "OPEN_COMPUTE_TEST_CONTAINERS_INPUT='))
         self.assertNotIn('"containers":', consumer)
         self.assertNotIn('qualified-input', consumer)
 
-    def test_build_policy_disables_automatic_gc(self):
+    def test_builds_use_cargo_without_wrapper_policy(self):
         for name in ('.github/actions/setup-open-compute/action.yml',
                      '.github/workflows/container-images.yml',
-                     'test/gateway/runtime.Dockerfile'):
+                     '.github/workflows/container-diagnostic.yml',
+                     '.github/workflows/ci.yml', '.github/workflows/release.yml',
+                     'test/gateway/runtime.Dockerfile', 'test/release-dry-run/Dockerfile',
+                     'test/containers-fixture/Dockerfile.base'):
             with self.subTest(file=name):
                 source = (ROOT / name).read_text()
-                self.assertIn('mbx settings set gc.auto false', source)
-                self.assertRegex(source, r'MBX_GC_AUTO[=:] ?"?false')
-                for setting in ('build_script_execution', 'target.views', 'restore_hardlink'):
-                    self.assertIn('mbx settings set ' + setting + ' false', source)
+                self.assertNotRegex(source, r'\bmbx\b|MBX_|mr-boxington|rust-cache-backend')
+        setup = (ROOT / '.github/actions/setup-open-compute/action.yml').read_text()
+        self.assertNotIn('Intel', setup)
+        self.assertIn('toolchain: 1.98.0', setup)
+        self.assertIn('Cache Cargo downloads', setup)
+        self.assertIn('cargo build --locked', (ROOT / 'test/gateway/runtime.Dockerfile').read_text())
 
-    def test_release_still_requires_full_mac_final_and_coverage(self):
+    def test_release_requires_full_linux_workspace_and_coverage(self):
         source = (ROOT / '.github/workflows/release.yml').read_text()
-        coverage = job(source, 'coverage')
-        integration = job(source, 'integration')
-        self.assertIn('./test/coverage.sh --jobs 2', coverage)
-        self.assertIn("if: runner.os == 'macOS'", integration)
-        self.assertEqual(integration.count('./test/gate.py --workspace --final --jobs 2'), 1)
-        self.assertIn('test-p0-2-egress-linux.sh p0-2 --jobs 2', integration)
-        self.assertNotIn('test-p0-2-egress-linux.sh --workspace', integration)
-        self.assertIn('runs-on: macos-15-intel', coverage)
-        self.assertIn('os: [ubuntu-24.04, macos-15-intel]', integration)
-        for body in (coverage, integration):
-            self.assertIn('uses: ./.github/actions/setup-container-fixture-engine', body)
-            self.assertEqual(body.count('test/containers-fixture/with-ci-macos-engine.py'), 1)
-            build = body.index('mbx build --locked -p open-compute-service --bin ocd')
-            self.assertLess(build, body.index('test/containers-fixture/with-ci-macos-engine.py'))
-            self.assertIn('--binary "$PWD/target/debug/ocd"', body)
-            self.assertIn('.temp/containers-ci-engine/', body)
-        # Package coverage remains native ARM64; only virtualization jobs move to Intel.
-        matrix = re.search(r"^        include: (.+)$", job(source, 'package'), re.MULTILINE)
+        coverage = job(source, 'coverage-shards')
+        command = './test/coverage.sh --shard ${{ matrix.shard }}/4 --jobs 2'
+        self.assertIn(command, coverage)
+        self.assertIn('shard: [1, 2, 3, 4]', coverage)
+        self.assertIn('needs: [failfast, fixture-images]', coverage)
+        self.assertIn('./test/coverage.sh merge', job(source, 'coverage'))
+        self.assertNotIn('\n  integration:', source)
+        self.assertEqual(source.count(command), 1)
+        self.assertIn('OPEN_COMPUTE_EGRESS_FIXTURE_ALLOW_SUDO: "1"', coverage)
+        self.assertIn('runs-on: ubuntu-24.04', coverage)
+        self.assertNotIn('intel', source.lower())
+        self.assertNotIn('release-broker', coverage)
+        self.assertNotIn('needs.package-linux-x64', coverage)
+        self.assertLess(coverage.index('name: Verify candidate fixture provenance'),
+                        coverage.index(PREPARE))
+        script = (ROOT / 'test/coverage.sh').read_text()
+        self.assertIn('"containers" not in json.load(sys.stdin)["targets"]', script)
+        self.assertIn('cargo test --locked --offline --all-features --no-run --workspace --all-targets', script)
+        self.assertIn('--binary "$CARGO_TARGET_DIR/debug/ocd"', script)
+        self.assertIn('.temp/containers-ci-engine/', coverage)
+        matrix = re.search(r"^        include: (.+)$", job(source, 'package-other'), re.MULTILINE)
         self.assertIsNotNone(matrix)
         alternatives = re.findall(r"'(\[.*?\])'", matrix.group(1))
         self.assertEqual(json.loads(alternatives[-1]), [
             {"target": "darwin-arm64", "os": "macos-15"},
             {"target": "linux-arm64", "os": "ubuntu-24.04-arm"},
-            {"target": "linux-x64", "os": "ubuntu-24.04"},
         ])
-
-    def test_intel_uses_locked_mbx_source_and_a_verified_colima_binary(self):
-        source = (ROOT / '.github/actions/setup-open-compute/action.yml').read_text()
-        self.assertIn('cargo install mbx --version 1.22.0 --locked', source)
-        self.assertIn('test "$(mbx --version)" = \'mbx 1.22.0\'', source)
-        intel = source.split('name: Restore Intel macOS Rust build cache')[1].split(
-            'name: Install mbx and restore Rust build cache')[0]
-        self.assertIn("runner.os == 'macOS' && runner.arch == 'X64'", intel)
-        self.assertNotIn('version: 1.22.0', intel)
-        engine = (ROOT / '.github/actions/setup-container-fixture-engine/action.yml').read_text()
-        self.assertIn('test "$RUNNER_OS:$RUNNER_ARCH" = macOS:X64', engine)
-        self.assertIn('releases/download/v0.10.3/colima-Darwin-x86_64', engine)
-        self.assertIn('3082737fe8a98afda11cba7d9a20b6e56fe80c6153464beda04bec630758770b', engine)
-        self.assertIn('shasum -a 256 --check', engine)
-        self.assertNotIn('colima start', engine)
-
-    def test_manual_broker_diagnosis_cannot_publish_or_replace_a_gate(self):
-        source = (ROOT / '.github/workflows/container-broker-diagnostic.yml').read_text()
-        self.assertIn('workflow_dispatch:', source)
-        self.assertNotIn('push:', source)
-        self.assertIn('contents: read', source)
-        self.assertNotIn('contents: write', source)
-        self.assertIn('runs-on: macos-15-intel', source)
-        self.assertIn('arm64: false', source)
-        self.assertIn('uses: ./.github/actions/prepare-container-fixture-images', source)
-        self.assertIn('uses: ./.github/actions/setup-container-fixture-engine', source)
-        self.assertEqual(source.count('test/containers-fixture/with-ci-macos-engine.py'), 1)
-        self.assertIn('Broker qualification only; no product Gate', source)
-        self.assertNotIn('./test/gate.py', source)
-        self.assertNotIn('npm publish', source)
-        self.assertNotIn('gh release', source)
-
+        linux = job(source, 'package-linux-x64')
+        self.assertIn('target: linux-x64', linux)
+        self.assertIn('steps: *package-steps', linux)
+        self.assertIn('needs: [failfast, package-linux-x64, package-other]', job(source, 'package'))
 
 if __name__ == '__main__':
     unittest.main()

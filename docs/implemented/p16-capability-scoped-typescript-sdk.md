@@ -39,14 +39,14 @@ SDK 不导出完整 `Cloudflare` client。公开 graph 是无继承 facade，每
 
 权威输入保持单一：
 
-| 内容 | Authority |
-| --- | --- |
-| 上游 identities | `openapi/upstream/cloudflare-openapi.lock.json` |
-| Cloudflare operation 选择与状态 | `openapi/cloudflare-subset-manifest.json` |
-| Cloudflare wire schema | `openapi/cloudflare-v4-subset.json` |
-| vendor routes/schema | `openapi/open-compute-extension.json` |
-| capability projection | `openapi/p6-capability.json`、`share/cloudflare-capabilities.json` |
-| official implementation/types | lock 精确固定的 `cloudflare` npm tarball |
+| 内容                            | Authority                                                          |
+| ------------------------------- | ------------------------------------------------------------------ |
+| 上游 identities                 | `openapi/upstream/cloudflare-openapi.lock.json`                    |
+| Cloudflare operation 选择与状态 | `openapi/cloudflare-subset-manifest.json`                          |
+| Cloudflare wire schema          | `openapi/cloudflare-v4-subset.json`                                |
+| vendor routes/schema            | `openapi/open-compute-extension.json`                              |
+| capability projection           | `openapi/p6-capability.json`、`share/cloudflare-capabilities.json` |
+| official implementation/types   | lock 精确固定的 `cloudflare` npm tarball                           |
 
 `packages/sdk/scripts/generate.ts` 和 `scripts/sdk-scan.ts` 离线生成并校验：
 

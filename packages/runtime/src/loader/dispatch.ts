@@ -21,7 +21,6 @@ import {
   snapshotWorkerCode,
   stableCode,
   tenantGlobalOutbound,
-  TOKEN_HEADER,
 } from "./shared.js";
 
 const MAX_QUEUE_MESSAGES = 100;
@@ -187,7 +186,6 @@ export async function handleDispatch(
     const entrypoint =
       request.headers.get("x-open-compute-entrypoint") || undefined;
     const envelope = assertEnvelope(request, validation, entrypoint);
-    const internalToken = request.headers.get(TOKEN_HEADER) || "";
     const scope = validation
       ? probe || entrypoint
         ? "probe"
@@ -195,7 +193,7 @@ export async function handleDispatch(
       : "runtime";
     // Runtime hits reuse the verified snapshot for this route generation.
     // Validation still resolves on every call.
-    const snapshot = await resolveSnapshot(env, envelope, scope, internalToken);
+    const snapshot = await resolveSnapshot(env, envelope, scope);
     const runtimeKey = validation
       ? `${envelope.runtimeKey}/validation`
       : envelope.runtimeKey;
@@ -252,7 +250,7 @@ export async function handleDispatch(
         const code = await assembleOnce(runtimeKey, async () => {
           const built = modulesFor(snapshot, validation, entrypoint);
           return {
-            ...(await snapshotWorkerCode(env, snapshot, scope, internalToken)),
+            ...(await snapshotWorkerCode(env, snapshot, scope)),
             mainModule: built.mainModule,
             modules: built.modules,
             ...(validation
@@ -438,13 +436,7 @@ async function customEventTarget(
   const entrypoint =
     request.headers.get("x-open-compute-entrypoint") || undefined;
   const envelope = assertEnvelope(request, false, entrypoint);
-  const internalToken = request.headers.get(TOKEN_HEADER) || "";
-  const snapshot = await resolveSnapshot(
-    env,
-    envelope,
-    "runtime",
-    internalToken,
-  );
+  const snapshot = await resolveSnapshot(env, envelope, "runtime");
   const runtimeKey = envelope.runtimeKey;
   let cold = false;
   const loadedTenant = await loadTenantStub(
@@ -457,12 +449,7 @@ async function customEventTarget(
         const built = modulesFor(snapshot, false, entrypoint);
         const versionId = envelope.loaderKey.split("/")[2]!;
         const code = {
-          ...(await snapshotWorkerCode(
-            env,
-            snapshot,
-            "runtime",
-            internalToken,
-          )),
+          ...(await snapshotWorkerCode(env, snapshot, "runtime")),
           mainModule: built.mainModule,
           modules: built.modules,
           ...tenantEnv(
@@ -659,13 +646,7 @@ export async function validateDurableObjectClass(
 ) {
   const className = request.headers.get("x-open-compute-entrypoint") || "";
   const envelope = assertEnvelope(request, true, className);
-  const internalToken = request.headers.get(TOKEN_HEADER) || "";
-  const snapshot = await resolveSnapshot(
-    env,
-    envelope,
-    "validation",
-    internalToken,
-  );
+  const snapshot = await resolveSnapshot(env, envelope, "validation");
   let releaseTenant = (): void => {};
   try {
     const loadedTenant = await loadTenantStub(
@@ -675,12 +656,7 @@ export async function validateDurableObjectClass(
       async () => {
         const built = modulesFor(snapshot, true, className, true);
         return {
-          ...(await snapshotWorkerCode(
-            env,
-            snapshot,
-            "validation",
-            internalToken,
-          )),
+          ...(await snapshotWorkerCode(env, snapshot, "validation")),
           mainModule: built.mainModule,
           modules: built.modules,
           ...validationEnv(snapshot, built.policy, env.WORKER_LOADER_FACTORY),

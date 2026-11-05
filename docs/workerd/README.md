@@ -1,10 +1,10 @@
 # workerd 原生运行时方案
 
-当前待实施：[W4：workerd fork 收薄](w4-thin-fork.md)。该方案复核 W1/W2/W3、R3 与 P21 候选的全部差异，区分必要原生接口和可替代的平台策略；W4 尚未实施；当前 R22 formal pin 记录见下文。下文已有资格记录保留其原始输入与适用范围。
+当前待实施：[W4：workerd fork 收薄](w4-thin-fork.md)。该方案复核 W1/W2/W3、R3 与 P21 候选的全部差异，区分必要原生接口和可替代的平台策略；W4 尚未实施；当前 R25 formal pin 记录见下文。下文已有资格记录保留其原始输入与适用范围。
 
 W1 的逐 surface 复核见[兼容审查记录](../implemented/w1-worker-loader-compatibility-review.md)。
 
-历史状态：**W1/W2/W3 已在各自原始 pin 完成产品 qualification**。历史 R8 的四平台原生资格和资产校验已通过；R9 的 CI 与资产校验曾通过；当前 R22 的原生资格与资产校验已通过，完整产品验收仍待完成。W2 的 limits/v4 配置、Dynamic Worker ceiling、原生执行、公开错误、
+历史状态：**W1/W2/W3 已在各自原始 pin 完成产品 qualification**。历史 R8 的四平台原生资格和资产校验已通过；R9 的 CI 与资产校验曾通过；当前 R24 的原生资格与资产校验已通过，完整产品验收仍待完成。W2 的 limits/v4 配置、Dynamic Worker ceiling、原生执行、公开错误、
 isolate 摘除与 supervisor 自恢复已在同一 Day1 路径完成资格化。四个平台的源码 revision、二进制与 digest
 由 formal lock 固定。2026-09-05 用户确认接受维护自己的 workerd fork 并重新编译。
 W1/W2/W3 不再以“等待上游合并后才能开发”为实施前提；public Loader 已接入原生 fork。W2 同时交付原生
@@ -25,36 +25,77 @@ W2 通过请求限额、isolate 摘除和执行器自恢复三层机制消除失
 不要另建一份 workerd 实现、复制到其他目录，
 或为了匹配旧的测试二进制而重置这个 checkout。
 
-2026-10-22（UTC），源码 checkout 和正式 lock 均固定 R22 `65267e100a15718300cd17f9d82c2142158ce44a`。
-R22 增加官方实验目录快照入口，目录参数通过既有弱引用回调传入 Broker。
-R22 保留 R21 的 exec process handle 生命周期修复。
-本地四个原生目标分两批通过 108 项检查，直接受影响的 Root 用例通过。
-完成本地构建后，供应构建仅启动一次。
-[R22 四平台供应构建](https://github.com/elliothux/workerd/actions/runs/39721082079)的 4 个 build 和 publish 均成功。
+2026-11-01（UTC），正式 binary source 与源码 checkout 均固定 R25 `2ff33d645813e1d6253f44ec312d75ee70153912`。
+R25 在 R24 上只增加一个补丁：macOS 上 Unix 对端在 accept 前已关闭时，`getsockopt` 返回 ENOTCONN；
+accept 改为报告未知对端凭据，不再让 listener 失败。固定源码的 owning 回归覆盖这一情形。
+删除条件：上游 kj-rs-io 的 `peer_credentials()` 容忍已断开对端的 ENOTCONN（[cloudflare/workerd#8122](https://github.com/cloudflare/workerd/issues/8122)）。
+R24 修复 KJ 对 HTTP/1.0 响应的默认连接关闭语义。
+没有显式 `Connection: keep-alive` 时，客户端不复用该连接。
+HTTP/1.1 和显式 keep-alive 的既有路径保留。
+固定 KJ 源码的 owning 回归先失败，修补后 140 项 HTTP 测试全部通过。
+四平台构建及其必需原生资格已通过。
 正式资产、签名、协议和 catalog 校验已通过。
-这些结果不证明正式产品、coverage、Final 或 package 验收通过。
+这些结果不证明 Open Compute 0.4.0 的 P23、coverage、Final 或 package 验收通过。
 
-| 项目                                                              | 2026-10-22 核对结果                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [workerd 上游 issue / PR 核验](../references/workerd-upstream.md) | 已合并能力、standalone 缺口、补丁范围与升级回归重点                                                                                                                                                                                                  |
-| fork origin                                                       | <https://github.com/elliothux/workerd>                                                                                                                                                                                                               |
-| upstream 项目                                                     | <https://github.com/cloudflare/workerd>                                                                                                                                                                                                              |
-| fork checkout HEAD                                                | `65267e100a15718300cd17f9d82c2142158ce44a`（R22 正式 pin；四平台原生资格已通过）                                                                                                                                                                     |
-| upstream base                                                     | `d99bc6b777e35d72d71c2f1fe2fd1db53284528a`（2026-09-30 upstream `main`）                                                                                                                                                                             |
-| HEAD 提交说明                                                     | `65267e100` 增加实验目录捕获与目录恢复参数；保留既有 Root 和弱引用边界                                                                                                                                                                               |
-| fork working tree                                                 | HEAD 相对上述上游基线领先 48 个提交；R22 正式资产已校验                                                                                                                                                                                              |
-| fork source tree                                                  | `19914523beffa91252a2d41f57082e7b78ee82b16bc70881e634a5441df770de`（`sha256(git ls-tree -r <revision>)`，不是 Git tree ID）                                                                                                                          |
-| W3 runtime                                                        | `workerd 2026-09-30`；native Provider FD/Cap'n Proto unary/stream 回归通过                                                                                                                                                                           |
-| open-compute 当前正式 pin                                         | `v1.20260930.0-open-compute-r22.65267e100` / `65267e100a15718300cd17f9d82c2142158ce44a`（[run 39721082079](https://github.com/elliothux/workerd/actions/runs/39721082079) 四平台 build、原生资格和 publish 成功；不可变 Release 的 10 项资产已校验） |
-| 正式 pin authority                                                | [`packages/runtime/workerd.lock.json`](../../packages/runtime/workerd.lock.json)                                                                                                                                                                     |
+| 项目                                                              | 2026-10-30 核对结果                                                                                                         |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| [workerd 上游 issue / PR 核验](../references/workerd-upstream.md) | 已合并能力、standalone 缺口、补丁范围与升级回归重点                                                                         |
+| fork origin                                                       | <https://github.com/elliothux/workerd>                                                                                      |
+| upstream 项目                                                     | <https://github.com/cloudflare/workerd>                                                                                     |
+| fork checkout HEAD                                                | `2ff33d645813e1d6253f44ec312d75ee70153912`                                                                                  |
+| upstream base                                                     | `d99bc6b777e35d72d71c2f1fe2fd1db53284528a`（上游 `main`，日期为 2026-09-30）                                                |
+| HEAD 提交说明                                                     | fix: report unknown credentials for a Unix peer gone before accept                                                          |
+| fork working tree                                                 | HEAD 相对上述上游基线领先 55 个提交；工作区干净                                                                             |
+| formal binary source tree                                         | `0bbd31dac02b63290a0cbe43eb140158ac69dfe7983fcd062bf81ae5121e32ab`（`sha256(git ls-tree -r <revision>)`，不是 Git tree ID） |
+| W3 runtime                                                        | `workerd 2026-09-30`；版本文本未变，摘要和 pin 已变                                                                         |
+| open-compute 当前正式 pin                                         | `v1.20260930.0-open-compute-r25.2ff33d645` / `2ff33d645813e1d6253f44ec312d75ee70153912`                                     |
+| 正式 pin authority                                                | [`packages/runtime/workerd.lock.json`](../../packages/runtime/workerd.lock.json)                                            |
 
-上述 R22 资格的源码 checkout 与 formal binary 均固定 `65267e100`，私有 Container 协议为 v4。
-四平台原生资格与 Release 资产校验已通过；R22 的真实产品、full65、coverage、Final 与三主机 package 验收仍待完成。
-fork 的 `--version` 不能替代源码身份与二进制摘要；各项历史资格结果仅适用于其原始输入。正式切换应完成构建、固定来源和协议、更新所有 pin 消费者及验证。
+R24 保留 R23 的 Tokio readiness 修补、私有 Container 协议 v4 和原有 compatibility catalog。
+四平台原生资格与 Release 资产校验已通过；新 pin 的父仓库产品、coverage、Final 和三平台 package 仍待验收。
+fork 的 `--version` 不能替代源码身份与二进制摘要；各项历史资格结果仅适用于其原始输入。
+正式切换应完成构建、固定来源和协议、更新所有 pin 消费者及验证。
 formal lock 还固定 system Worker date/flags、binary maximum 和 exact binary 生成的 compatibility catalog digest；四目标
 catalog 应逐字节一致。tenant Version 的 date/flags 不使用 system 值，也不由 open-compute allowlist 判断。
 初始迁移保留 `main` 分支与 origin。W1 已完成原生本地提交和三个正式平台优化构建，正式 fork pin 已通过本机完整产品验收；macOS Intel 仅保留手动编译输入，
 详见 [W1 实施记录](../implemented/w1-dynamic-workers-worker-loader.md)。
+
+## 补丁账本
+
+2026-11-01，R25 `2ff33d645` 相对上游基线 `d99bc6b77` 有 **55 个提交（含 4 个合并），144 个文件，新增 18,614 行、删除 1,279 行**。本表是当前补丁归属与删除条件的统一入口；[W4](w4-thin-fork.md) 仍是待实施的收薄方案。
+
+“未登记”表示现有文档未记录专项上游 tracker；“—（仅下游）”表示不计划上游 PR。共享提交按接入点分别列出，构建与回归随所属能力删除，独立安全修复保留到上游提供等价实现。
+
+| 补丁组                       | 提交                                                                                                                                                                                                                      | 用途                                                                                                                     | 上游 issue/PR                                                                                                                                                              | 删除条件                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| W1 Loader                    | `540983b18`、`2bc1fe1ac`（格式）                                                                                                                                                                                          | 提供受限委派、隔离 namespace/cache、单调撤销与调用计数（[详情](../implemented/w1-dynamic-workers-worker-loader.md)）。   | 未登记                                                                                                                                                                     | 上游提供等价委派、隔离缓存、单调撤销和调用计数并通过回归后删除。                                             |
+| W2 limits                    | `5465cdfd9`、`5771f22f3`（KJ I/O 构建隔离）                                                                                                                                                                               | 执行 standalone CPU、内存、startup、subrequest 与连接限额（[详情](../implemented/w2-standard-limits.md)）。              | [#49](https://github.com/cloudflare/workerd/issues/49)、[#1627](https://github.com/cloudflare/workerd/pull/1627)、[#6399](https://github.com/cloudflare/workerd/pull/6399) | 上游等价执行全部限额、嵌套与委派 ceiling，并完成 isolate 摘除恢复及原生和平台回归后删除。                    |
+| W3／FD                       | `19046b1d2`、`2cfc606c9`、`af468ba5f`                                                                                                                                                                                     | 接通 HostExtension、broker FD 与 Rust/Tokio SCM_RIGHTS（[详情](../implemented/w3-user-extensible-native-bindings.md)）。 | 未登记（HostExtension 与 Rust SCM_RIGHTS）                                                                                                                                 | 上游提供等价 direct-FD/session capability 后删除本地接线，保留 `HOST.call`、`HOST.stream` 与 Provider 协议。 |
+| I102 forwarding              | `1c7b89bea`                                                                                                                                                                                                               | 用私有 grant 转发声明的根 binding（[详情](../implemented/i102-dynamic-worker-binding-forwarding.md)）。                  | 未登记                                                                                                                                                                     | 上游等价转发全部已声明根 binding，或产品明确退役此扩展后删除，不能因 D1 已可转移而删除。                     |
+| R3 catalog                   | `2d7bada20`                                                                                                                                                                                                               | 从 exact binary 导出 date/flag catalog（[详情](../references/workerd.md#fork-扩展)）。                                   | —（仅下游）                                                                                                                                                                | 替代入口提供等价 exact-binary date/flag catalog，并保证跨目标逐字节一致后删除。                              |
+| P21 Python prepare/restore   | `0177c203f`                                                                                                                                                                                                               | 接通上游 ArtifactBundler 的准备与恢复（[详情](w4-thin-fork.md#52-python-与语言无关-bindings)）。                         | 未登记                                                                                                                                                                     | 上游 standalone 暴露等价 ArtifactBundler 入口，满足离线恢复、大小与准备预算后删除。                          |
+| P21 host-only 构造与导出     | `0177c203f`                                                                                                                                                                                                               | 隔离 native binding 构造、private env 与 export policy（[详情](w4-thin-fork.md#52-python-与语言无关-bindings)）。        | 未登记                                                                                                                                                                     | 上游可信构造与导出接口保证内部 transport 不可见、grant 不可再次转授后删除。                                  |
+| P21 dynamic Cache backend    | `0177c203f`                                                                                                                                                                                                               | 为动态 Worker 接入已有 Cache backend（[详情](w4-thin-fork.md#3-全部补丁的去留账本)）。                                   | 未登记                                                                                                                                                                     | 上游 Loader 提供等价 Cache outbound 接线且不暴露 backend 后删除。                                            |
+| P21 Service／DO RPC policy   | `0177c203f`                                                                                                                                                                                                               | 把私有 stub 与 RPC 调用转交平台 policy（[详情](w4-thin-fork.md#42-servicedo-使用原生-rpc平台在能力接入处授权)）。        | 未登记                                                                                                                                                                     | 原生 channel/factory 等价承载授权、target pin、callback、pipeline 与 capability 生命周期后删除。             |
+| P21 DO 身份与 jurisdiction   | `0177c203f`                                                                                                                                                                                                               | 将 namespace policy 和持久身份接入原生 DO（[详情](w4-thin-fork.md#44-do-id-和-facets-优先使用已有扩展点)）。             | 未登记                                                                                                                                                                     | 原生 ActorIdFactory／ActorChannelFactory 等价覆盖 jurisdiction、存储身份与重启后删除。                       |
+| P21 Queue 构造与 codec       | `0177c203f`                                                                                                                                                                                                               | 提供 host-only Queue 构造与受限 V8 codec（[详情](w4-thin-fork.md#43-queue-复用原生-wire-与-output-gate)）。              | 未登记                                                                                                                                                                     | 上游提供等价构造与 wire 解码入口并保留尺寸、格式和权限校验后删除。                                           |
+| P21 Queue publication/outbox | `0177c203f`                                                                                                                                                                                                               | 把发布交给平台 policy 与持久 outbox（[详情](w4-thin-fork.md#43-queue-复用原生-wire-与-output-gate)）。                   | 未登记                                                                                                                                                                     | 原生 output gate 与 backend 等价覆盖顺序、事务失败、恢复、配额和 metrics 后删除。                            |
+| P21 private quota            | `0177c203f`                                                                                                                                                                                                               | 避免私有控制流量重复消耗租户预算（[详情](w4-thin-fork.md#53-后台任务配额与观测)）。                                      | 未登记                                                                                                                                                                     | 原生控制通道保证控制流量不重复收费、公开调用不漏计后删除。                                                   |
+| P21 waitUntil observer       | `0177c203f`                                                                                                                                                                                                               | 在正确 AsyncContext 登记后台任务（[详情](w4-thin-fork.md#53-后台任务配额与观测)）。                                      | 未登记                                                                                                                                                                     | 原生 invocation 生命周期等价覆盖导入的 waitUntil，且后台工作不提前释放后删除。                               |
+| P21 actor budget             | `0177c203f`                                                                                                                                                                                                               | 为 actor event 补足执行预算（[详情](w4-thin-fork.md#51-standalone-limits-与内存安全)）。                                 | 未登记                                                                                                                                                                     | 上游执行器等价补足 actor event 预算并通过 W2 回归后删除。                                                    |
+| P21 HostFacets grant         | `0177c203f`                                                                                                                                                                                                               | 受限地将动态 actor class 接入真实 facet manager（[详情](w4-thin-fork.md#44-do-id-和-facets-优先使用已有扩展点)）。       | 未登记                                                                                                                                                                     | 上游接口等价授权动态 class 且保持撤销与生命周期后删除。                                                      |
+| P21 logical-depth 补偿       | `0177c203f`                                                                                                                                                                                                               | 为扁平物理 facet 名称保留逻辑深度（[详情](w4-thin-fork.md#44-do-id-和-facets-优先使用已有扩展点)）。                     | 未登记                                                                                                                                                                     | 上游 nested facet 修复通过 clone/delete、替换、abort、SQLite/WAL、重启与深度回归后删除。                     |
+| P21 host tails               | `0177c203f`                                                                                                                                                                                                               | 按 admission 注入并传播 collector 身份（[详情](w4-thin-fork.md#53-后台任务配额与观测)）。                                | 未登记                                                                                                                                                                     | 原生 tails 等价覆盖缓存命中、并发及跨 Service／DO／Loader 归因隔离后删除。                                   |
+| P21 owner／内存安全          | `0177c203f`                                                                                                                                                                                                               | 修复启动、eviction、取消和退出时的对象持有（[详情](w4-thin-fork.md#51-standalone-limits-与内存安全)）。                  | 未登记                                                                                                                                                                     | 固定上游包含等价 header table、启动任务和旧 stub 生命周期修复并通过回归后删除。                              |
+| Python helper 修正           | `a692581eb`、`e98a3e843`、`c92952f47`（仅测试调整）                                                                                                                                                                       | 修正 queue batch 与 scheduled class 参数（[详情](w4-thin-fork.md#52-python-与语言无关-bindings)）。                      | 未登记（queue 与 scheduled）                                                                                                                                               | 固定上游包含等价 queue／scheduled 修复并通过固定 SDK 回归后删除。                                            |
+| Container authority／owners  | `98f575287`、`8903b3504`（删除 packet capture）、`fb1a903f1`、`c2ff9759d`、`7b23dc995`、`28d4cb144`（仅资格检查）、`b359cb6c0`、`720d90a4f`、`c189d6029`、`a8e3d0bd4`                                                     | 提供宿主授权租约、准入 fencing、受限回调与 owner 退休／替换（[详情](#p23-原生-r9-发布与输入校验2026-10-11)）。           | 未登记                                                                                                                                                                     | 上游分别等价覆盖宿主租约、准入 fencing、回调范围及 owner 退休／替换后逐项删除，packet capture 删除不回滚。   |
+| Container extensions／fixes  | `7b194dc98`、`a48880fc1`、`617f19427`、`f7a64709b`、`79a3db287`（协议资格）、`a8d241162`（测试池）、`a12a8a623`、`eca7215c8`（Rosetta 预算）、`4bdbfda71`、`d9b8d6ce4`（字节断言）、`1c0659a70`、`204a75bcf`、`65267e100` | 增加检查／快照、exec 证明、空闲策略、具名镜像与流式回调持有（[详情](../references/workerd.md)）。                        | 未登记                                                                                                                                                                     | 上游分别等价覆盖检查／快照、exec 持有与证明、空闲策略、具名镜像及流式回调持有后逐项删除。                    |
+| Tokio readiness              | `25f2a0fde`                                                                                                                                                                                                               | 在 KJ 持续可运行时仍服务 Tokio readiness（[详情](#r23-发布与输入校验2026-10-26)）。                                      | 未登记                                                                                                                                                                     | 上游通过 busy-KJ readiness 回归后删除。                                                                      |
+| HTTP/1.0 KJ                  | `cf3163dd0`、`9de631551`                                                                                                                                                                                                  | 修复默认关闭语义并加入固定 KJ 回归（[详情](#r24-发布与输入校验2026-10-30)）。                                            | 未登记（Cap'n Proto/KJ）                                                                                                                                                   | 固定上游 KJ 实现并测试 HTTP/1.0 默认关闭语义后删除两份 patch。                                               |
+| Unix credentials R25         | `2ff33d645`                                                                                                                                                                                                               | 对 accept 前断开的 Unix 对端报告未知凭据（[详情](#r25-发布与输入校验2026-11-01)）。                                      | [workerd#8122](https://github.com/cloudflare/workerd/issues/8122)                                                                                                          | 上游 `peer_credentials()` 容忍已断开对端的 ENOTCONN 后删除。                                                 |
+| build／release               | `409370774`、`e3bdb07f5`、`5da4c7fea`、`a266c0305`、`fdcb8c97f`、`e1e632f1c`、`52ab9f746`、`f2fb6bdf4`                                                                                                                    | 提供原生 I/O 资格、手动发行、schedule 抑制与产物恢复发布（[详情](#r23-发布与输入校验2026-10-26)）。                      | —（仅下游）                                                                                                                                                                | 正式 fork 发行流水线由等价构建、资格与可校验产物流程替代后删除。                                             |
+| branding／docs               | `fbd4dddad`、`c7feb6dae`、`5347a1d6a`                                                                                                                                                                                     | 记录 fork 用法并替换品牌图（[详情](w4-thin-fork.md#54-w3-与-catalog-的取舍)）。                                          | —（仅下游）                                                                                                                                                                | 恢复上游 README 时删除品牌和图片改动，fork 用法另行保留。                                                    |
+| upstream merges              | `be28acacd`、`3dd26f66e`、`15ef3a0ab`、`6c3222ee5`                                                                                                                                                                        | 集成上游更新（[详情](../references/workerd-upstream.md#2026-09-30-fork-ahead-审计)）。                                   | —（仅下游）                                                                                                                                                                | 合并提交不单独删除，保留的冲突解法归所属功能补丁。                                                           |
 
 ## Submodule 工作流
 
@@ -84,6 +125,52 @@ git clone --recurse-submodules https://github.com/elliothux/open-compute.git
 [开发规则](../../third_party/workerd/AGENTS.md)和修改组件已有的规则，保持其 Bazel/C++/测试布局。
 
 P21 历史资格的运行时为正式 R4 pin，包含部署时原生 preparation、语言无关 binding construction/policy、Python Queue 单 batch 参数与 scheduled class handler 参数。内部 waitUntil observer 通过既有 IoContext/AsyncContextFrame 登记原 promise；原生 DO state 与 handler 继续使用官方 Python helper，不修改 SDK 文件。普通 Main、三框架、Service、Queue、DO、Workflow、Runtime 及现有产品 Gate 已通过完整 workspace coverage 和最终单轮 Gate，输入与已知限制见 [P21 Python Workers 实现](../implemented/p21-python-workers.md)。历史候选 probe 和 R4 产品结果不能替代当前 formal pin 的验收。P21 当次发布复用了已有四平台产物。
+
+## R25 发布与输入校验（2026-11-01）
+
+[R25 四平台 CI](https://github.com/elliothux/workerd/actions/runs/41271234399) 的四个 build 和 publish 均成功；darwin-x64 首次因 `static.crates.io` 解析失败重跑一次。
+R4.4b 把 ocd 与 workerd 的内部通道改为 Unix socket 后，macOS 上出现对端在 accept 前关闭导致的 ENOTCONN 崩溃；R25 只修补这一点。
+十项资产通过 `SHA256SUMS` 和 `gh release verify`；四目标 archive／binary 摘要、build-inputs 与 catalog 已写入正式 lock，catalog 摘要与 R24 相同。
+
+## R24 发布与输入校验（2026-10-30）
+
+[R24 四平台 CI](https://github.com/elliothux/workerd/actions/runs/41025742244) 的四个 build 和 publish 均成功。
+每个平台通过八个 Container／KJ HTTP owning target、52 个普通 Rust target 和十一项 Root 回归。
+八个 reactor target 与 Rust lint 也已通过。
+两个 sanitizer 专用 Rust target 在 release 配置中不兼容，保留跳过状态，不计入通过数。
+五个真实 `CheckRun` 均为 `COMPLETED`／`SUCCESS`。
+
+R24 给固定的 KJ 源码增加两份 patch：HTTP/1.0 默认关闭修补及其回归。
+回归在修补前得到 139 通过／1 失败，修补后得到 140 通过／0 失败。
+Container owning 测试覆盖 EOF 到达前的连接复用和显式 keep-alive。
+原生资格不证明 Open Compute 中原始 P23 失败已经修复。
+
+不可变 Release 的十项资产已通过签名、GitHub digest 和 `SHA256SUMS` 校验。
+四目标 archive／binary、架构、build-inputs、协议 v4 与 catalog 均已核实。
+校验只在内存中下载和解压，没有在高水位宿主写入原生 archive 或 executable。
+资产证据为 `.temp/release-0.4.0-actual/workerd-release-r23/formal-current-release-40902084555/native-r24-verified-assets.json`。
+证据 SHA-256 为 `f44d73a7dc087a3e09816e164d2bcb1afd9700363681a7f06769b14022c3de13`。
+R24 的正式 lock 与父仓库 gitlink 已由 R25 取代；当前产品、coverage、Final 和发行包仍待验收。
+
+## R23 发布与输入校验（2026-10-26）
+
+[R23 原始构建](https://github.com/elliothux/workerd/actions/runs/40199209196)有三个平台成功。
+原始 Darwin x64 job 在 Rust lint 的配置分析阶段失败，因为通用 lint 配置还加载了不支持该目标的 C++ 检查。
+[Darwin x64 恢复构建](https://github.com/elliothux/workerd/actions/runs/40216315540)仅重建缺少的平台，并通过全部必需检查。
+四个平台均通过完整原生 Rust 套件、八个 reactor 目标、Rust lint、七个 Container 目标和十一项 Root 回归。
+原始失败和恢复构建中的发布失败保留原状态。
+
+[最终发布任务](https://github.com/elliothux/workerd/actions/runs/40269642389)复用四份精确产物并成功发布。
+该任务跳过 build；发布重试没有触发编译。
+校验器核对五个成功的真实 `CheckRun`，分别来自三个原始 build、一个恢复 build 和一个最终 publish。
+必需资格步骤全部成功；可选跳过步骤保留原始 `SKIPPED` 状态。
+
+不可变 Release 的十项资产已通过签名、GitHub digest 和 `SHA256SUMS` 校验。
+四目标 archive／binary、架构、build-inputs、协议 v4 与 catalog 均已核实。
+资产证据为 `.temp/release-0.4.0-actual/workerd-release-r23/publish-only-collection/verified-assets.json`。
+证据 SHA-256 为 `af01d3d10f503c83e0dfc526f9fd1d6a3f81d6e3f24ccee812da2b126b41e14e`。
+正式 lock 已更新；binary source 与发布工作流 revision 分别记录。
+原生资格不替代父仓库真实产品、coverage、最终 Gate 或三平台发行包资格。
 
 ## R22 发布与输入校验（2026-10-22）
 

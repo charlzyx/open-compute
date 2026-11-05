@@ -33,21 +33,6 @@ R3 不给日期增加最小值、枚举或 open-compute allowlist。官方 Worke
 metadata。system 设置不能覆盖、合并或隐式注入 tenant Version。现有平台 `--experimental` 进程 flag 继续服务正式 fork 所需能力；R3 不以
 此为理由建立 tenant allowlist。
 
-## 2. 当前需要删除的第二套规则
-
-当前 `open-compute-workers` 的 `WORKER_COMPATIBILITY_DATE`、`ALLOWED_WORKER_COMPATIBILITY_FLAGS` 与
-`supports_worker_compatibility()` 把所有普通 Version 限制为 `2026-09-08` 加可选 `nodejs_compat`；multipart、descriptor、pipeline、toolchain
-import、capability API 和测试又重复这一结论。management capability response 因而把 minimum／maximum 都写成 runtime lock 的
-`effectiveCompatibilityDate`。
-
-实施时删除这些常量、判断和消费者，不保留 deprecated alias、双路径或旧日期 fallback。上传 boundary 只保留通用 body／字符串／数组大小
-约束和 Cloudflare wire parsing；candidate 必须携带原始 date／flags 进入正式 workerd validation，只有 workerd 成功编译后才能 ready。
-workerd 的 sanitized validation error 映射为稳定平台错误，不能在 Rust/TypeScript 中重新解释 flag 语义。
-
-Version descriptor、runtime snapshot、loader payload、restart restore 和 SDK response 均保存并返回原始 date／flags。promotion／rollback 只移动
-Version pointer，不根据当前 pin 重新计算或修复 metadata。现有记录已经拥有这些字段，因此不新增 schema migration；直接更新当前 producers、
-consumers、fixtures 和 tests。
-
 ## 3. workerd 原生 compatibility catalog
 
 在授权 fork 的 `third_party/workerd/` 增加一个只读 JSON introspection 子命令。它直接使用编入 binary 的 maximum-date bytes 和 Cap’n Proto
@@ -132,40 +117,6 @@ catalog SHA-256、正式 workerd identity 与 system Worker date／flags；human
 最终字段命名在实现时由一个 Rust serde type 同时拥有 CLI 与 API projection；不在 SDK、Dashboard 或 TypeScript runtime 重声明等价结构。
 capability response 是发现信息，不是接受承诺：实际 candidate 仍必须经过同一 pinned workerd，catalog 与 binary 不一致时平台启动和部署均
 fail closed。
-
-## 6. 实施范围
-
-1. workerd fork：增加 reflection-based compatibility catalog 和确定性测试，提交独立 fork revision。
-2. runtime build／lock：从四个正式 binary 生成并比较 catalog，固定 digest，嵌入 `ocd`，同步 source identity 与 pin verification。
-3. workers／service：删除单日期和手写 flag policy；所有普通 upload、SDK multipart、cf upload、Dynamic Worker、descriptor、snapshot 与 restart
-   路径携带不可变原值并使用真实 workerd admission。
-4. toolchain：framework output 不再要求 lock 的单一 tenant date 或 required flags；保留语法解析，把最终判断交给部署 validation。
-5. capability surface：更新 core type、CLI、v4 vendor endpoint、OpenAPI、SDK、Dashboard 和 support bundle，全部消费同一 catalog。
-6. 文档：更新 Cloudflare compatibility matrix、deviation、workerd pin／upgrade、configuration 和中英文网站；删除
-   `OC-MANAGEMENT-COMPATIBILITY-DATE-001` 的单日期 deviation，除非实施证据发现新的真实差异。
-
-## 7. 验收
-
-- fork unit tests 证明 catalog 完整覆盖 schema 中每个 enable／disable input annotation，准确投影 default date、all-dates、experimental、
-  implication 和 Python snapshot metadata，且重复运行与四目标 binary 输出字节一致；
-- pin verification 证明 catalog digest、binary digest、maximum date 和 workerd revision 同属一个正式输入；缺失、篡改或跨目标 drift 在 Cargo
-  之前失败；
-- 普通 Version 和 Dynamic Worker 分别以旧日期、当前日期、binary maximum、enable flag、disable flag、experimental flag 经过真实 workerd
-  成功；格式错误、UTC future、超过 binary maximum、未知、重复和冲突 flag 由 workerd 拒绝，测试证明不是平台 allowlist 预先拒绝；
-- upload→validate→deploy→dispatch→restart→rollback 保持每个 Version 的原始 date／flags，不改写 persisted metadata 或 artifact identity；
-- `ocd capabilities --json`、human output、两个 management capability route、SDK 和 Dashboard 对同一 catalog digest、maximum 和 feature set
-  给出一致结果；
-- system Workers 继续使用 lock 中自己的日期／flags，tenant Version 不继承 system metadata；
-- build、format、Clippy、no-default-features、MSRV、metadata、dependency boundaries、相关 TypeScript checks、coverage 和最终单轮 workspace Gate
-  成功。任何真实 Cloudflare differential 仍按显式 qualification 单独执行，不把外部账号写入普通 Gate。
-
-## 8. 非目标
-
-- open-compute 自己实现日期／flag parser、行为模拟、allowlist、denylist、alias、默认升级或兼容分支；
-- 根据 compatibility date 选择旧 workerd binary、旧 Pyodide sidecar、旧 schema、旧 bundle 或旧 open-compute implementation；
-- 在生产启动时扫描 source tree、执行网络发现、查询 Cloudflare 或生成 catalog；
-- 把 capability catalog 当成绕过正式 workerd candidate validation 的依据；
-- 为完成 R3 修改已发布数据库 migration、重写已有 Version metadata 或重置本地数据。
 
 ## 9. 实施证据（2026-09-30）
 

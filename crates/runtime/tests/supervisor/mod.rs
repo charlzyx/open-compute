@@ -3,7 +3,7 @@
 use open_compute_core::config::RuntimeConfig;
 use open_compute_core::error::{ErrorCode, ReadinessReason};
 use open_compute_core::ids::StartupId;
-use open_compute_core::{DeterministicClock, Redactor, SecretString};
+use open_compute_core::{DeterministicClock, Redactor};
 use open_compute_runtime::compile::CompiledConfig;
 use open_compute_runtime::process::{
     assert_reaped, clear_signal_log, take_signal_log, wait_reaped,
@@ -12,8 +12,8 @@ use open_compute_runtime::supervisor::{
     DirectoryServicePath, ExternalServiceAddress, FnCompiler, RuntimeFailureEvidence,
     SequenceJitter, SupervisorState, WatchdogConfig, WorkerdSupervisor, WorkerdSupervisorOptions,
     blocking_spawn_is_waiting, clear_blocking_spawn_hold, hold_blocking_spawn, last_spawned_pid,
-    probe_ready_with_raw_token, release_blocking_spawn, serve_argv, set_reader_fail_point,
-    set_spawn_fail_point, take_owner_wait_count, token_fingerprint,
+    probe_ready, release_blocking_spawn, serve_argv, set_reader_fail_point, set_spawn_fail_point,
+    take_owner_wait_count,
 };
 use open_compute_runtime::verify_runtime_binary;
 use rustix::process::{Pid, test_kill_process};
@@ -143,10 +143,6 @@ fn small_cfg() -> RuntimeConfig {
     }
 }
 
-#[allow(
-    clippy::type_complexity,
-    reason = "the callable signature directly models the runtime protocol"
-)]
 fn compiler(
     data: PathBuf,
     mode: &'static str,
@@ -154,13 +150,12 @@ fn compiler(
     extra: serde_json::Value,
 ) -> FnCompiler<
     impl Fn(
-        SecretString,
         StartupId,
     ) -> Pin<
         Box<dyn Future<Output = Result<CompiledConfig, open_compute_core::PlatformError>> + Send>,
     >,
 > {
-    FnCompiler(move |token: SecretString, id: StartupId| {
+    FnCompiler(move |id: StartupId| {
         let data = data.clone();
         let argv_path = argv_path.clone();
         let extra = extra.clone();
@@ -172,8 +167,8 @@ fn compiler(
             let obj = body.as_object_mut().unwrap();
             obj.insert("mode".into(), serde_json::Value::String(mode.into()));
             obj.insert(
-                "token".into(),
-                serde_json::Value::String(token.expose().to_owned()),
+                "socket".into(),
+                serde_json::Value::String(data.join("ingress.sock").display().to_string()),
             );
             if let Some(p) = argv_path {
                 obj.insert(
@@ -226,7 +221,7 @@ fn pid_alive(pid: i32) -> bool {
     test_kill_process(Pid::from_raw(pid).unwrap()).is_ok()
 }
 
-mod argv_exact_stdin_fd3_and_auth_probe;
+mod argv_exact_stdin_fd3_and_unix_probe;
 
 mod control_faults_reap_pid_and_pgid;
 
@@ -276,13 +271,6 @@ mod compile_failure_does_not_inherit_prior_exit;
 
 mod functional_watchdog;
 
-fn test_start_key(pid: i32) -> Option<String> {
-    if pid <= 0 {
-        return None;
-    }
-    Some(format!("t:{pid}"))
-}
-
 mod lease_persist_failure_reaps_child_and_never_runs;
 
 mod teardown_retains_lease_until_reap_is_proved;
@@ -296,7 +284,7 @@ macro_rules! supervisor_case {
     };
 }
 
-supervisor_case!(argv_exact_stdin_fd3_and_auth_probe);
+supervisor_case!(argv_exact_stdin_fd3_and_unix_probe);
 supervisor_case!(compile_failure_does_not_inherit_prior_exit);
 supervisor_case!(control_faults_reap_pid_and_pgid);
 supervisor_case!(drop_does_not_signal_or_double_wait_reaped_pid);

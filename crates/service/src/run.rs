@@ -11,7 +11,6 @@ use crate::cache_images_http::CacheImagesApiState;
 use crate::capabilities::{platform_capabilities, platform_release_metadata};
 use crate::config_load::LoadedConfig;
 use crate::d1_backend::D1BindingService;
-use crate::dashboard::bootstrap_dashboard;
 use crate::do_lifecycle::DurableObjectLifecycleService;
 use crate::document_parser_backend::DocumentParserBindingService;
 use crate::health::HealthCoordinator;
@@ -30,7 +29,6 @@ use crate::metrics::{
 use crate::object_storage::connect_object_backend;
 use crate::observability::ObservabilityService;
 use crate::observability_backend::{bind_observability_backend, serve_observability_backend};
-use crate::p2_3_promotion::P23PromotionCoordinator;
 use crate::queue_api::QueueApiState;
 use crate::r2_api::R2ApiState;
 use crate::r2_backend::R2BindingService;
@@ -54,9 +52,9 @@ use open_compute_core::{
     PlatformError, ReadinessReason, Redactor, RequestId, StartupId, SystemSchedulerClock,
 };
 use open_compute_runtime::{
-    DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry,
-    HostExtensionBrokerRegistry, OsJitter, PlatformReleaseMeta, StaticConfigCompiler,
-    SupervisorState, WorkerdSupervisor, WorkerdSupervisorOptions,
+    DirectoryServicePath, ExternalServiceAddress, HostExtensionBrokerRegistry, OsJitter,
+    PlatformReleaseMeta, StaticConfigCompiler, SupervisorState, WorkerdSupervisor,
+    WorkerdSupervisorOptions,
 };
 use open_compute_storage::PlatformStorage;
 use open_compute_storage::cache::CacheManager;
@@ -89,11 +87,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{RwLock, Semaphore, mpsc, watch};
+use tokio::sync::{Semaphore, mpsc, watch};
 pub(crate) use wait::join_listener;
+use wait::wait_instance_and_servers;
 #[cfg(test)]
 pub(crate) use wait::{join_runtime_source, join_scheduler};
-use wait::{wait_for_supervisor_running, wait_instance_and_servers};
 
 /// Injected failure after a named stage.
 #[cfg(any(test, feature = "test-support"))]
@@ -179,12 +177,9 @@ pub async fn run_platform(
     scope: ServiceScope,
     registry: InstanceRegistry,
 ) -> Result<(), PlatformError> {
-    validate_scope_runtime_owner(registry.root_for(scope))?;
+    validate_runtime_user()?;
     let _daemon_lock = DaemonLock::acquire(registry.root_for(scope))?;
-    crate::setup::recover_setup_staging(
-        registry.root_for(scope),
-        rustix::process::getuid().as_raw(),
-    )?;
+    crate::setup::recover_setup_staging(registry.root_for(scope))?;
     let records = registry.list_scope(scope)?;
     let daemon_server = registry.server_config(scope)?;
     let daemon_gateway = registry.gateway_config(scope)?;
@@ -214,15 +209,12 @@ pub async fn run_platform(
             "shared runtime materialization failed",
         )
     })??;
-    let (_, caddy_digest) = shared_package.caddy()?;
     crate::task_workspace::recover(
         &root.join("tmp"),
         &["caddy-tool-", "caddy-validate-"],
         "tool.lease",
-        caddy_digest,
     )?;
     let plan = DaemonPlan {
-        manifest_digest: crate::instance_registry::manifest_digest(&root)?,
         root,
         scope,
         registry: registry.clone(),
@@ -242,19 +234,11 @@ pub async fn run_platform(
     run_until_signal(loaded_instances, opts, Some(plan)).await
 }
 
-fn validate_scope_runtime_owner(root: &std::path::Path) -> Result<(), PlatformError> {
-    use std::os::unix::fs::MetadataExt;
-    let uid = rustix::process::getuid().as_raw();
-    let owner = std::fs::symlink_metadata(root).map_err(|_| {
-        PlatformError::new(
-            ErrorCode::PathInvalid,
-            "OCD_DIR is unavailable; run scoped setup before starting the daemon",
-        )
-    })?;
-    if uid == 0 || !owner.is_dir() || owner.file_type().is_symlink() || owner.uid() != uid {
+fn validate_runtime_user() -> Result<(), PlatformError> {
+    if rustix::process::getuid().as_raw() == 0 {
         return Err(PlatformError::new(
             ErrorCode::PathInvalid,
-            "OCD daemon must run as the non-root owner of OCD_DIR",
+            "OCD daemon must run as a non-root user",
         ));
     }
     Ok(())

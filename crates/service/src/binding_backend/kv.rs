@@ -164,7 +164,12 @@ pub(super) async fn dispatch(
             Ok(command) => command,
             Err(error) => {
                 drop(pin);
-                return platform_error(&error);
+                let mut response = platform_error(&error);
+                // Rejection can leave upload bytes unread; fence HTTP/1 reuse before EOF.
+                response
+                    .headers_mut()
+                    .insert(header::CONNECTION, HeaderValue::from_static("close"));
+                return response;
             }
         }
     } else {
@@ -500,9 +505,6 @@ async fn cleanup_staged(staged: &mut Option<(std::path::PathBuf, tokio::fs::File
     if let Some((path, file)) = staged.take() {
         drop(file);
         let _ = tokio::fs::remove_file(&path).await;
-        if let Some(parent) = path.parent() {
-            let _ = tokio::fs::remove_dir(parent).await;
-        }
     }
 }
 

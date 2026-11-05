@@ -1,13 +1,12 @@
 use super::*;
 
 pub(super) async fn run() {
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new_in("/tmp").unwrap();
     let runtime = verified(dir.path()).await;
     let data = dir.path().join("d");
     fs::create_dir(&data).unwrap();
     fs::create_dir(data.join("runtime")).unwrap();
     let lease = data.join("runtime/child.lease");
-    open_compute_runtime::set_start_key_hook(Some(test_start_key));
     open_compute_runtime::set_lease_write_fail(true);
     let sup = WorkerdSupervisor::new(
         WorkerdSupervisorOptions {
@@ -20,7 +19,6 @@ pub(super) async fn run() {
         },
         Vec::new(),
         Vec::new(),
-        Vec::new(),
     );
     sup.start();
     let snap = wait_state(&sup, SupervisorState::Failed).await;
@@ -28,6 +26,5 @@ pub(super) async fn run() {
     let pid = last_spawned_pid().expect("lease persistence failure must follow spawn");
     wait_reaped(pid, Duration::from_secs(3)).unwrap();
     open_compute_runtime::set_lease_write_fail(false);
-    open_compute_runtime::set_start_key_hook(None);
     sup.shutdown().await;
 }

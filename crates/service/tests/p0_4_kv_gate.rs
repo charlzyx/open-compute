@@ -16,9 +16,9 @@ use open_compute_core::{
     ResourceId,
 };
 use open_compute_runtime::{
-    DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry, OsJitter,
-    PlatformReleaseMeta, StaticConfigCompiler, SupervisorState, WorkerdSupervisor,
-    WorkerdSupervisorOptions, verify_runtime_binary,
+    DirectoryServicePath, ExternalServiceAddress, OsJitter, PlatformReleaseMeta,
+    StaticConfigCompiler, SupervisorState, WorkerdSupervisor, WorkerdSupervisorOptions,
+    verify_runtime_binary,
 };
 use open_compute_service::runtime_bridge::{
     DispatchTarget, WorkerdTransport, bind_runtime_source, serve_runtime_source,
@@ -45,7 +45,7 @@ async fn p0_4_real_kv_matrix() {
     let root = repo_root();
     let lock = root.join("packages/runtime/workerd.lock.json");
     let assets = root.join("packages/runtime");
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir_in("/tmp").unwrap();
     let storage = Arc::new(
         PlatformStorage::bootstrap(&storage_config(&temp.path().join("data")), &SystemClock)
             .unwrap(),
@@ -56,12 +56,17 @@ async fn p0_4_real_kv_matrix() {
         .await
         .expect("formal pinned runtime");
 
-    let source_auth = GenerationAuthRegistry::new();
-    let binding_auth = GenerationAuthRegistry::new();
-    let source_listener = bind_runtime_source().await.unwrap();
-    let source_addr = source_listener.local_addr().unwrap();
-    let binding_listener = bind_binding_backend().await.unwrap();
-    let binding_addr = binding_listener.local_addr().unwrap();
+    let source_listener =
+        bind_runtime_source(&storage.data_dir().runtime_dir().join("source.sock"))
+            .await
+            .unwrap();
+    let source_addr = source_listener.path().to_owned();
+
+    let binding_listener =
+        bind_binding_backend(&storage.data_dir().runtime_dir().join("binding.sock"))
+            .await
+            .unwrap();
+    let binding_addr = binding_listener.path().to_owned();
     let pins = ResourcePins::new();
     let (shutdown_tx, mut source_shutdown) = tokio::sync::watch::channel(false);
     let mut binding_shutdown = shutdown_tx.subscribe();
@@ -73,9 +78,9 @@ async fn p0_4_real_kv_matrix() {
             open_compute_service::runtime_bridge::python_runtime_pin(&runtime),
         )
         .unwrap();
-        let auth = source_auth.clone();
+
         async move {
-            serve_runtime_source(source_listener, source, auth, None, async move {
+            serve_runtime_source(source_listener, source, None, async move {
                 let _ = source_shutdown.changed().await;
             })
             .await
@@ -84,13 +89,12 @@ async fn p0_4_real_kv_matrix() {
     let binding_task = tokio::spawn({
         let binding_storage = storage.clone();
         let executor_storage = storage.clone();
-        let auth = binding_auth.clone();
+
         let pins = pins.clone();
         async move {
             serve_binding_backend(
                 binding_listener,
                 binding_storage,
-                auth,
                 pins,
                 Arc::new(SqliteKvBindingExecutor::new(
                     executor_storage,
@@ -116,16 +120,15 @@ async fn p0_4_real_kv_matrix() {
         lock.clone(),
         assets,
         storage.data_dir().runtime_dir(),
+        storage.data_dir().runtime_dir().join("ingress.sock"),
         PlatformReleaseMeta {
             version: "p0.4-gate".to_owned(),
         },
         Duration::from_secs(20),
         Redactor::new(),
-    )
-    .with_generation_auth(source_auth.clone())
-    .with_binding_generation_auth(binding_auth.clone());
+    );
     let supervisor_slot = Arc::new(Mutex::new(None));
-    let transport = WorkerdTransport::new(source_auth.clone(), supervisor_slot.clone())
+    let transport = WorkerdTransport::new(supervisor_slot.clone())
         .with_test_request_body_limit(32 * 1024 * 1024);
     let do_storage = storage
         .data_dir()
@@ -144,12 +147,11 @@ async fn p0_4_real_kv_matrix() {
             lease_path: Some(storage.data_dir().runtime_dir().join("p0-4-gate.lease")),
         },
         vec![
-            ExternalServiceAddress::loopback("runtime-source", source_addr).unwrap(),
-            ExternalServiceAddress::loopback("binding-backend", binding_addr).unwrap(),
-            ExternalServiceAddress::loopback("observability-backend", binding_addr).unwrap(),
+            ExternalServiceAddress::unix("runtime-source", &source_addr).unwrap(),
+            ExternalServiceAddress::unix("binding-backend", &binding_addr).unwrap(),
+            ExternalServiceAddress::unix("observability-backend", &binding_addr).unwrap(),
         ],
         vec![DirectoryServicePath::local("do-storage", &do_storage).unwrap()],
-        vec![source_auth, binding_auth],
     ));
     *supervisor_slot.lock().unwrap() = Some(supervisor.clone());
     supervisor.start();
@@ -175,6 +177,47 @@ async fn p0_4_real_kv_matrix() {
         version_request(account, worker.id, primary, secondary, readonly),
     )
     .await;
+
+    for (path, expected) in [
+        ("/concurrent-put", serde_json::json!(["concurrent"])),
+        (
+            "/concurrent-get",
+            serde_json::json!(["shared-value", "shared-value", null]),
+        ),
+    ] {
+        let requests = (0..20).map(|_| {
+            dispatch(
+                &transport,
+                &repository,
+                account,
+                worker.id,
+                &version,
+                path,
+                "",
+            )
+        });
+        for response in futures::future::join_all(requests).await {
+            assert_eq!(response.status, 200, "{path}: {}", response.body);
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&response.body).unwrap(),
+                expected
+            );
+        }
+    }
+    let concurrent_deleted = dispatch(
+        &transport,
+        &repository,
+        account,
+        worker.id,
+        &version,
+        "/concurrent-delete",
+        "",
+    )
+    .await;
+    assert_eq!(
+        (concurrent_deleted.status, concurrent_deleted.body.as_str()),
+        (200, "deleted")
+    );
 
     let seeded = dispatch(
         &transport,
@@ -417,13 +460,28 @@ async fn p0_4_real_kv_matrix() {
     assert_eq!(pins.count(secondary), 0);
     assert_eq!(pins.count(readonly), 0);
     let write_staging = storage.data_dir().root().join("kv/.staging-write");
-    assert!(std::fs::read_dir(write_staging).unwrap().next().is_none());
+    for entry in std::fs::read_dir(&write_staging).unwrap() {
+        assert!(
+            std::fs::read_dir(entry.unwrap().path())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
 
     supervisor.shutdown().await;
     assert_eq!(supervisor.owner_registry_len(), 0);
     let _ = shutdown_tx.send(true);
     source_task.await.unwrap().unwrap();
     binding_task.await.unwrap().unwrap();
+    assert_eq!(
+        open_compute_storage::kv::KvPaths::open(storage.data_dir().root())
+            .unwrap()
+            .cleanup_write_staging()
+            .unwrap(),
+        0
+    );
+    assert!(std::fs::read_dir(write_staging).unwrap().next().is_none());
     assert_eq!(pins.count(primary), 0);
     assert_eq!(pins.count(secondary), 0);
     assert_eq!(pins.count(readonly), 0);

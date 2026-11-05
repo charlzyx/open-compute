@@ -14,7 +14,7 @@ impl<'a> WorkerRepository<'a> {
             let state: Option<String> = tx
                 .query_row(
                     "SELECT state FROM worker_versions WHERE id = ?1",
-                    [version_id.to_string()],
+                    [version_id],
                     |row| row.get(0),
                 )
                 .optional()
@@ -28,7 +28,7 @@ impl<'a> WorkerRepository<'a> {
             tx.execute(
                 "INSERT OR IGNORE INTO version_referrers
                  (version_id, kind, ref_id, created_at_ms) VALUES (?1, ?2, ?3, ?4)",
-                params![version_id.to_string(), kind, ref_id, now_ms],
+                params![version_id, kind, ref_id, now_ms],
             )
             .map_err(|_| db_error())?;
             Ok(())
@@ -47,7 +47,7 @@ impl<'a> WorkerRepository<'a> {
             tx.execute(
                 "DELETE FROM version_referrers
                  WHERE version_id = ?1 AND kind = ?2 AND ref_id = ?3",
-                params![version_id.to_string(), kind, ref_id],
+                params![version_id, kind, ref_id],
             )
             .map_err(|_| db_error())?;
             Ok(())
@@ -68,11 +68,9 @@ impl<'a> WorkerRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = stmt
-                .query_map([version_id.to_string()], |row| {
-                    let id: String = row.get(0)?;
+                .query_map([version_id], |row| {
                     Ok(VersionReferrer {
-                        version_id: VersionId::from_str(&id)
-                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        version_id: row.get(0)?,
                         kind: row.get(1)?,
                         ref_id: row.get(2)?,
                         created_at_ms: row.get(3)?,
@@ -94,7 +92,6 @@ impl<'a> WorkerRepository<'a> {
             // Tombstoned Workers keep their versions until retention. The live-worker
             // guard would make those versions unreachable and pin their artifacts.
             let worker = read_worker_tx(tx, instance_id, worker_id)?;
-            require_tenant_worker(&worker)?;
             if worker.active_version_id == Some(version_id) {
                 return Err(PlatformError::new(
                     ErrorCode::VersionActive,
@@ -104,7 +101,7 @@ impl<'a> WorkerRepository<'a> {
             let referenced: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM version_referrers WHERE version_id = ?1)",
-                    [version_id.to_string()],
+                    [version_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -117,7 +114,7 @@ impl<'a> WorkerRepository<'a> {
             let state: Option<String> = tx
                 .query_row(
                     "SELECT state FROM worker_versions WHERE id = ?1 AND worker_id = ?2",
-                    params![version_id.to_string(), worker_id.to_string()],
+                    params![version_id, worker_id],
                     |row| row.get(0),
                 )
                 .optional()
@@ -129,7 +126,7 @@ impl<'a> WorkerRepository<'a> {
                 .execute(
                     "UPDATE worker_versions SET state = 'deleting'
                  WHERE id = ?1 AND worker_id = ?2 AND state IN ('ready', 'rejected')",
-                    params![version_id.to_string(), worker_id.to_string()],
+                    params![version_id, worker_id],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -156,7 +153,7 @@ impl<'a> WorkerRepository<'a> {
                         SELECT 1 FROM worker_versions
                         WHERE id = ?1 AND worker_id = ?2 AND state = 'deleting'
                     )",
-                    params![version_id.to_string(), worker_id.to_string()],
+                    params![version_id, worker_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -166,7 +163,7 @@ impl<'a> WorkerRepository<'a> {
             let referenced: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM version_referrers WHERE version_id = ?1)",
-                    [version_id.to_string()],
+                    [version_id],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -181,7 +178,7 @@ impl<'a> WorkerRepository<'a> {
                 .execute(
                     "UPDATE worker_versions SET state = 'tombstoned', deleted_at_ms = ?1
                  WHERE id = ?2 AND worker_id = ?3 AND state = 'deleting'",
-                    params![now_ms, version_id.to_string(), worker_id.to_string()],
+                    params![now_ms, version_id, worker_id],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -220,10 +217,7 @@ impl<'a> WorkerRepository<'a> {
                 .prepare("SELECT id FROM worker_versions WHERE state = 'deleting' ORDER BY id")
                 .map_err(|_| db_error())?;
             let rows = stmt
-                .query_map([], |row| {
-                    let id: String = row.get(0)?;
-                    VersionId::from_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)
-                })
+                .query_map([], |row| row.get(0))
                 .map_err(|_| db_error())?;
             collect_rows(rows)
         })
@@ -256,7 +250,7 @@ impl<'a> WorkerRepository<'a> {
                     )
                     .map_err(|_| db_error())?;
                 let rows = stmt
-                    .query_map([i64::from(limit)], |row| row.get::<_, String>(0))
+                    .query_map([i64::from(limit)], |row| row.get::<_, VersionId>(0))
                     .map_err(|_| db_error())?;
                 let mut out = Vec::new();
                 for row in rows {
@@ -266,7 +260,7 @@ impl<'a> WorkerRepository<'a> {
             };
             let mut recovered = 0_u32;
             for version in candidates {
-                let version_id = VersionId::from_str(&version).map_err(|_| invariant())?;
+                let version_id = version;
                 delete_version_products(tx, version_id)?;
                 let changed = tx
                     .execute(
@@ -281,7 +275,7 @@ impl<'a> WorkerRepository<'a> {
                         tx,
                         "version.delete.recover",
                         "version",
-                        &version,
+                        &version.to_string(),
                         request_id,
                         br#"{"state":"tombstoned"}"#,
                         now_ms,
@@ -302,12 +296,11 @@ impl<'a> WorkerRepository<'a> {
             ));
         }
         self.db.with_immediate(|tx| {
-            let identity: String = tx
+            let instance_id: InstanceId = tx
                 .query_row("SELECT instance_id FROM instance_identity", [], |row| {
                     row.get(0)
                 })
                 .map_err(|_| invariant())?;
-            let instance_id = InstanceId::from_str(&identity).map_err(|_| invariant())?;
             let expired = {
                 let mut stmt = tx
                     .prepare(
@@ -421,16 +414,10 @@ impl<'a> WorkerRepository<'a> {
                         i64::from(limit)
                     ],
                     |row| {
-                        let version: String = row.get(0)?;
-                        let worker: String = row.get(1)?;
-                        let instance: String = row.get(2)?;
                         Ok(RetentionCandidate {
-                            instance_id: InstanceId::from_str(&instance)
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                            worker_id: WorkerId::from_str(&worker)
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                            version_id: VersionId::from_str(&version)
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            instance_id: row.get(2)?,
+                            worker_id: row.get(1)?,
+                            version_id: row.get(0)?,
                         })
                     },
                 )
@@ -518,8 +505,7 @@ fn delete_version_products(tx: &Transaction<'_>, version: VersionId) -> Result<(
         "DELETE FROM version_python_prepared WHERE version_id=?1",
         "DELETE FROM version_containers WHERE version_id=?1",
     ] {
-        tx.execute(statement, [version.to_string()])
-            .map_err(|_| db_error())?;
+        tx.execute(statement, [version]).map_err(|_| db_error())?;
     }
     crate::assets::delete_version_assets(tx, version)
 }

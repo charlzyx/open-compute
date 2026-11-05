@@ -14,6 +14,7 @@ const TEST_EIGHT_VALUE: &str = "T0NEVgECBEAgAAAAAAAA";
 
 mod durable_history_tests;
 mod durable_protocol_tests;
+mod retention_tests;
 
 #[test]
 fn workflow_projection_rejects_another_instance() {
@@ -138,7 +139,7 @@ fn durable_operation_rejection_requires_a_non_null_code_on_insert_update_and_ins
     );
     drop(conn);
     assert_eq!(
-        crate::scheduler::inspect_scheduler_db(&_temp.path().join("scheduler.sqlite"), 5000, 2)
+        crate::scheduler::inspect_scheduler_db(&_temp.path().join("control.sqlite"), 5000, 2)
             .unwrap_err()
             .code(),
         ErrorCode::WorkflowInvariantViolation
@@ -310,7 +311,7 @@ fn scheduler_create_batch_is_atomic_and_idempotent_by_durable_operations() {
 fn setup() -> (tempfile::TempDir, SchedulerStore, WorkflowInstanceIdentity) {
     let temp = tempfile::tempdir().unwrap();
     let store = SchedulerStore::open(
-        &temp.path().join("scheduler.sqlite"),
+        &temp.path().join("control.sqlite"),
         5000,
         0,
         "019c0000000070008000000000000001".parse().unwrap(),

@@ -91,7 +91,6 @@ export async function handleWorkflow(
       env,
       { loaderKey, expected },
       validation ? "probe" : "runtime",
-      request.headers.get("x-open-compute-internal-token"),
     );
     const built = modulesFor(snapshot, validation, className, false, true);
     const versionId = loaderKey.split("/")[2]!;
@@ -104,7 +103,6 @@ export async function handleWorkflow(
           env,
           snapshot,
           validation ? "probe" : "runtime",
-          request.headers.get("x-open-compute-internal-token"),
         )),
         mainModule: built.mainModule,
         modules: built.modules,

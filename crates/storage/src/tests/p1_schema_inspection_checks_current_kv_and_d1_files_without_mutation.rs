@@ -141,7 +141,7 @@ fn p1_schema_inspection_checks_current_kv_and_d1_files_without_mutation() {
         .execute(
             "INSERT INTO index_meta(singleton, resource_id, dimensions, metric, quota_vectors,
                quota_bytes) VALUES(1, ?1, 32, 'cosine', 100, 16777216)",
-            rusqlite::params![vectorize.id.to_string()],
+            rusqlite::params![vectorize.id],
         )
         .unwrap();
     drop(vectorize_connection);
@@ -198,7 +198,7 @@ fn p1_schema_inspection_checks_current_kv_and_d1_files_without_mutation() {
                keyword_enabled, active_index_generation, active_epoch, config_generation,
                created_at_ms, updated_at_ms)
              VALUES(1, ?1, ?2, X'7B7D', X'7B7D', 0, 0, 1, 1, 1, 1, 0, 0)",
-            rusqlite::params![ai_search.id.to_string(), [7u8; 32].as_slice()],
+            rusqlite::params![ai_search.id, [7u8; 32].as_slice()],
         )
         .unwrap();
     drop(ai_search_connection);
@@ -312,18 +312,6 @@ fn p1_schema_inspection_checks_current_kv_and_d1_files_without_mutation() {
         crate::schema_inspection::inspect_current_schema(&data_dir, &control, 5_000).unwrap(),
         owned
     );
-    let directory = kv_paths.namespace_dir(account, kv.id);
-    let relocated = directory.with_extension("held");
-    fs::rename(&directory, &relocated).unwrap();
-    std::os::unix::fs::symlink(&relocated, &directory).unwrap();
-    assert_eq!(
-        crate::schema_inspection::inspect_current_schema(&data_dir, &control, 5_000)
-            .unwrap_err()
-            .code(),
-        ErrorCode::PathInvalid
-    );
-    fs::remove_file(&directory).unwrap();
-    fs::rename(&relocated, &directory).unwrap();
     let file = kv_paths.database_path(account, kv.id);
     fs::remove_file(&file).unwrap();
     assert!(crate::schema_inspection::inspect_current_schema(&data_dir, &control, 5_000).is_err());

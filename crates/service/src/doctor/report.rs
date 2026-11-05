@@ -7,6 +7,7 @@ mod storage;
 pub async fn doctor_report(
     loaded: &LoadedConfig,
     mode: DoctorMode,
+    scope: ServiceScope,
     gateway: Option<&open_compute_core::PublicGatewayConfig>,
 ) -> DoctorReport {
     let mut checks = Vec::new();
@@ -18,6 +19,7 @@ pub async fn doctor_report(
     storage::inspect_full(
         loaded,
         mode,
+        scope,
         inspect.as_ref(),
         db_ok.as_ref(),
         object_backend.as_ref(),
@@ -150,7 +152,6 @@ mod tests {
         config.public_gateway = Some(domain.clone());
         let loaded = LoadedConfig {
             path: temp.path().join("open-compute.toml"),
-            sha256: String::new(),
             config,
         };
         let mut checks = Vec::new();

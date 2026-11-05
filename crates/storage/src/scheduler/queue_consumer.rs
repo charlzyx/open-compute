@@ -1,4 +1,4 @@
-//! Durable Queue consumer projection, delivery lease, completion, and DLQ authority.
+//! Durable Queue consumer projection, delivery claims, completion, and DLQ authority.
 
 #[path = "queue_consumer/helpers.rs"]
 mod helpers;
@@ -13,7 +13,6 @@ use open_compute_core::{
     ErrorCode, InstanceId, PlatformError, QueueBatchId, QueueConsumerId, QueueId, QueueMessageId,
     VersionId, WorkerId, WorkloadSummary,
 };
-use rand::TryRngCore as _;
 use rusqlite::{OptionalExtension as _, Transaction, TransactionBehavior, params};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -22,7 +21,8 @@ use super::QueueContentType;
 
 /// Exact control-authoritative consumer target copied into the scheduler database.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueueConsumerProjection {
+#[cfg(any(test, feature = "test-support"))]
+pub struct NewQueueConsumer {
     /// Live attachment identity.
     pub consumer_id: QueueConsumerId,
     /// Source Queue identity.
@@ -83,12 +83,12 @@ pub struct ClaimedQueueBatch {
     pub execution_generation: u64,
     /// Optional named entrypoint.
     pub entrypoint: Option<String>,
+    /// Frozen maximum retries after initial delivery.
+    pub max_retries: u32,
+    /// Frozen dead-letter target and lifecycle.
+    pub dead_letter_queue: Option<(QueueId, u64)>,
     /// Frozen consumer default retry delay.
     pub retry_delay_seconds: u32,
-    /// Secret scheduler-only completion fence.
-    pub claim_token: [u8; 32],
-    /// Persisted lease expiry.
-    pub claim_until_ms: i64,
     /// Frozen messages in deterministic order.
     pub messages: Vec<ClaimedQueueMessage>,
 }
@@ -127,7 +127,7 @@ pub struct QueueCompletionSummary {
     pub dlq_pending: u64,
     /// Terminal messages discarded without a DLQ or after retention expiry.
     pub discarded: u64,
-    /// Whether the supplied token/generation was already stale.
+    /// Whether the supplied batch is no longer claimed.
     pub stale: bool,
 }
 
@@ -187,10 +187,11 @@ struct MessageRow {
 }
 
 impl SchedulerStore {
-    /// Idempotently stage or verify one exact consumer projection.
-    pub fn ensure_queue_consumer_projection(
+    /// Seed a scheduler consumer for product tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn insert_queue_consumer(
         &self,
-        projection: &QueueConsumerProjection,
+        projection: &NewQueueConsumer,
     ) -> Result<(), PlatformError> {
         projection.config.validate(4096)?;
         if projection.consumer_generation == 0 || projection.execution_generation == 0 {
@@ -211,7 +212,7 @@ impl SchedulerStore {
                   execution_generation, entrypoint, state, max_batch_size,
                   max_batch_timeout_ms, max_retries, retry_delay_seconds, max_concurrency,
                   dlq_queue_id, dlq_queue_generation, descriptor_sha256, updated_at_ms)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'staged', ?8, ?9, ?10, ?11,
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?10, ?11,
                          ?12, ?13, ?14, ?15, ?16)",
                 params![
                     projection.consumer_id.to_string(),
@@ -232,133 +233,7 @@ impl SchedulerStore {
                     projection.updated_at_ms,
                 ],
             )
-            .map_err(consumer_sql_error)?;
-        let exact: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM queue_consumer_state
-                  WHERE consumer_id = ?1 AND queue_id = ?2 AND consumer_generation = ?3
-                    AND version_id = ?4 AND worker_id = ?5 AND execution_generation = ?6
-                    AND entrypoint IS ?7 AND max_batch_size = ?8
-                    AND max_batch_timeout_ms = ?9 AND max_retries = ?10
-                    AND retry_delay_seconds = ?11 AND max_concurrency = ?12
-                    AND dlq_queue_id IS ?13 AND dlq_queue_generation IS ?14
-                    AND descriptor_sha256 = ?15)",
-                params![
-                    projection.consumer_id.to_string(),
-                    projection.queue_id.to_string(),
-                    as_i64(projection.consumer_generation)?,
-                    projection.version_id.to_string(),
-                    projection.worker_id.to_string(),
-                    as_i64(projection.execution_generation)?,
-                    projection.entrypoint,
-                    i64::from(projection.config.max_batch_size),
-                    i64::from(projection.config.max_batch_timeout_seconds) * 1000,
-                    i64::from(projection.config.max_retries),
-                    i64::from(projection.config.retry_delay_seconds),
-                    i64::from(projection.config.max_concurrency),
-                    projection
-                        .dead_letter_queue
-                        .map(|value| value.0.to_string()),
-                    projection
-                        .dead_letter_queue
-                        .map(|value| as_i64(value.1))
-                        .transpose()?,
-                    projection.descriptor_sha256.as_slice(),
-                ],
-                |row| row.get(0),
-            )
             .map_err(map_sql_error)?;
-        if !exact {
-            return Err(PlatformError::new(
-                ErrorCode::QueueConsumerProjectionPending,
-                "Queue consumer projection conflicts with frozen authority",
-            ));
-        }
-        drop(connection);
-        self.wake.notify();
-        Ok(())
-    }
-
-    /// Move an exact staged or paused projection into accepting state.
-    pub fn activate_queue_consumer(
-        &self,
-        consumer_id: QueueConsumerId,
-        consumer_generation: u64,
-        now_ms: i64,
-    ) -> Result<(), PlatformError> {
-        self.set_queue_consumer_state(
-            consumer_id,
-            consumer_generation,
-            "accepting",
-            &["staged", "paused", "accepting"],
-            now_ms,
-        )
-    }
-
-    /// Pause one exact consumer generation without changing its backlog.
-    pub fn pause_queue_consumer(
-        &self,
-        consumer_id: QueueConsumerId,
-        consumer_generation: u64,
-        now_ms: i64,
-    ) -> Result<(), PlatformError> {
-        self.set_queue_consumer_state(
-            consumer_id,
-            consumer_generation,
-            "paused",
-            &["accepting", "paused"],
-            now_ms,
-        )
-    }
-
-    /// Stop new claims for an exact consumer generation before update or delete.
-    pub fn drain_queue_consumer(
-        &self,
-        consumer_id: QueueConsumerId,
-        consumer_generation: u64,
-        now_ms: i64,
-    ) -> Result<u64, PlatformError> {
-        self.set_queue_consumer_state(
-            consumer_id,
-            consumer_generation,
-            "draining",
-            &["staged", "accepting", "paused", "draining"],
-            now_ms,
-        )?;
-        self.queue_consumer_in_flight(consumer_id, consumer_generation)
-    }
-
-    /// Delete a drained projection; already absent is idempotent success.
-    pub fn delete_queue_consumer_projection(
-        &self,
-        consumer_id: QueueConsumerId,
-        consumer_generation: u64,
-    ) -> Result<(), PlatformError> {
-        let connection = self.lock()?;
-        let in_flight: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM queue_delivery_batches
-                  WHERE consumer_id = ?1 AND consumer_generation = ?2)",
-                params![consumer_id.to_string(), as_i64(consumer_generation)?],
-                |row| row.get(0),
-            )
-            .map_err(map_sql_error)?;
-        if in_flight {
-            return Err(PlatformError::new(
-                ErrorCode::QueueConsumerProjectionPending,
-                "Queue consumer still has in-flight batches",
-            ));
-        }
-        connection
-            .execute(
-                "DELETE FROM queue_consumer_state
-                 WHERE consumer_id = ?1 AND consumer_generation = ?2
-                   AND state IN ('staged', 'draining', 'deleting')",
-                params![consumer_id.to_string(), as_i64(consumer_generation)?],
-            )
-            .map_err(consumer_sql_error)?;
-        drop(connection);
-        self.wake.notify();
         Ok(())
     }
 
@@ -366,25 +241,16 @@ impl SchedulerStore {
     pub fn claim_queue_batches(
         &self,
         now_ms: i64,
-        lease_ms: u64,
-        infrastructure_backoff_ms: u64,
         max_batches: u32,
         after_queue_id: Option<QueueId>,
-    ) -> Result<(Vec<ClaimedQueueBatch>, u64), PlatformError> {
-        if lease_ms == 0 || max_batches == 0 {
+    ) -> Result<Vec<ClaimedQueueBatch>, PlatformError> {
+        if max_batches == 0 {
             return Err(consumer_invariant());
         }
-        let claim_until_ms = add_ms(now_ms, lease_ms)?;
         let mut connection = self.lock()?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(consumer_sql_error)?;
-        let recovered = recover_expired_batches_tx(
-            &tx,
-            now_ms,
-            infrastructure_backoff_ms,
-            max_batches.saturating_mul(4),
-        )?;
+            .map_err(map_sql_error)?;
         let consumers = eligible_consumers_tx(&tx, now_ms, max_batches, after_queue_id)?;
         let mut batches = Vec::with_capacity(consumers.len());
         for consumer in consumers {
@@ -393,13 +259,11 @@ impl SchedulerStore {
                 continue;
             }
             let batch_id = QueueBatchId::generate();
-            let claim_token = random_claim_token()?;
             tx.execute(
                 "INSERT INTO queue_delivery_batches
                  (id, queue_id, consumer_id, consumer_generation, version_id,
-                  execution_generation, entrypoint, claim_token, state, claimed_at_ms,
-                  claim_until_ms, message_count, created_at_ms)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'claimed', ?9, ?10, ?11, ?9)",
+                  execution_generation, entrypoint, state, message_count, created_at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'claimed', ?8, ?9)",
                 params![
                     batch_id.to_string(),
                     consumer.queue_id.to_string(),
@@ -408,27 +272,22 @@ impl SchedulerStore {
                     consumer.version_id.to_string(),
                     as_i64(consumer.execution_generation)?,
                     consumer.entrypoint,
-                    claim_token.as_slice(),
-                    now_ms,
-                    claim_until_ms,
                     i64::try_from(messages.len()).map_err(|_| consumer_invariant())?,
+                    now_ms,
                 ],
             )
-            .map_err(consumer_sql_error)?;
+            .map_err(map_sql_error)?;
             for message in &messages {
                 let changed = tx
                     .execute(
                         "UPDATE queue_messages
-                         SET state = 'claimed', claim_token = ?1, claim_until_ms = ?2,
-                             claimed_at_ms = ?3, claim_batch_id = ?4, consumer_id = ?5,
-                             consumer_generation = ?6
-                         WHERE seq = ?7 AND state = 'ready' AND available_at_ms <= ?3
-                           AND expires_at_ms > ?3 AND NOT EXISTS (
+                         SET state = 'claimed', claim_batch_id = ?2, consumer_id = ?3,
+                             consumer_generation = ?4
+                         WHERE seq = ?5 AND state = 'ready' AND available_at_ms <= ?1
+                           AND expires_at_ms > ?1 AND NOT EXISTS (
                              SELECT 1 FROM queue_dlq_pending p WHERE p.message_id = queue_messages.id
                            )",
                         params![
-                            claim_token.as_slice(),
-                            claim_until_ms,
                             now_ms,
                             batch_id.to_string(),
                             consumer.consumer_id.to_string(),
@@ -436,7 +295,7 @@ impl SchedulerStore {
                             message.seq,
                         ],
                     )
-                    .map_err(consumer_sql_error)?;
+                    .map_err(map_sql_error)?;
                 if changed != 1 {
                     return Err(consumer_invariant());
                 }
@@ -451,9 +310,9 @@ impl SchedulerStore {
                 worker_id: consumer.worker_id,
                 execution_generation: consumer.execution_generation,
                 entrypoint: consumer.entrypoint,
+                max_retries: consumer.config.max_retries,
+                dead_letter_queue: consumer.dead_letter_queue,
                 retry_delay_seconds: consumer.config.retry_delay_seconds,
-                claim_token,
-                claim_until_ms,
                 messages: messages
                     .into_iter()
                     .map(|message| ClaimedQueueMessage {
@@ -466,11 +325,11 @@ impl SchedulerStore {
                     .collect(),
             });
         }
-        tx.commit().map_err(consumer_sql_error)?;
-        Ok((batches, recovered))
+        tx.commit().map_err(map_sql_error)?;
+        Ok(batches)
     }
 
-    /// Apply a complete known disposition under the exact batch token and generation.
+    /// Apply a complete known disposition under the claimed batch id and generation.
     pub fn complete_queue_batch(
         &self,
         batch: &ClaimedQueueBatch,
@@ -499,27 +358,19 @@ impl SchedulerStore {
         let mut connection = self.lock()?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(consumer_sql_error)?;
-        let authority: Option<(i64, Vec<u8>)> = tx
+            .map_err(map_sql_error)?;
+        let authority: Option<i64> = tx
             .query_row(
-                "SELECT consumer_generation, claim_token FROM queue_delivery_batches
-                 WHERE id = ?1 AND consumer_id = ?2",
+                "SELECT consumer_generation FROM queue_delivery_batches
+                 WHERE id = ?1 AND consumer_id = ?2 AND state = 'claimed'",
                 params![batch.id.to_string(), batch.consumer_id.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .optional()
             .map_err(map_sql_error)?;
-        if authority.as_ref().is_none_or(|(generation, token)| {
+        if authority.as_ref().is_none_or(|generation| {
             u64::try_from(*generation).ok() != Some(batch.consumer_generation)
-                || token.as_slice() != batch.claim_token
         }) {
-            return Ok(QueueCompletionSummary {
-                stale: true,
-                ..QueueCompletionSummary::default()
-            });
-        }
-        let consumer = read_consumer_tx(&tx, batch.consumer_id)?;
-        if consumer.consumer_generation != batch.consumer_generation {
             return Ok(QueueCompletionSummary {
                 stale: true,
                 ..QueueCompletionSummary::default()
@@ -549,10 +400,10 @@ impl SchedulerStore {
                     if now_ms >= message.expires_at_ms {
                         delete_claimed_message_tx(&tx, &message, batch)?;
                         summary.discarded += 1;
-                    } else if u32::from(delivery) <= consumer.config.max_retries {
+                    } else if u32::from(delivery) <= batch.max_retries {
                         retry_message_tx(&tx, &message, batch, delivery, now_ms, delay_seconds)?;
                         summary.retried += 1;
-                    } else if let Some(target) = consumer.dead_letter_queue {
+                    } else if let Some(target) = batch.dead_letter_queue {
                         if move_to_dlq_tx(&tx, &message, batch, target, delivery, now_ms)? {
                             summary.dead_lettered += 1;
                         } else {
@@ -573,7 +424,7 @@ impl SchedulerStore {
                                     now_ms,
                                 ],
                             )
-                            .map_err(consumer_sql_error)?;
+                            .map_err(map_sql_error)?;
                             summary.dlq_pending += 1;
                         }
                     } else {
@@ -587,45 +438,21 @@ impl SchedulerStore {
             .execute(
                 "DELETE FROM queue_delivery_batches
                  WHERE id = ?1 AND consumer_id = ?2 AND consumer_generation = ?3
-                   AND claim_token = ?4",
+                   AND state = 'claimed'",
                 params![
                     batch.id.to_string(),
                     batch.consumer_id.to_string(),
                     as_i64(batch.consumer_generation)?,
-                    batch.claim_token.as_slice(),
                 ],
             )
-            .map_err(consumer_sql_error)?;
+            .map_err(map_sql_error)?;
         if deleted != 1 {
             return Err(consumer_invariant());
         }
-        tx.commit().map_err(consumer_sql_error)?;
+        tx.commit().map_err(map_sql_error)?;
         drop(connection);
         self.wake.notify();
         Ok(summary)
-    }
-
-    /// Recover a bounded set of expired Queue batch leases without consuming tenant retries.
-    pub fn recover_expired_queue_batches(
-        &self,
-        now_ms: i64,
-        infrastructure_backoff_ms: u64,
-        limit: u32,
-    ) -> Result<u64, PlatformError> {
-        if limit == 0 {
-            return Err(consumer_invariant());
-        }
-        let mut connection = self.lock()?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(consumer_sql_error)?;
-        let recovered = recover_expired_batches_tx(&tx, now_ms, infrastructure_backoff_ms, limit)?;
-        tx.commit().map_err(consumer_sql_error)?;
-        if recovered > 0 {
-            drop(connection);
-            self.wake.notify();
-        }
-        Ok(recovered)
     }
 
     /// Move a bounded number of due DLQ-pending messages atomically when targets admit them.
@@ -641,7 +468,7 @@ impl SchedulerStore {
         let mut connection = self.lock()?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(consumer_sql_error)?;
+            .map_err(map_sql_error)?;
         let ids = {
             let mut statement = tx
                 .prepare(
@@ -670,12 +497,12 @@ impl SchedulerStore {
             let message = ready_message_by_id_tx(&tx, &id)?;
             if now_ms >= message.expires_at_ms {
                 tx.execute("DELETE FROM queue_dlq_pending WHERE message_id = ?1", [&id])
-                    .map_err(consumer_sql_error)?;
+                    .map_err(map_sql_error)?;
                 tx.execute(
                     "DELETE FROM queue_messages WHERE seq = ?1 AND state = 'ready'",
                     [message.seq],
                 )
-                .map_err(consumer_sql_error)?;
+                .map_err(map_sql_error)?;
                 summary.expired += 1;
                 continue;
             }
@@ -685,7 +512,7 @@ impl SchedulerStore {
             );
             if move_ready_to_dlq_tx(&tx, &message, target, now_ms)? {
                 tx.execute("DELETE FROM queue_dlq_pending WHERE message_id = ?1", [&id])
-                    .map_err(consumer_sql_error)?;
+                    .map_err(map_sql_error)?;
                 summary.moved += 1;
             } else {
                 tx.execute(
@@ -693,53 +520,15 @@ impl SchedulerStore {
                             last_error_code = 'QUEUE_DLQ_BACKPRESSURED' WHERE message_id = ?2",
                     params![add_ms(now_ms, retry_backoff_ms)?, id],
                 )
-                .map_err(consumer_sql_error)?;
+                .map_err(map_sql_error)?;
                 summary.deferred += 1;
             }
         }
-        tx.commit().map_err(consumer_sql_error)?;
+        tx.commit().map_err(map_sql_error)?;
         if summary.moved > 0 || summary.expired > 0 {
             drop(connection);
             self.wake.notify();
         }
         Ok(summary)
-    }
-
-    fn set_queue_consumer_state(
-        &self,
-        consumer_id: QueueConsumerId,
-        consumer_generation: u64,
-        target: &str,
-        sources: &[&str],
-        now_ms: i64,
-    ) -> Result<(), PlatformError> {
-        let connection = self.lock()?;
-        let placeholders = (0..sources.len())
-            .map(|index| format!("?{}", index + 5))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "UPDATE queue_consumer_state SET state = ?1, updated_at_ms = ?2
-             WHERE consumer_id = ?3 AND consumer_generation = ?4 AND state IN ({placeholders})"
-        );
-        let mut values: Vec<rusqlite::types::Value> = vec![
-            target.to_owned().into(),
-            now_ms.into(),
-            consumer_id.to_string().into(),
-            as_i64(consumer_generation)?.into(),
-        ];
-        values.extend(sources.iter().map(|source| (*source).to_owned().into()));
-        let changed = connection
-            .execute(&sql, rusqlite::params_from_iter(values))
-            .map_err(consumer_sql_error)?;
-        if changed != 1 {
-            return Err(PlatformError::new(
-                ErrorCode::QueueConsumerGenerationStale,
-                "Queue consumer generation or state is stale",
-            ));
-        }
-        drop(connection);
-        self.wake.notify();
-        Ok(())
     }
 }

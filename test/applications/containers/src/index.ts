@@ -1,6 +1,10 @@
 import { Container } from "@cloudflare/containers";
 import { execLifecycle } from "./exec-lifecycle";
 import { execUsersLifecycle } from "./exec-users-lifecycle";
+import {
+  fixtureErrorCode,
+  fixtureFailureDiagnostic,
+} from "./failure-diagnostic";
 import { RawIdleContainer } from "./inactivity-lifecycle";
 import { NamedImageContainer } from "./named-images";
 import { networkLifecycle } from "./network-lifecycle";
@@ -20,45 +24,16 @@ interface FixtureDiagnostic {
   output?: { exitCode: number; stdoutBytes: number; stderrBytes: number };
 }
 
-function fixtureErrorCode(error: unknown): string | null {
-  const message = error instanceof Error ? error.message : "";
-  const nativeMessages = [
-    ["Container operation failed.", "CONTAINER_OPERATION_FAILED"],
-    ["The Container is not running.", "CONTAINER_NOT_RUNNING"],
-    ["Container execution authority changed.", "CONTAINER_AUTHORITY_CHANGED"],
-    ["Container port connection closed unexpectedly.", "CONTAINER_PORT_CLOSED"],
-    ["Container port connection read aborted.", "CONTAINER_PORT_READ_ABORTED"],
-  ] as const;
-  return (
-    [
-      "DO_RUNTIME_EXCEPTION",
-      "DO_ID_INVALID",
-      "DO_NAMESPACE_NOT_FOUND",
-      "DO_INTERNAL_PROTOCOL_ERROR",
-      "SERVICE_BINDING_DENIED",
-      "DO_RPC_UNSUPPORTED",
-    ].find((code) => message === code) ??
-    nativeMessages.find(([text]) => message === text)?.[1] ??
-    null
-  );
-}
-
-function fixtureFailure(
+async function fixtureFailure(
   error: unknown,
   diagnostic: FixtureDiagnostic,
-): Response {
+): Promise<Response> {
   return Response.json(
     {
       ok: false,
       diagnostic: "controlled-fixture",
       ...diagnostic,
-      nativeErrorCode: fixtureErrorCode(error),
-      nativeErrorClass:
-        error instanceof TypeError
-          ? "TypeError"
-          : error instanceof Error
-            ? "Error"
-            : "Unknown",
+      ...(await fixtureFailureDiagnostic(error)),
     },
     { status: 500 },
   );
@@ -82,7 +57,12 @@ export class FixtureContainer extends Container<Env> {
             headers: { "X-P23-Reply": "tls-ok", Connection: "close" },
           });
         }
-        return new Response(env.CODE_REVISION);
+        return new Response(env.CODE_REVISION, {
+          headers: {
+            "X-Fixture-Code-Present":
+              typeof env.CODE_REVISION === "string" ? "1" : "0",
+          },
+        });
       },
     };
   }
@@ -378,7 +358,7 @@ export class FixtureContainer extends Container<Env> {
     const egress = await native.exec([
       "python3",
       "-c",
-      "import http.client; connection = http.client.HTTPConnection('203.0.113.1', 80, timeout=10); connection.request('GET', '/', headers={'Host': 'p23-egress.invalid'}); response = connection.getresponse(); print(response.read().decode()); connection.close(); raise SystemExit(0 if response.status == 200 else 1)",
+      "import http.client, sys; connection = http.client.HTTPConnection('203.0.113.1', 80, timeout=10); connection.request('GET', '/', headers={'Host': 'p23-egress.invalid'}); response = connection.getresponse(); payload = response.read(); print('egress-status=' + str(response.status) + ';code-present=' + response.getheader('X-Fixture-Code-Present', 'missing') + ';body-bytes=' + str(len(payload)), file=sys.stderr); print(payload.decode()); connection.close(); raise SystemExit(0 if response.status == 200 else 1)",
     ]);
     diagnostic.phase = "egress-output";
     const egressOutput = await egress.output();
@@ -387,6 +367,22 @@ export class FixtureContainer extends Container<Env> {
       stdoutBytes: egressOutput.stdout.byteLength,
       stderrBytes: egressOutput.stderr.byteLength,
     };
+    const egressStatus =
+      /^egress-status=(\d{3});code-present=([01]|missing);body-bytes=(\d+)\n$/.exec(
+        new TextDecoder().decode(egressOutput.stderr),
+      );
+    this.ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS fixture_egress_diagnostic (status INTEGER, code_present TEXT, body_bytes INTEGER, stdout_bytes INTEGER NOT NULL, stderr_bytes INTEGER NOT NULL, exit_code INTEGER NOT NULL)",
+    );
+    this.ctx.storage.sql.exec(
+      "INSERT INTO fixture_egress_diagnostic VALUES (?, ?, ?, ?, ?, ?)",
+      egressStatus === null ? null : Number(egressStatus[1]),
+      egressStatus === null ? null : egressStatus[2],
+      egressStatus === null ? null : Number(egressStatus[3]),
+      egressOutput.stdout.byteLength,
+      egressOutput.stderr.byteLength,
+      egressOutput.exitCode,
+    );
     diagnostic.phase = "visits-increment";
     this.ctx.storage.sql.exec("UPDATE visits SET count=count+1");
     return Response.json({

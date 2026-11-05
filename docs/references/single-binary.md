@@ -1,8 +1,8 @@
 # 单二进制分发与部署
 
-当前正式 lock 固定用户 fork `65267e100a15718300cd17f9d82c2142158ce44a`，
-Release 为 `v1.20260930.0-open-compute-r22.65267e100`，见[workerd 方案](../workerd/README.md)。
-R22 的四平台原生资格与不可变 Release 的 10 项资产校验已通过；私有 Container 协议为 v4。
+当前正式 lock 固定用户 fork `2ff33d645813e1d6253f44ec312d75ee70153912`，
+Release 为 `v1.20260930.0-open-compute-r25.2ff33d645`，见[workerd 方案](../workerd/README.md)。
+R25 的四平台原生资格与不可变 Release 的 10 项资产校验已通过；私有 Container 协议为 v4。
 真实产品、完整 coverage、最终 Gate 和三宿主发行包的当前结果见 [P23 记录](../implemented/p23-cloudflare-containers.md)。
 三个正式产品平台加 macOS Intel 手动输入的 archive/binary 摘要、upstream base 与构建输入统一记录于 lock。
 四个平台的 gzip 由 workerd fork 的 GitHub Release 托管，lock 固定 URL、archive/binary digest 与构建身份；macOS Intel
@@ -61,7 +61,7 @@ TS 源码、Bun、Node、Rolldown、用户 bundle、数据库、master key、S3 
 
 ## 构建与打包
 
-授权边界见根 [Operating Contract](../../AGENTS.md#operating-contract)。复用已验证输入，下载和发行包装须有明确授权；
+授权边界见根 [AGENTS.md](../../AGENTS.md#working-here)。复用已验证输入，下载和发行包装须有明确授权；
 它们不属于默认本地检查。打包/部署确认所需信息见[发布流程](releasing.md)。
 
 构建机器需要 Rust 1.98、Bun 1.3.14、Git LFS 和锁定的 workspace 依赖。
@@ -76,7 +76,6 @@ macOS Intel 可使用 lock 中的 `darwin-x64` archive。Windows 需要使用适
 和本机编译的 workerd；仓库不提供 Windows 的预构建 archive、交叉编译配置或兼容性保证。
 
 ```sh
-cargo install mbx --version 1.22.0 --locked
 git submodule update --init --depth 1 third_party/gitserver third_party/workerd
 git lfs pull --include="share/pyodide/**,share/tessdata/**,share/xberg-tesseract-cache/**"
 bun install --frozen-lockfile --ignore-scripts
@@ -86,7 +85,7 @@ eval "$(bun scripts/prepare-workerd.ts --dest "$runtime_inputs/workerd" --downlo
 eval "$(bun scripts/prepare-caddy.ts --dest "$runtime_inputs/caddy" --download)"
 bun run build
 bun run check:generated
-mbx build --locked --release -p open-compute-service --bin ocd
+cargo build --locked --release -p open-compute-service --bin ocd
 ```
 
 准备工具只在显式 `--download` 时获取 lock 指定的 GitHub Release asset，并校验 URL、大小、archive/binary digest、版本与
@@ -129,6 +128,8 @@ workerd/Caddy。缺失 asset、摘要不符或过期生成资产均失败，不�
 3. 用 `ocd instance setup --config /abs/compute.toml --data-dir /abs/data --yes` 创建并登记实例；已有配置先执行 `ocd --config /abs/compute.toml config check`，再用 `ocd instance add --config /abs/compute.toml` 登记。`compute.toml` 应显式包含 `[data].path`，Local 或 S3 对象后端及实例凭证属于该文件；共享监听和 admin 凭证只属于 `ocd.toml`。S3 模式还需 endpoint/bucket 和凭据。
 4. 执行 `ocd run`（系统作用域使用 `ocd --system run`）。`run` 不从 cwd、`--config` 或 `instances/` 扫描实例。
 
+内部通道使用 `<OCD_DIR>/run/<InstanceId>/` 下的 Unix socket：`ingress.sock` 承载私有 dispatch、custom event、Workflow、Browser Action、DO control 和 supervisor ready/live 探活；`source.sock` 提供 runtime source 和 Container callback；`bindings.sock` 提供 binding backend；`observability.sock` 接收 Workers Logs；`prepare.sock` 承载一次性 Python preparation。探活无需凭证，Python 子进程通过 `ingress.sock` 访问实例的 DO router。目录模式为 0700，绝对 socket 路径必须不超过 103 个编码字节，超长路径在 bind 或配置渲染前拒绝。公开 gateway 继续使用 TCP，原生扩展继续使用 fd 4 Cap'n Proto broker。
+
 对象 authority 是配置选定的 Local 目录或 S3 bucket；S3 模式需要预置 provider。
 实例创建时初始化当前 schema、身份和 key。不要在首次初始化前要求 `doctor --full` 成功。
 初始化后的完整 doctor 应在服务停机时运行，它持有数据目录排他锁并执行 canary/临时 runtime。
@@ -154,12 +155,11 @@ ocd（用户下载的唯一文件）
 应先取得 OCD_DIR 排他锁才能物化共享包；每个实例在编译与启动前取得其数据目录锁。共享包只物化一次，实例及 Gateway 复用同一份已验证输入；每实例的编译缓存和进程 lease 仍留在各自数据目录。
 workerd 启动参数固定指向上述私有 Pyodide cache；当前认证日期 `2026-09-08` 的 Python child 首次执行
 直接加载该 bundle。其它官方 child 日期/flag 组合仍由 workerd 原生兼容规则处理。
-资源通过同文件系统私有 staging 写入、逐项校验、fsync、原子发布；已有包每次检查，
-损坏时拒绝启动且不悄悄覆盖。编译器再次校验实际读取的模板/Worker 字节与内嵌摘要一致。
+资源在构建与打包时校验 pin，启动时通过同文件系统 staging 写入、fsync、原子发布；已有包直接复用。
 这些可重建缓存不属于 snapshot authority，业务数据仍在 SQLite/DO 及所选对象后端的既定位置。
 
 workerd 仍是受监督子进程。Linux 执行已验证 fd；macOS 的临时 executable 位于所属实例的私有 staging。其 cwd、HOME、XDG cache 和 TMPDIR/TMP/TEMP 都指向本实例目录；受管 Provider 同样使用本实例内的私有输出根。
-保持现有 readiness、重启、优雅退出、强制回收和孤儿身份验证。
+保留 readiness、重启退避、优雅退出和强制回收。子进程在新 process group 中启动；崩溃恢复按 lease 中的 PGID 终止进程组，不校验启动时间或二进制摘要。
 Markdown Conversion 的 parser child 使用同一 `ocd` 文件的隐藏内部模式：清空环境、`INSTANCE_DIR/tmp/` 下独立 0700 工作目录、
 一个 OCDP frame、固定 CPU/address-space/wall/stdout/stderr budget，并由父进程按 process group 终止和回收。
 它不初始化配置、data-dir、SQLite、S3、master key、listener 或 workerd，也不是第二个 daemon；Xberg panic/abort

@@ -147,10 +147,6 @@ pub struct VectorizeEngine {
 
 impl VectorizeEngine {
     /// Open or create one exact index, refusing mismatched persisted identity/configuration.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "SQLite boundary inputs mirror authoritative persisted fields"
-    )]
     pub fn open(
         path: &Path,
         resource_id: &str,
@@ -170,7 +166,7 @@ impl VectorizeEngine {
         let parent = path.parent().ok_or_else(invalid)?;
         crate::fs::validate_owned_dir(parent)?;
         crate::fs::ensure_file_secure(path)?;
-        let file = crate::fs::open_nofollow(path, false, true)?;
+        let file = crate::fs::open_file(path, false, true)?;
         crate::fs::validate_authority_fd(&file)?;
         drop(file);
         let mut connection = Connection::open_with_flags(

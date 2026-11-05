@@ -16,10 +16,9 @@ pub(super) fn eligible_consumers_tx(
                     c.max_batch_timeout_ms, c.max_retries, c.retry_delay_seconds,
                     c.max_concurrency, c.dlq_queue_id, c.dlq_queue_generation
              FROM queue_consumer_state c JOIN queue_state q ON q.queue_id = c.queue_id
-             WHERE c.state = 'accepting'
+             WHERE c.state = 'active'
                AND (SELECT COUNT(*) FROM queue_delivery_batches b
-                    WHERE b.consumer_id = c.consumer_id
-                      AND b.consumer_generation = c.consumer_generation) < c.max_concurrency
+                    WHERE b.queue_id = c.queue_id) < c.max_concurrency
                AND (
                  ?1 >= (
                    SELECT m.available_at_ms FROM queue_messages m WHERE m.queue_id = c.queue_id
@@ -105,24 +104,6 @@ pub(super) fn map_consumer(row: &rusqlite::Row<'_>) -> rusqlite::Result<Consumer
     })
 }
 
-pub(super) fn read_consumer_tx(
-    tx: &Transaction<'_>,
-    consumer_id: QueueConsumerId,
-) -> Result<ConsumerRow, PlatformError> {
-    tx.query_row(
-        "SELECT c.consumer_id, c.queue_id,
-                (SELECT instance_id FROM scheduler_identity), c.consumer_generation,
-                c.version_id, c.worker_id,
-                execution_generation, entrypoint, max_batch_size, max_batch_timeout_ms,
-                max_retries, retry_delay_seconds, max_concurrency, dlq_queue_id,
-                dlq_queue_generation FROM queue_consumer_state c
-         JOIN queue_state q ON q.queue_id = c.queue_id WHERE consumer_id = ?1",
-        [consumer_id.to_string()],
-        map_consumer,
-    )
-    .map_err(map_sql_error)
-}
-
 pub(super) fn due_messages_tx(
     tx: &Transaction<'_>,
     consumer: &ConsumerRow,
@@ -176,7 +157,7 @@ pub(super) fn claimed_messages_tx(
         .prepare(
             "SELECT seq, id, enqueued_at_ms, expires_at_ms, content_type, body, attempts
              FROM queue_messages WHERE claim_batch_id = ?1 AND consumer_id = ?2
-               AND consumer_generation = ?3 AND claim_token = ?4 AND state = 'claimed'
+               AND consumer_generation = ?3 AND state = 'claimed'
              ORDER BY seq",
         )
         .map_err(map_sql_error)?;
@@ -186,7 +167,6 @@ pub(super) fn claimed_messages_tx(
                 batch.id.to_string(),
                 batch.consumer_id.to_string(),
                 as_i64(batch.consumer_generation)?,
-                batch.claim_token.as_slice()
             ],
             map_message,
         )
@@ -208,47 +188,6 @@ pub(super) fn ready_message_by_id_tx(
     .map_err(map_sql_error)
 }
 
-pub(super) fn recover_expired_batches_tx(
-    tx: &Transaction<'_>,
-    now_ms: i64,
-    infrastructure_backoff_ms: u64,
-    limit: u32,
-) -> Result<u64, PlatformError> {
-    let ids = {
-        let mut statement = tx
-            .prepare(
-                "SELECT id FROM queue_delivery_batches WHERE claim_until_ms <= ?1
-                 ORDER BY claim_until_ms, id LIMIT ?2",
-            )
-            .map_err(map_sql_error)?;
-        statement
-            .query_map(params![now_ms, i64::from(limit)], |row| {
-                row.get::<_, String>(0)
-            })
-            .map_err(map_sql_error)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(map_sql_error)?
-    };
-    let available_at_ms = add_ms(now_ms, infrastructure_backoff_ms)?;
-    for id in &ids {
-        tx.execute(
-            "UPDATE queue_messages SET state = 'ready', available_at_ms = ?1,
-                    claim_token = NULL, claim_until_ms = NULL, claimed_at_ms = NULL,
-                    claim_batch_id = NULL, consumer_id = NULL, consumer_generation = NULL
-             WHERE claim_batch_id = ?2 AND state = 'claimed'",
-            params![available_at_ms, id],
-        )
-        .map_err(consumer_sql_error)?;
-        let deleted = tx
-            .execute("DELETE FROM queue_delivery_batches WHERE id = ?1", [id])
-            .map_err(consumer_sql_error)?;
-        if deleted != 1 {
-            return Err(consumer_invariant());
-        }
-    }
-    u64::try_from(ids.len()).map_err(|_| consumer_invariant())
-}
-
 pub(super) fn retry_message_tx(
     tx: &Transaction<'_>,
     message: &MessageRow,
@@ -263,10 +202,9 @@ pub(super) fn retry_message_tx(
     let changed = tx
         .execute(
             "UPDATE queue_messages SET state = 'ready', attempts = ?1, available_at_ms = ?2,
-                    claim_token = NULL, claim_until_ms = NULL, claimed_at_ms = NULL,
                     claim_batch_id = NULL, consumer_id = NULL, consumer_generation = NULL
              WHERE seq = ?3 AND claim_batch_id = ?4 AND consumer_id = ?5
-               AND consumer_generation = ?6 AND claim_token = ?7 AND state = 'claimed'",
+               AND consumer_generation = ?6 AND state = 'claimed'",
             params![
                 i64::from(attempts),
                 available_at_ms,
@@ -274,10 +212,9 @@ pub(super) fn retry_message_tx(
                 batch.id.to_string(),
                 batch.consumer_id.to_string(),
                 as_i64(batch.consumer_generation)?,
-                batch.claim_token.as_slice(),
             ],
         )
-        .map_err(consumer_sql_error)?;
+        .map_err(map_sql_error)?;
     if changed != 1 {
         return Err(consumer_invariant());
     }
@@ -293,16 +230,15 @@ pub(super) fn delete_claimed_message_tx(
         .execute(
             "DELETE FROM queue_messages WHERE seq = ?1 AND claim_batch_id = ?2
                AND consumer_id = ?3 AND consumer_generation = ?4
-               AND claim_token = ?5 AND state = 'claimed'",
+               AND state = 'claimed'",
             params![
                 message.seq,
                 batch.id.to_string(),
                 batch.consumer_id.to_string(),
                 as_i64(batch.consumer_generation)?,
-                batch.claim_token.as_slice(),
             ],
         )
-        .map_err(consumer_sql_error)?;
+        .map_err(map_sql_error)?;
     if changed != 1 {
         return Err(consumer_invariant());
     }
@@ -339,7 +275,7 @@ pub(super) fn move_ready_to_dlq_tx(
             "DELETE FROM queue_messages WHERE seq = ?1 AND state = 'ready'",
             [message.seq],
         )
-        .map_err(consumer_sql_error)?;
+        .map_err(map_sql_error)?;
     if changed != 1 {
         return Err(consumer_invariant());
     }
@@ -352,7 +288,7 @@ pub(super) fn dlq_accepts_tx(
     target: (QueueId, u64),
     body_len: usize,
 ) -> Result<bool, PlatformError> {
-    let authority: Option<(String, i64, i64)> = tx
+    let authority: Option<(super::super::queue::SchedulerQueueState, i64, i64)> = tx
         .query_row(
             "SELECT state, message_bytes, max_backlog_bytes FROM queue_state
              WHERE queue_id = ?1 AND lifecycle_generation = ?2",
@@ -362,7 +298,7 @@ pub(super) fn dlq_accepts_tx(
         .optional()
         .map_err(map_sql_error)?;
     Ok(authority.is_some_and(|(state, bytes, maximum)| {
-        state == "accepting"
+        state == super::super::queue::SchedulerQueueState::Accepting
             && bytes
                 .checked_add(i64::try_from(body_len).unwrap_or(i64::MAX))
                 .is_some_and(|value| value <= maximum)
@@ -394,10 +330,8 @@ pub(super) fn insert_dlq_message_tx(
     tx.execute(
         "INSERT INTO queue_messages
          (id, queue_id, queue_generation, enqueued_at_ms, available_at_ms, expires_at_ms,
-          content_type, body, body_bytes, state, attempts, claim_token, claim_until_ms,
-          claimed_at_ms, claim_batch_id, consumer_id, consumer_generation)
-         VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, 'ready', 0, NULL, NULL, NULL,
-                 NULL, NULL, NULL)",
+          content_type, body, body_bytes, state, attempts, claim_batch_id, consumer_id, consumer_generation)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, 'ready', 0, NULL, NULL, NULL)",
         params![
             message.id.to_string(),
             target.0.to_string(),
@@ -409,16 +343,8 @@ pub(super) fn insert_dlq_message_tx(
             i64::try_from(message.body.len()).map_err(|_| consumer_invariant())?,
         ],
     )
-    .map_err(consumer_sql_error)?;
+    .map_err(map_sql_error)?;
     Ok(())
-}
-
-pub(super) fn random_claim_token() -> Result<[u8; 32], PlatformError> {
-    let mut token = [0_u8; 32];
-    rand::rngs::OsRng
-        .try_fill_bytes(&mut token)
-        .map_err(|_| consumer_invariant())?;
-    Ok(token)
 }
 
 pub(super) fn add_ms(now_ms: i64, delta_ms: u64) -> Result<i64, PlatformError> {
@@ -440,24 +366,6 @@ pub(super) fn disposition_invalid() -> PlatformError {
         ErrorCode::QueueDispositionInvalid,
         "Queue disposition does not exactly match the claimed batch",
     )
-}
-
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "the callback contract transfers ownership of this value"
-)]
-pub(super) fn consumer_sql_error(error: rusqlite::Error) -> PlatformError {
-    let message = error.to_string();
-    if message.contains("digest conflict") {
-        PlatformError::new(
-            ErrorCode::QueueConsumerProjectionPending,
-            "Queue consumer projection digest conflicts with its generation",
-        )
-    } else if message.contains("database is locked") || message.contains("database is busy") {
-        PlatformError::new(ErrorCode::SchedulerBusy, "scheduler database is busy")
-    } else {
-        consumer_invariant()
-    }
 }
 
 pub(super) fn consumer_invariant() -> PlatformError {

@@ -5,23 +5,16 @@ use crate::d1_backend::D1BindingService;
 use crate::metrics::MetricsRegistry;
 use crate::r2_backend::R2BindingService;
 use open_compute_core::{DurableObjectsConfig, PlatformError, QueuesConfig};
-use open_compute_runtime::GenerationAuthRegistry;
 use open_compute_storage::PlatformStorage;
 use open_compute_storage::scheduler::SchedulerStore;
 use open_compute_workers::ResourcePins;
 use std::future::Future;
 use std::sync::Arc;
-use tokio::net::TcpListener;
 
 /// Serve every product plane, including version-scoped Markdown Conversion.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "transport boundary inputs mirror the wire contract"
-)]
 pub async fn serve_binding_backend_with_document_parser(
-    listener: TcpListener,
+    listener: crate::http::PrivateUnixListener,
     storage: Arc<PlatformStorage>,
-    auth: GenerationAuthRegistry,
     pins: ResourcePins,
     executor: Arc<dyn KvBindingExecutor>,
     metrics: Option<Arc<MetricsRegistry>>,
@@ -41,7 +34,6 @@ pub async fn serve_binding_backend_with_document_parser(
     serve_binding_backend_inner(
         listener,
         storage,
-        auth,
         pins,
         executor,
         metrics,
@@ -68,14 +60,9 @@ pub async fn serve_binding_backend_with_document_parser(
 /// Serve every product plane, including Markdown Conversion and AI Search,
 /// for an isolated environment without retained platform snapshots.
 #[cfg(any(test, feature = "test-support"))]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "transport boundary inputs mirror the wire contract"
-)]
 pub async fn serve_binding_backend_with_ai_search(
-    listener: TcpListener,
+    listener: crate::http::PrivateUnixListener,
     storage: Arc<PlatformStorage>,
-    auth: GenerationAuthRegistry,
     pins: ResourcePins,
     executor: Arc<dyn KvBindingExecutor>,
     metrics: Option<Arc<MetricsRegistry>>,
@@ -113,7 +100,6 @@ pub async fn serve_binding_backend_with_ai_search(
     serve_binding_backend_with_ai_search_and_snapshot_pins(
         listener,
         storage,
-        auth,
         pins,
         executor,
         metrics,
@@ -138,14 +124,9 @@ pub async fn serve_binding_backend_with_ai_search(
 }
 
 /// Production AI Search composition with authenticated snapshot pins.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "transport boundary inputs mirror the wire contract"
-)]
 pub(crate) async fn serve_binding_backend_with_ai_search_and_snapshot_pins(
-    listener: TcpListener,
+    listener: crate::http::PrivateUnixListener,
     storage: Arc<PlatformStorage>,
-    auth: GenerationAuthRegistry,
     pins: ResourcePins,
     executor: Arc<dyn KvBindingExecutor>,
     metrics: Option<Arc<MetricsRegistry>>,
@@ -169,7 +150,6 @@ pub(crate) async fn serve_binding_backend_with_ai_search_and_snapshot_pins(
     serve_binding_backend_inner(
         listener,
         storage,
-        auth,
         pins,
         executor,
         metrics,

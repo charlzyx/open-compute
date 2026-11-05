@@ -6,6 +6,7 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 
 const ROOT_MARKER: &str = "open-compute-snapshot-probe";
 const VOLATILE_MARKER: &str = "run/open-compute-snapshot-probe";
+const RESOURCE_PROBE_COMMAND: &str = "set -eu; if mv /.open-compute-exec /.open-compute-exec-moved; then exit 80; fi; if printf x > /.open-compute-exec/helper; then exit 79; fi; test \"$(cat /sys/fs/cgroup/memory.max)\" = 67108864; test \"$(cat /sys/fs/cgroup/pids.max)\" = 16; read quota period < /sys/fs/cgroup/cpu.max; test \"$quota\" != max; test \"$((quota * 16))\" -eq \"$period\"; test \"$(ulimit -n)\" = 64; if result=$(dd if=/dev/zero of=/quota-probe bs=1048576 count=17 2>&1); then exit 77; fi; case \"$result\" in *'No space left on device'*) ;; *) exit 78;; esac; test \"$(stat -c %s /quota-probe)\" -le 16777216; : > /quota-probe; umask 027; printf %s \"$OPEN_COMPUTE_QUALIFICATION_NONCE\" > /run/open-compute-snapshot-probe; printf %s \"$OPEN_COMPUTE_QUALIFICATION_NONCE\" > /open-compute-snapshot-probe.pending; mv /open-compute-snapshot-probe.pending /open-compute-snapshot-probe; while :; do :; done";
 
 impl Engine {
     pub(super) async fn probe_resources(
@@ -23,10 +24,11 @@ impl Engine {
         }
         let name = format!("oc-qualification-{}", uuid::Uuid::new_v4());
         let nonce = uuid::Uuid::new_v4().to_string();
-        let command = "set -eu; if mv /.open-compute-exec /.open-compute-exec-moved; then exit 80; fi; if printf x > /.open-compute-exec/helper; then exit 79; fi; test \"$(cat /sys/fs/cgroup/memory.max)\" = 67108864; test \"$(cat /sys/fs/cgroup/pids.max)\" = 16; read quota period < /sys/fs/cgroup/cpu.max; test \"$quota\" != max; test \"$((quota * 16))\" -eq \"$period\"; test \"$(ulimit -n)\" = 64; if result=$(dd if=/dev/zero of=/quota-probe bs=1048576 count=17 2>&1); then exit 77; fi; case \"$result\" in *'No space left on device'*) ;; *) exit 78;; esac; test \"$(wc -c < /quota-probe)\" -le 16777216; : > /quota-probe; umask 027; printf %s \"$OPEN_COMPUTE_QUALIFICATION_NONCE\" > /run/open-compute-snapshot-probe; printf %s \"$OPEN_COMPUTE_QUALIFICATION_NONCE\" > /open-compute-snapshot-probe; while :; do :; done";
         let request = json!({
-            "Image":config.qualification_image, "User":"0", "Entrypoint":["/bin/sh"], "Cmd":["-c",command],
+            "Image":config.qualification_image, "User":"0", "Entrypoint":["/bin/sh"], "Cmd":["-c",RESOURCE_PROBE_COMMAND],
             "Env":[format!("OPEN_COMPUTE_QUALIFICATION_NONCE={nonce}")],
+            "Healthcheck":{"Test":["CMD-SHELL",format!("test -f /{ROOT_MARKER}")],
+                "Interval":1_000_000_000_u64,"Timeout":1_000_000_000_u64,"Retries":1},
             "HostConfig":{"NetworkMode":"none","NanoCpus":62_500_000,"Memory":67_108_864,"MemorySwap":67_108_864,
                 "PidsLimit":16,"Ulimits":[{"Name":"nofile","Soft":64,"Hard":64}],"Tmpfs":policy::run_tmpfs(67_108_864),
                 "StorageOpt":{"size":"16777216"},"LogConfig":{"Type":"none"},"SecurityOpt":["no-new-privileges:true"],
@@ -39,6 +41,7 @@ impl Engine {
                 request,
             )
             .await;
+        let mut phase = "create";
         let outcome = tokio::time::timeout(Duration::from_secs(180), async {
             let (status, created) = created?;
             if status != 201 {
@@ -49,9 +52,11 @@ impl Engine {
                 .and_then(Value::as_str)
                 .filter(|id| crate::container_broker::contract::opaque(id))
                 .ok_or_else(invalid)?;
+            phase = "helper";
             self.verify_helper_volume(config).await?;
             self.verify_helper_bytes(id, &config.exec_helper_sha256)
                 .await?;
+            phase = "start";
             let (status, _) = self
                 .json(
                     Method::POST,
@@ -59,15 +64,22 @@ impl Engine {
                     Value::Null,
                 )
                 .await?;
-            if status != 204 || !self.await_resource_marker(id, &nonce).await? {
+            if status != 204 {
                 return Ok((false, false));
             }
+            phase = "marker";
+            if !self.await_resource_marker(id, &nonce).await? {
+                return Ok((false, false));
+            }
+            phase = "source";
             let before = self
                 .snapshot_source(id, &config.qualification_image, &config.exec_helper_volume)
                 .await?;
+            phase = "capture";
             let (file, _) = self
                 .capture_rootfs(id, &config.spool_dir, config.max_image_bytes)
                 .await?;
+            phase = "source_recheck";
             if self
                 .snapshot_source(id, &config.qualification_image, &config.exec_helper_volume)
                 .await?
@@ -75,6 +87,7 @@ impl Engine {
             {
                 return Err(invalid());
             }
+            phase = "archive";
             let mut file = file.into_std().await;
             let snapshots = tokio::task::spawn_blocking(move || {
                 file.seek(SeekFrom::Start(0)).map_err(|_| invalid())?;
@@ -87,6 +100,9 @@ impl Engine {
         .await
         .map_err(|_| invalid())
         .and_then(std::convert::identity);
+        if !matches!(&outcome, Ok((true, true))) {
+            tracing::warn!(phase, "Container resource qualification failed");
+        }
         let (removed, _) = self
             .json(
                 Method::DELETE,
@@ -111,8 +127,37 @@ impl Engine {
     }
 
     async fn await_resource_marker(&self, id: &str, nonce: &str) -> Result<bool, PlatformError> {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        let mut phase = "health";
+        let mut attempts = 0_u32;
+        let mut last_status = 0_u16;
+        let mut transient_enospc = 0_u32;
+        let outcome = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
+                // Archive setup writes into the root; wait until the quota probe has released its space.
+                phase = "health";
+                let (status, value) = self
+                    .json(Method::GET, &format!("/containers/{id}/json"), Value::Null)
+                    .await?;
+                if status != 200
+                    || value.pointer("/State/Running").and_then(Value::as_bool) != Some(true)
+                {
+                    tracing::warn!(status, "Container qualification process is not running");
+                    return Ok(false);
+                }
+                match value
+                    .pointer("/State/Health/Status")
+                    .and_then(Value::as_str)
+                {
+                    Some("healthy") => {}
+                    Some("starting" | "unhealthy") => {
+                        phase = "health_pending";
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        continue;
+                    }
+                    _ => return Err(invalid()),
+                }
+                phase = "request";
+                attempts += 1;
                 let response = self
                     .send(
                         Method::GET,
@@ -121,38 +166,69 @@ impl Engine {
                         false,
                     )
                     .await?;
+                last_status = response.status().as_u16();
                 if response.status().as_u16() == 200 {
+                    phase = "body";
                     let bytes = bounded_response(response, 16 << 10).await?;
                     open_compute_artifacts::verify_container_archive(
                         bytes.as_slice(),
                         16 << 10,
                         8,
                     )?;
-                    return archive_proof(bytes.as_slice(), nonce, false);
+                    let proof = archive_proof(bytes.as_slice(), nonce, false);
+                    if !matches!(&proof, Ok(true)) {
+                        tracing::warn!(
+                            archive_readable = proof.is_ok(),
+                            "Container qualification marker did not match"
+                        );
+                    }
+                    return proof;
                 }
                 match response.status().as_u16() {
                     404 => {}
                     500 => {
+                        phase = "error_body";
                         let bytes = bounded_response(response, 4096).await?;
                         if !archive_pivot_enospc(&bytes) {
+                            tracing::warn!(
+                                status = 500,
+                                response_bytes = bytes.len(),
+                                "Container qualification archive request rejected"
+                            );
                             return Err(invalid());
                         }
+                        transient_enospc += 1;
                     }
-                    _ => return Err(invalid()),
+                    status => {
+                        tracing::warn!(status, "Container qualification archive request rejected");
+                        return Err(invalid());
+                    }
                 }
+                phase = "inspect";
                 let (status, value) = self
                     .json(Method::GET, &format!("/containers/{id}/json"), Value::Null)
                     .await?;
                 if status != 200
                     || value.pointer("/State/Running").and_then(Value::as_bool) != Some(true)
                 {
+                    tracing::warn!(status, "Container qualification process is not running");
                     return Ok(false);
                 }
+                phase = "sleep";
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         })
-        .await
-        .map_err(|_| invalid())?
+        .await;
+        if outcome.is_err() {
+            tracing::warn!(
+                phase,
+                attempts,
+                last_status,
+                transient_enospc,
+                "Container qualification marker deadline elapsed"
+            );
+        }
+        outcome.map_err(|_| invalid())?
     }
 
     async fn snapshot_source(
@@ -236,11 +312,19 @@ fn archive_proof(
             return Ok(false);
         }
         if name == std::path::Path::new(ROOT_MARKER) {
+            let mode = entry.header().mode().map_err(|_| invalid())?;
             if root
                 || !entry.header().entry_type().is_file()
-                || entry.header().mode().map_err(|_| invalid())? != 0o640
+                || mode != 0o640
                 || entry.size() != nonce.len() as u64
             {
+                tracing::warn!(
+                    duplicate = root,
+                    regular = entry.header().entry_type().is_file(),
+                    marker_mode = mode,
+                    marker_bytes = entry.size(),
+                    "Container qualification marker metadata rejected"
+                );
                 return Ok(false);
             }
             let mut content = Vec::new();
@@ -252,3 +336,7 @@ fn archive_proof(
     }
     Ok(root)
 }
+
+#[cfg(test)]
+#[path = "resources_tests.rs"]
+mod tests;

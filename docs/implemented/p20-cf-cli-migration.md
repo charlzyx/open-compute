@@ -37,22 +37,6 @@ Container application 和 rollout 的 producer fixture 已冻结；真实 cf dep
 
 失败/中止证据保留于 `.temp/gate-run/failed/` 与 `.temp/p20-inputs/`。验收发现的旧断言、官方 cf 参数/响应形状、分片模块命名、同 Script 引用与 redeploy 元数据问题均保留失败记录并在修复后复查；中止或失败轮次不计为验收通过。完整覆盖率运行还发现 cf/Node 编译缓存残留；Gate 统一关闭 native/typed 子进程的 Node/Bun 编译缓存，保持原有残留审计，修复后的 P0/P6 Gate 无残留通过。
 
-## Cloudflare 兼容性检查
-
-按 [cf-compatibility-check](../../.agents/skills/cf-compatibility-check/SKILL.md) 检查 integration merge base `6b42e47d0385e9848b33d90edb6f15ef361c61c0` 至当前工作树（含新增、修改和删除的消费者）。平台 stable types authority 仍为 `@cloudflare/workers-types@5.20260830.1`，runtime/system Workers、存储合同与 workerd pin 不变。复查中移除了官网的手写 ASSETS facade；完成后没有尚未解决的 runtime findings。
-
-| 受影响 surface                                      | 官方依据与实际验证                                                                                                                                                                                                             |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ASSETS / fetch / 应用 Env                           | [官方 assets binding](https://developers.cloudflare.com/workers/static-assets/binding/)、[fetch](https://developers.cloudflare.com/workers/runtime-apis/fetch/)，官方生成 Cloudflare.Env；严格 browser/Worker 检查及 Vite 构建 |
-| KV / D1 / R2 / DO / Queues / Workflows fixture 输入 | 当前 cf bindings/exports；既有真实产品 Gate 的安全、持久化与 restart/crash 断言保留                                                                                                                                            |
-| 平台 public types / runtime inventory               | 固定 stable types 与正式 workerd；既有 type/catalog/config/source 双射和真实 runtime Gate                                                                                                                                      |
-
-cf 生成的应用 runtime declarations 来自 workerd `1.20261001.1`，比服务端 pin 新。声明全集未资格化，不扩大平台 capability/inventory；实际支持以 [兼容矩阵](../references/cloudflare-compatibility.md) 与 admission 为准。本次没有新建 Cloudflare 远程资源或运行新的 hosted differential，既有外部证据仍只证明当时输入。Vinext 的严格构建通过不更新历史 P4 hosted Go 结论。
-
-AI Search 实例创建使用官方 `--body` 传递已声明配置，避免 cf 的 hosted cache/hybrid 默认字段与 `@cf/…` 模型 flag 文件解析；未新增这些 hosted 能力，API 保持拒绝 unsupported 字段。
-
-终端流式 tail 尚无等价 cf 入口，使用 Dashboard Live Tail。Python、Rust、Preview、Containers、Browser Run 等不因 CLI 暴露命令而进入已认证范围。
-
 ## 维护入口
 
 当前操作说明在 [应用示例](../../examples/hello-worker/cloudflare.config.ts)、[测试规则](../references/testing.md) 与 [上游刷新](../references/cloudflare-upstream-refresh.md)；后续语言/产品仍按各自阶段推进。旧入口移除不会修改历史验收报告或正式数据库 migration 字节。

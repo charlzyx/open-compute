@@ -175,10 +175,11 @@ export function conformanceSelfTests(): void {
       "node",
       [
         "--test",
+        // p6-contract.test.mjs builds the Rust vendor schemas with Cargo, which
+        // does not fit this 120 s target; CI's test:js:ci runs it after Cargo.
         join(ROOT, "test/conformance/adapters.test.mjs"),
         join(ROOT, "test/conformance/case-evidence.test.mjs"),
         join(ROOT, "test/conformance/inventory.test.mjs"),
-        join(ROOT, "test/conformance/p6-contract.test.mjs"),
         join(ROOT, "test/conformance/p23-cf-wire.test.mjs"),
       ],
       {

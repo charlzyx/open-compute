@@ -42,9 +42,6 @@ impl<'a> ResourceRepository<'a> {
                     "complete" => response
                         .map(ResourceCreateReservation::Complete)
                         .ok_or_else(resource_invariant),
-                    "failed" => response
-                        .map(ResourceCreateReservation::Failed)
-                        .ok_or_else(resource_invariant),
                     "running" => {
                         let id = resource
                             .ok_or_else(resource_invariant)?
@@ -100,7 +97,7 @@ impl<'a> ResourceRepository<'a> {
                     input.request_fingerprint.as_slice(),
                     input.now_ms,
                     input.expires_at_ms,
-                    input.resource_id.to_string(),
+                    input.resource_id,
                 ],
             )
             .map_err(|_| db_error())?;
@@ -112,7 +109,7 @@ impl<'a> ResourceRepository<'a> {
                  VALUES (?1, ?2, ?3, 'creating', 'healthy', NULL,
                          1, ?4, ?5, ?5, NULL)",
                 params![
-                    input.resource_id.to_string(),
+                    input.resource_id,
                     input.kind.as_str(),
                     input.name,
                     i64::from(input.driver_schema_version),
@@ -152,12 +149,7 @@ impl<'a> ResourceRepository<'a> {
                      WHERE scope = 'resource.create'
                        AND idempotency_key = ?2 AND request_fingerprint = ?3
                        AND resource_id = ?4 AND state = 'running'",
-                    params![
-                        response,
-                        key,
-                        fingerprint.as_slice(),
-                        resource_id.to_string(),
-                    ],
+                    params![response, key, fingerprint.as_slice(), resource_id,],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -170,11 +162,7 @@ impl<'a> ResourceRepository<'a> {
         })
     }
 
-    /// Tombstone a create with no physical effect and persist its stable failure for replay.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "SQLite boundary inputs mirror authoritative persisted fields"
-    )]
+    /// Tombstone a create with no physical effect and release its reservation for retry.
     pub fn fail_create(
         self,
         instance_id: InstanceId,
@@ -196,7 +184,7 @@ impl<'a> ResourceRepository<'a> {
                 .execute(
                     "UPDATE resources SET state = 'deleting', updated_at_ms = ?1
                      WHERE id = ?2 AND (SELECT instance_id FROM instance_identity) = ?3 AND state = 'creating'",
-                    params![now_ms, resource_id.to_string(), instance_id.to_string(),],
+                    params![now_ms, resource_id, instance_id,],
                 )
                 .map_err(|_| db_error())?;
             let resource_changed = tx
@@ -204,21 +192,16 @@ impl<'a> ResourceRepository<'a> {
                     "UPDATE resources SET state = 'tombstoned', updated_at_ms = ?1,
                             deleted_at_ms = ?1
                      WHERE id = ?2 AND (SELECT instance_id FROM instance_identity) = ?3 AND state = 'deleting'",
-                    params![now_ms, resource_id.to_string(), instance_id.to_string(),],
+                    params![now_ms, resource_id, instance_id,],
                 )
                 .map_err(|_| db_error())?;
             let operation_changed = tx
                 .execute(
-                    "UPDATE control_idempotency SET state = 'failed', response_json = ?1
+                    "DELETE FROM control_idempotency
                      WHERE scope = 'resource.create'
-                       AND idempotency_key = ?2 AND request_fingerprint = ?3
-                       AND resource_id = ?4 AND state = 'running'",
-                    params![
-                        response,
-                        key,
-                        fingerprint.as_slice(),
-                        resource_id.to_string(),
-                    ],
+                       AND idempotency_key = ?1 AND request_fingerprint = ?2
+                       AND resource_id = ?3 AND state = 'running'",
+                    params![key, fingerprint.as_slice(), resource_id],
                 )
                 .map_err(|_| db_error())?;
             if deleting_changed != 1 || resource_changed != 1 || operation_changed != 1 {
@@ -270,9 +253,6 @@ impl<'a> ResourceRepository<'a> {
                     "complete" => response
                         .map(ResourceDeleteReservation::Complete)
                         .ok_or_else(resource_invariant),
-                    "failed" => response
-                        .map(ResourceDeleteReservation::Failed)
-                        .ok_or_else(resource_invariant),
                     "running" => Ok(ResourceDeleteReservation::Continue(resource)),
                     _ => Err(resource_invariant()),
                 };
@@ -290,7 +270,7 @@ impl<'a> ResourceRepository<'a> {
                     input.request_fingerprint.as_slice(),
                     input.now_ms,
                     input.expires_at_ms,
-                    input.resource_id.to_string(),
+                    input.resource_id,
                 ],
             )
             .map_err(|_| db_error())?;
@@ -316,12 +296,7 @@ impl<'a> ResourceRepository<'a> {
                      WHERE scope = 'resource.delete'
                        AND idempotency_key = ?2 AND request_fingerprint = ?3
                        AND resource_id = ?4 AND state = 'running'",
-                    params![
-                        response,
-                        key,
-                        fingerprint.as_slice(),
-                        resource_id.to_string(),
-                    ],
+                    params![response, key, fingerprint.as_slice(), resource_id,],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -363,7 +338,7 @@ impl<'a> ResourceRepository<'a> {
                 .map_err(|_| db_error())?;
             let rows = statement
                 .query_map(
-                    params![instance_id.to_string(), kind.map(BindingKind::as_str)],
+                    params![instance_id, kind.map(BindingKind::as_str)],
                     map_resource,
                 )
                 .map_err(|_| db_error())?;
@@ -391,7 +366,7 @@ impl<'a> ResourceRepository<'a> {
                     "SELECT EXISTS(SELECT 1 FROM resources
                      WHERE kind = ?1 AND name = ?2
                        AND state != 'tombstoned' AND id != ?3)",
-                    params![current.kind.as_str(), name, resource_id.to_string(),],
+                    params![current.kind.as_str(), name, resource_id,],
                     |row| row.get(0),
                 )
                 .map_err(|_| db_error())?;
@@ -403,7 +378,7 @@ impl<'a> ResourceRepository<'a> {
             }
             tx.execute(
                 "UPDATE resources SET name = ?1, updated_at_ms = ?2 WHERE id = ?3",
-                params![name, now_ms, resource_id.to_string()],
+                params![name, now_ms, resource_id],
             )
             .map_err(|_| db_error())?;
             audit(
@@ -446,7 +421,7 @@ impl<'a> ResourceRepository<'a> {
                 "UPDATE resources
                  SET availability = ?1, availability_code = ?2, updated_at_ms = ?3
                  WHERE id = ?4",
-                params![availability.as_str(), code, now_ms, resource_id.to_string()],
+                params![availability.as_str(), code, now_ms, resource_id],
             )
             .map_err(|_| db_error())?;
             read_resource_tx(tx, instance_id, resource_id)
@@ -490,7 +465,7 @@ impl<'a> ResourceRepository<'a> {
             tx.execute(
                 "UPDATE resources SET state = 'deleting', updated_at_ms = ?1
                  WHERE id = ?2",
-                params![now_ms, resource_id.to_string()],
+                params![now_ms, resource_id],
             )
             .map_err(|_| db_error())?;
             Ok(())
@@ -512,7 +487,7 @@ impl<'a> ResourceRepository<'a> {
                     "UPDATE resources
                      SET state = 'tombstoned', deleted_at_ms = ?1, updated_at_ms = ?1
                      WHERE id = ?2 AND state = 'deleting'",
-                    params![now_ms, resource_id.to_string()],
+                    params![now_ms, resource_id],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {
@@ -564,7 +539,7 @@ impl<'a> ResourceRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = statement
-                .query_map([resource_id.to_string()], map_referrer)
+                .query_map([resource_id], map_referrer)
                 .map_err(|_| db_error())?;
             let mut output = collect_rows(rows)?;
             let mut statement = conn
@@ -575,7 +550,7 @@ impl<'a> ResourceRepository<'a> {
                 )
                 .map_err(|_| db_error())?;
             let rows = statement
-                .query_map([resource_id.to_string()], map_ai_search_r2_referrer)
+                .query_map([resource_id], map_ai_search_r2_referrer)
                 .map_err(|_| db_error())?;
             output.extend(collect_rows(rows)?);
             output.sort_by(|left, right| {
@@ -599,12 +574,7 @@ impl<'a> ResourceRepository<'a> {
                 .execute(
                     "UPDATE resources SET state = ?1, updated_at_ms = ?2
                      WHERE id = ?3 AND state = ?4",
-                    params![
-                        target.as_str(),
-                        now_ms,
-                        resource_id.to_string(),
-                        expected.as_str(),
-                    ],
+                    params![target.as_str(), now_ms, resource_id, expected.as_str(),],
                 )
                 .map_err(|_| db_error())?;
             if changed != 1 {

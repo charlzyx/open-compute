@@ -118,7 +118,7 @@ fn setup_rejects_secret_root_outside_explicit_data_before_writing() {
 }
 
 #[test]
-fn fresh_setup_data_must_be_private_empty_directory() {
+fn fresh_setup_data_must_be_empty_directory() {
     let temp = TempDir::new().unwrap();
     let data = temp.path().join("data");
     fs::create_dir(&data).unwrap();
@@ -176,7 +176,7 @@ fn setup_persists_the_verified_real_data_path() {
     run_setup(
         &options,
         temp.path(),
-        &FakeServiceManager::default(),
+        &FakeServiceManager::with_daemon(&options.roots.user_registry_root),
         &mut Vec::new(),
     )
     .unwrap();
@@ -256,23 +256,6 @@ fn setup_file_publication_enforces_mode_and_reports_incomplete_rollback() {
 }
 
 #[test]
-fn setup_rollback_preserves_replaced_file_and_removes_other_owned_files() {
-    let temp = TempDir::new().unwrap();
-    let replaced = temp.path().join("replaced");
-    let owned = temp.path().join("owned");
-    let replaced_record =
-        exclusive_write_bytes(&replaced, b"original", 0o600, ServiceScope::User).unwrap();
-    let owned_record = exclusive_write_bytes(&owned, b"owned", 0o600, ServiceScope::User).unwrap();
-    fs::rename(&replaced, temp.path().join("moved-original")).unwrap();
-    fs::write(&replaced, b"replacement").unwrap();
-
-    let error = remove_published_files(&[owned_record, replaced_record]).unwrap_err();
-    assert_eq!(error.code(), ErrorCode::PathInvalid);
-    assert_eq!(fs::read(&replaced).unwrap(), b"replacement");
-    assert!(!owned.exists());
-}
-
-#[test]
 fn setup_rejects_data_in_a_non_instances_ocd_subtree_before_writing() {
     let temp = TempDir::new().unwrap();
     let (options, config_path) = test_options(&temp);
@@ -295,7 +278,7 @@ fn setup_rejects_data_in_a_non_instances_ocd_subtree_before_writing() {
 fn setup_yes_writes_secrets_and_loadable_config() {
     let temp = TempDir::new().unwrap();
     let (options, config_path) = test_options(&temp);
-    let fake = FakeServiceManager::default();
+    let fake = FakeServiceManager::with_daemon(&options.roots.user_registry_root);
     let mut out = Vec::new();
     run_setup(&options, temp.path(), &fake, &mut out).unwrap();
 
@@ -358,7 +341,7 @@ fn ownership_transfer_accepts_only_the_fresh_bootstrap_layout() {
     run_setup(
         &options,
         temp.path(),
-        &FakeServiceManager::default(),
+        &FakeServiceManager::with_daemon(&options.roots.user_registry_root),
         &mut Vec::new(),
     )
     .unwrap();
@@ -394,39 +377,15 @@ fn ownership_transfer_accepts_only_the_fresh_bootstrap_layout() {
 }
 
 #[test]
-fn setup_does_not_take_over_an_insecure_empty_data_directory() {
-    let temp = TempDir::new().unwrap();
-    let root = temp.path().join("data");
-    fs::create_dir(&root).unwrap();
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(
-        refuse_nonempty_data(&root).unwrap_err().code(),
-        ErrorCode::PathInvalid
-    );
-    assert_eq!(
-        fs::metadata(&root).unwrap().permissions().mode() & 0o777,
-        0o755
-    );
-}
-
-#[test]
-fn ownership_transfer_rejects_symlinks_and_invalid_user_ids() {
+fn ownership_transfer_rejects_invalid_user_ids() {
     let temp = TempDir::new().unwrap();
     let file = temp.path().join("known");
     fs::write(&file, b"keep").unwrap();
-    let link = temp.path().join("link");
-    std::os::unix::fs::symlink(&file, &link).unwrap();
     let mut service_user = crate::service_manager::SystemServiceUser {
         name: "test-user".to_owned(),
         uid: rustix::process::getuid().as_raw(),
         gid: rustix::process::getgid().as_raw(),
     };
-    assert_eq!(
-        assign_path_ownership(&link, &service_user)
-            .unwrap_err()
-            .code(),
-        ErrorCode::PathInvalid
-    );
     service_user.uid = u32::MAX;
     assert_eq!(
         assign_path_ownership(&file, &service_user)
@@ -438,7 +397,7 @@ fn ownership_transfer_rejects_symlinks_and_invalid_user_ids() {
 }
 
 #[test]
-fn crashed_setup_staging_recovery_only_removes_verified_private_entries() {
+fn crashed_setup_staging_recovery_only_removes_recognized_entries() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("ocd");
     let _lock = crate::run::DaemonLock::acquire(&root).unwrap();
@@ -493,7 +452,7 @@ fn crashed_setup_staging_recovery_only_removes_verified_private_entries() {
     let linked = stage(Uuid::now_v7());
     std::os::unix::fs::symlink(&valid, &linked).unwrap();
 
-    recover_setup_staging(&root, rustix::process::getuid().as_raw()).unwrap();
+    recover_setup_staging(&root).unwrap();
     assert!(!valid.exists());
     assert!(unmarked.exists());
     assert!(poisoned.exists());
@@ -504,20 +463,13 @@ fn crashed_setup_staging_recovery_only_removes_verified_private_entries() {
             .file_type()
             .is_symlink()
     );
-    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(
-        recover_setup_staging(&root, rustix::process::getuid().as_raw())
-            .unwrap_err()
-            .code(),
-        ErrorCode::PathInvalid
-    );
 }
 
 #[test]
 fn setup_yes_registers_and_starts_via_fake_manager() {
     let temp = TempDir::new().unwrap();
     let (options, _) = test_options(&temp);
-    let fake = FakeServiceManager::default();
+    let fake = FakeServiceManager::with_daemon(&options.roots.user_registry_root);
     run_setup(&options, temp.path(), &fake, &mut Vec::new()).unwrap();
     assert_eq!(fake.installed().len(), 1);
     assert_eq!(fake.started().len(), 1);
@@ -719,7 +671,7 @@ fn interactive_system_scope_with_start_and_disabled_dashboard() {
     assert!(!plan.dashboard_enabled);
     assert!(plan.start_service);
     assert_eq!(plan.public_bind, "127.0.0.1:9797");
-    let fake = FakeServiceManager::default();
+    let fake = FakeServiceManager::with_daemon(&plan.system_registry_root);
     let mut out = Vec::new();
     execute_plan(&plan, temp.path(), &fake, &mut out).unwrap();
     assert_eq!(fake.installed().len(), 1);
@@ -750,7 +702,7 @@ fn interactive_user_defaults_with_start_service() {
     let plan = plan_interactive(&options, temp.path(), &mut input, &mut Vec::new()).unwrap();
     assert_eq!(plan.scope, ServiceScope::User);
     assert!(plan.start_service);
-    let fake = FakeServiceManager::default();
+    let fake = FakeServiceManager::with_daemon(&plan.user_registry_root);
     execute_plan(&plan, temp.path(), &fake, &mut Vec::new()).unwrap();
     assert!(!fake.installed().is_empty());
 }

@@ -4,8 +4,6 @@
 //! behavior. Later crates consume these contracts without resolving secrets at
 //! parse time.
 
-#![deny(missing_docs)]
-
 pub mod admission;
 pub mod capability;
 pub mod clock;
@@ -79,8 +77,8 @@ pub use resource::{
 #[cfg(any(test, feature = "test-support"))]
 pub use scheduler::{DeterministicSchedulerClock, SchedulerFaultPoint};
 pub use scheduler::{
-    DispatchOutcome, SchedulerClock, SchedulerFenceV1, SchedulerKind, SchedulerPoolState,
-    SchedulerSleep, SystemSchedulerClock, WorkloadSummary, unix_time_ms, wall_time_ms,
+    SchedulerClock, SchedulerKind, SchedulerPoolState, SchedulerSleep, SystemSchedulerClock,
+    WorkloadSummary, unix_time_ms, wall_time_ms,
 };
 pub use secret::{SecretBytes, SecretString};
 pub use snapshot_manifest::{

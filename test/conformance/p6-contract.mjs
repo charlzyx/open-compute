@@ -11,6 +11,7 @@ const SUBSET_PATH = join(ROOT, "openapi/cloudflare-v4-subset.json");
 const CAPABILITY_PATH = join(ROOT, "openapi/p6-capability.json");
 const CAPABILITY_SOURCE_PATH = join(ROOT, "openapi/p6-capability-source.json");
 const EXTENSION_PATH = join(ROOT, "openapi/open-compute-extension.json");
+const SDK_SURFACE_PATH = join(ROOT, "packages/sdk/surface.json");
 
 function json(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -199,6 +200,54 @@ function requestMediaType(operation) {
   )
     return "json";
   return "raw";
+}
+
+function annotateRoutes(routes, { routeGroups, routeOverrides }) {
+  const validate = (id, annotation, vendor = false) => {
+    if (
+      !(vendor && annotation.docs === null) &&
+      !/^https:\/\/developers\.cloudflare\.com\/.+/.test(annotation.docs ?? "")
+    )
+      throw new Error(`invalid route annotation docs: ${id}`);
+    if (!["emits", "not-found"].includes(annotation.cf))
+      throw new Error(`invalid route annotation cf: ${id}`);
+  };
+  const prefixes = [];
+  for (const [id, group] of Object.entries(routeGroups)) {
+    validate(id, group, id === "open-compute");
+    for (const field of group.uploadFields ?? [])
+      validate(`${id}.${field.id}`, field);
+    for (const prefix of group.prefixes) prefixes.push({ id, prefix });
+  }
+  prefixes.sort((a, b) => b.prefix.length - a.prefix.length);
+  const routeIds = new Set(routes.map((route) => route.id));
+  for (const [id, annotation] of Object.entries(routeOverrides)) {
+    if (!routeIds.has(id)) throw new Error(`unknown route override: ${id}`);
+    validate(id, annotation);
+  }
+  const surface = json(SDK_SURFACE_PATH);
+  const sdk = new Map([
+    ...surface.operations.map((item) => [item.operation, "official"]),
+    ...[
+      ...surface.openComputeOperations,
+      ...surface.observedStandardOperations,
+    ].map((item) => [`${item.method} ${item.path}`, "open-compute"]),
+  ]);
+  return routes.map(({ group, sdk: sdkUse, docs, cf, ...route }) => {
+    // Match account-relative paths, preferring the most specific product group.
+    const path = route.path.replace(/^\/accounts\/\{account_id\}(?=\/)/, "");
+    const match = prefixes.find(
+      ({ prefix }) => path === prefix || path.startsWith(`${prefix}/`),
+    );
+    if (match === undefined)
+      throw new Error(`unannotated management route: ${route.id}`);
+    return {
+      ...route,
+      group: match.id,
+      sdk: sdk.get(route.id) ?? "not-found",
+      ...routeOverrides[route.id],
+    };
+  });
 }
 
 export function buildCapability(
@@ -390,7 +439,8 @@ export function buildCapability(
     schemaVersion: 1,
     managementApi: {
       root: source.managementApi.root,
-      routes,
+      routeGroups: source.managementApi.routeGroups,
+      routes: annotateRoutes(routes, source.managementApi),
       deviations: source.managementApi.deviations,
       legacyRoutes: source.managementApi.legacyRoutes.map((id) => ({
         id,
@@ -832,10 +882,58 @@ function objectSchema(required, properties) {
   return { type: "object", additionalProperties: false, required, properties };
 }
 
+// Reuse one Cargo export when contract checks rebuild the fragment in one process.
+let vendorSchemas;
+function rustVendorSchemas() {
+  if (vendorSchemas !== undefined) return vendorSchemas;
+  const result = spawnSync(
+    "cargo",
+    ["run", "--locked", "--quiet", "-p", "open-compute-vendor-schema"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 300_000,
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr);
+  const normalize = (node) => {
+    if (Array.isArray(node)) return node.map(normalize);
+    if (node === null || typeof node !== "object") return node;
+    const schema = Object.fromEntries(
+      Object.entries(node)
+        .filter(
+          ([key]) =>
+            !["$schema", "title", "description", "default"].includes(key),
+        )
+        .map(([key, value]) => [key, normalize(value)]),
+    );
+    if (/^u?int\d*$/.test(schema.format ?? "")) {
+      if ([65535, 4294967295].includes(schema.maximum)) delete schema.maximum;
+      delete schema.format;
+    }
+    if (schema.properties !== undefined) {
+      schema.additionalProperties ??= false;
+      schema.required ??= [];
+    }
+    return schema;
+  };
+  vendorSchemas = Object.fromEntries(
+    Object.entries(JSON.parse(result.stdout)).map(([name, schema]) => [
+      name,
+      normalize(schema),
+    ]),
+  );
+  return vendorSchemas;
+}
+
 function extensionSchemas() {
   const string = { type: "string" };
   const nonNegativeInteger = { type: "integer", minimum: 0 };
+  const { PublicOriginBindingResult, ...rustSchemas } = rustVendorSchemas();
   const schemas = {
+    ...rustSchemas,
     PathSegment: { type: "string", minLength: 1, pattern: "^(?!\\.{1,2}$).+$" },
     Error: objectSchema(["code", "message"], {
       code: { type: "integer", minimum: 9_100_000, maximum: 9_199_999 },
@@ -846,313 +944,12 @@ function extensionSchemas() {
       code: { type: "integer" },
       message: string,
     }),
-    Capabilities: objectSchema(
-      [
-        "release",
-        "cf_version",
-        "compatibility",
-        "system_workers",
-        "endpoints",
-        "deviations",
-        "configuration",
-      ],
-      {
-        release: { type: "string", minLength: 1 },
-        cf_version: { type: "string", const: "1.0.0-beta.12" },
-        compatibility: objectSchema(
-          [
-            "validation",
-            "binary_maximum_date",
-            "future_dates_allowed",
-            "experimental_enabled",
-            "features",
-            "catalog_sha256",
-          ],
-          {
-            validation: { type: "string", const: "workerd_code_version" },
-            binary_maximum_date: { type: "string", format: "date" },
-            future_dates_allowed: { type: "boolean", const: false },
-            experimental_enabled: { type: "boolean" },
-            features: {
-              type: "array",
-              items: objectSchema(
-                [
-                  "field",
-                  "enabled_for_all_dates",
-                  "experimental",
-                  "python_snapshot_release",
-                ],
-                {
-                  field: { type: "string", minLength: 1 },
-                  enable_flag: { type: "string", minLength: 1 },
-                  disable_flag: { type: "string", minLength: 1 },
-                  default_on_date: { type: "string", format: "date" },
-                  enabled_for_all_dates: { type: "boolean" },
-                  experimental: { type: "boolean" },
-                  python_snapshot_release: { type: "boolean" },
-                  implied_by: {
-                    type: "array",
-                    items: objectSchema(["flags", "after_date"], {
-                      flags: {
-                        type: "array",
-                        minItems: 1,
-                        uniqueItems: true,
-                        items: { type: "string", minLength: 1 },
-                      },
-                      after_date: { type: "string", format: "date" },
-                    }),
-                  },
-                },
-              ),
-            },
-            catalog_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
-          },
-        ),
-        system_workers: objectSchema(
-          ["compatibility_date", "compatibility_flags"],
-          {
-            compatibility_date: { type: "string", format: "date" },
-            compatibility_flags: {
-              type: "array",
-              uniqueItems: true,
-              items: { type: "string", minLength: 1 },
-            },
-          },
-        ),
-        endpoints: {
-          type: "object",
-          additionalProperties: {
-            type: "string",
-            enum: ["supported", "supported_with_deviation", "unsupported"],
-          },
-        },
-        deviations: { type: "array", uniqueItems: true, items: string },
-        configuration: objectSchema(["ai_search"], {
-          ai_search: { type: "boolean" },
-        }),
-      },
-    ),
-    SystemStatus: objectSchema(
-      ["state", "version", "components", "operator_proxy"],
-      {
-        state: string,
-        version: string,
-        components: {
-          type: "array",
-          items: objectSchema(["name", "state"], {
-            name: string,
-            state: string,
-            message: string,
-          }),
-        },
-        operator_proxy: objectSchema(["mode"], {
-          mode: { type: "string", enum: ["direct", "proxy", "invalid"] },
-          source_variable: string,
-          origin: string,
-        }),
-        observability: objectSchema(
-          [
-            "state",
-            "retention_ms",
-            "max_database_bytes",
-            "query_max_timeframe_ms",
-            "tail_sessions",
-            "closed_client_drops",
-            "overload_drops",
-          ],
-          {
-            state: { type: "string", enum: ["healthy", "degraded"] },
-            retention_ms: nonNegativeInteger,
-            max_database_bytes: nonNegativeInteger,
-            query_max_timeframe_ms: nonNegativeInteger,
-            oldest_event_ms: nonNegativeInteger,
-            tail_sessions: nonNegativeInteger,
-            closed_client_drops: nonNegativeInteger,
-            overload_drops: nonNegativeInteger,
-          },
-        ),
-        deployment_runtime: objectSchema(
-          ["dispatchable", "quarantined", "active_runtime_dispatchable"],
-          {
-            dispatchable: nonNegativeInteger,
-            quarantined: nonNegativeInteger,
-            active_runtime_dispatchable: { type: "boolean" },
-            last_quarantine_reason: string,
-          },
-        ),
-      },
-    ),
-    SchedulerStatus: objectSchema(["state", "pending", "running"], {
-      state: string,
-      pending: nonNegativeInteger,
-      running: nonNegativeInteger,
-    }),
-    CacheStatus: objectSchema(["entries", "bytes"], {
-      entries: nonNegativeInteger,
-      bytes: nonNegativeInteger,
-    }),
-    ImageCapacity: objectSchema(["queued", "running", "capacity"], {
-      queued: nonNegativeInteger,
-      running: nonNegativeInteger,
-      capacity: nonNegativeInteger,
-    }),
-    WorkerEndpoint: objectSchema(["id", "kind", "url", "scope", "created_on"], {
-      id: string,
-      kind: { type: "string", enum: ["local_origin", "public_origin"] },
-      url: { type: "string", format: "uri" },
-      scope: { type: "string", enum: ["local_machine", "public_network"] },
-      created_on: { type: "string", format: "date-time" },
-    }),
-    PublicOriginRequest: objectSchema(["name"], {
-      name: {
-        type: "string",
-        maxLength: 63,
-        pattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
-      },
-    }),
-    DurableObjectNamespace: objectSchema(["id", "script_name", "class_name"], {
-      id: string,
-      script_name: string,
-      class_name: string,
-    }),
-    DurableObjectRecord: objectSchema(["id", "namespace_id", "created_on"], {
-      id: string,
-      namespace_id: string,
-      created_on: { type: "string", format: "date-time" },
-    }),
-    Backup: objectSchema(["id", "created_on", "state"], {
-      id: string,
-      created_on: { type: "string", format: "date-time" },
-      state: string,
-      size: nonNegativeInteger,
-    }),
-    RestoreRequest: objectSchema(["name"], {
-      name: {
-        type: "string",
-        minLength: 1,
-        maxLength: 128,
-        pattern: "^[^\\u0000-\\u001F\\u007F]+$",
-      },
-    }),
-    D1Migration: objectSchema(["id", "name", "sha256", "applied_at_ms"], {
-      id: { type: "integer", minimum: 1 },
-      name: { type: "string", minLength: 1, maxLength: 255 },
-      sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
-      applied_at_ms: { type: "integer", minimum: 0 },
-    }),
-    D1CheckpointTimes: objectSchema(["checkpoints_ms"], {
-      checkpoints_ms: { type: "array", items: nonNegativeInteger },
-    }),
-    D1MigrationInput: objectSchema(["id", "name", "sha256", "sql"], {
-      id: { type: "integer", minimum: 1 },
-      name: { type: "string", minLength: 1, maxLength: 255 },
-      sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
-      sql: { type: "string", minLength: 1 },
-    }),
     D1MigrationRequest: {
       type: "array",
       minItems: 1,
       items: { $ref: "#/components/schemas/D1MigrationInput" },
     },
-    RestoredResource: objectSchema(["id", "name", "kind", "created_on"], {
-      id: string,
-      name: { type: "string", minLength: 1, maxLength: 128 },
-      kind: { type: "string", enum: ["kv_namespace", "d1_database"] },
-      created_on: { type: "string", format: "date-time" },
-    }),
-    UpgradeCheck: objectSchema(
-      [
-        "schema_version",
-        "current_version",
-        "update_available",
-        "upgrade_allowed",
-      ],
-      {
-        schema_version: nonNegativeInteger,
-        current_version: string,
-        available_version: { type: ["string", "null"], minLength: 1 },
-        update_available: { type: "boolean" },
-        upgrade_allowed: { type: "boolean" },
-        blocked_reason: { type: ["string", "null"], minLength: 1 },
-      },
-    ),
   };
-  schemas.Capabilities.required.push("limits");
-  schemas.Capabilities.properties.limits = {
-    type: "object",
-    additionalProperties: nonNegativeInteger,
-  };
-  schemas.DurableObjectNamespace = objectSchema(
-    [
-      "id",
-      "name",
-      "script_name",
-      "class_name",
-      "state",
-      "availability",
-      "spec_generation",
-      "schema_version",
-      "created_on",
-      "modified_on",
-    ],
-    {
-      id: string,
-      name: string,
-      script_name: string,
-      class_name: string,
-      state: {
-        type: "string",
-        enum: ["creating", "ready", "deleting", "tombstoned"],
-      },
-      availability: {
-        type: "string",
-        enum: ["healthy", "degraded", "unavailable"],
-      },
-      availability_code: string,
-      spec_generation: nonNegativeInteger,
-      schema_version: { type: "integer", minimum: 1 },
-      created_on: { type: "string", format: "date-time" },
-      modified_on: { type: "string", format: "date-time" },
-    },
-  );
-  schemas.DurableObjectRecord = objectSchema(
-    ["id", "namespace_id", "generation", "state", "created_on", "modified_on"],
-    {
-      id: string,
-      namespace_id: string,
-      generation: { type: "integer", minimum: 1 },
-      state: string,
-      created_on: { type: "string", format: "date-time" },
-      modified_on: { type: "string", format: "date-time" },
-      deleted_on: { type: "string", format: "date-time" },
-    },
-  );
-  schemas.DurableObjectNamespacePage = objectSchema(["items"], {
-    items: {
-      type: "array",
-      items: { $ref: "#/components/schemas/DurableObjectNamespace" },
-    },
-    next_cursor: string,
-  });
-  schemas.DurableObjectRecordPage = objectSchema(["items"], {
-    items: {
-      type: "array",
-      items: { $ref: "#/components/schemas/DurableObjectRecord" },
-    },
-    next_cursor: string,
-  });
-  schemas.D1RenameRequest = objectSchema(["name"], {
-    name: {
-      type: "string",
-      minLength: 1,
-      maxLength: 128,
-      pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$",
-    },
-  });
-  schemas.D1RenameResult = objectSchema(["id", "name"], {
-    id: string,
-    name: string,
-  });
   schemas.WorkerServiceMetadata = objectSchema(["default_environment"], {
     default_environment: objectSchema(["environment", "script"], {
       environment: string,
@@ -1223,87 +1020,6 @@ function extensionSchemas() {
       error_retention: nonNegativeInteger,
     }),
   });
-  schemas.QueueConsumerRuntime = objectSchema(
-    [
-      "projection_exists",
-      "backlog_messages",
-      "backlog_bytes",
-      "ready_messages",
-      "claimed_batches",
-      "claimed_messages",
-      "dlq_pending",
-    ],
-    {
-      projection_exists: { type: "boolean" },
-      backlog_messages: nonNegativeInteger,
-      backlog_bytes: nonNegativeInteger,
-      ready_messages: nonNegativeInteger,
-      claimed_batches: nonNegativeInteger,
-      claimed_messages: nonNegativeInteger,
-      dlq_pending: nonNegativeInteger,
-    },
-  );
-  schemas.R2BucketUsage = objectSchema(["object_count", "size_bytes"], {
-    object_count: nonNegativeInteger,
-    size_bytes: { type: ["integer", "null"], minimum: 0 },
-  });
-  schemas.R2MultipartCreateRequest = objectSchema(["key"], {
-    key: { type: "string", minLength: 1 },
-    options: objectSchema([], {
-      httpMetadata: objectSchema([], {
-        contentType: string,
-        contentLanguage: string,
-        contentDisposition: string,
-        contentEncoding: string,
-        cacheControl: string,
-        cacheExpiry: { type: "integer" },
-      }),
-      customMetadata: { type: "object", additionalProperties: string },
-      storageClass: {
-        type: "string",
-        enum: ["Standard", "InfrequentAccess"],
-      },
-    }),
-  });
-  schemas.R2MultipartPart = objectSchema(["partNumber", "etag"], {
-    partNumber: { type: "integer", minimum: 1, maximum: 10_000 },
-    etag: string,
-  });
-  schemas.R2MultipartCompleteRequest = objectSchema(["parts"], {
-    parts: {
-      type: "array",
-      minItems: 1,
-      maxItems: 10_000,
-      items: { $ref: "#/components/schemas/R2MultipartPart" },
-    },
-  });
-  schemas.R2MultipartCreate = objectSchema(["key", "uploadId"], {
-    key: string,
-    uploadId: string,
-  });
-  schemas.R2MultipartCompletedObject = {
-    ...objectSchema(
-      [
-        "key",
-        "version",
-        "size",
-        "etag",
-        "httpEtag",
-        "uploaded",
-        "storageClass",
-      ],
-      {
-        key: string,
-        version: string,
-        size: nonNegativeInteger,
-        etag: string,
-        httpEtag: string,
-        uploaded: { type: "integer" },
-        storageClass: string,
-      },
-    ),
-    additionalProperties: true,
-  };
   schemas.ErrorEnvelope = objectSchema(
     ["success", "result", "errors", "messages"],
     {
@@ -1331,15 +1047,7 @@ function extensionSchemas() {
       items: { $ref: "#/components/schemas/WorkerEndpoint" },
     },
     WorkerEndpointResponse: { $ref: "#/components/schemas/WorkerEndpoint" },
-    PublicOriginBindingResponse: {
-      type: ["object", "null"],
-      additionalProperties: false,
-      required: ["name", "url"],
-      properties: {
-        name: { type: "string" },
-        url: { type: "string", format: "uri" },
-      },
-    },
+    PublicOriginBindingResponse: PublicOriginBindingResult,
     NullResponse: { type: "null" },
     DurableObjectNamespacesResponse: {
       $ref: "#/components/schemas/DurableObjectNamespacePage",
@@ -1567,6 +1275,17 @@ export function validateCommitted({ openapiPath, cfRoot, sdkRoot } = {}) {
   const capability = json(CAPABILITY_PATH);
   const extension = json(EXTENSION_PATH);
   const capabilitySource = json(CAPABILITY_SOURCE_PATH);
+  const annotatedRoutes = annotateRoutes(
+    capability.managementApi.routes,
+    capabilitySource.managementApi,
+  );
+  if (
+    JSON.stringify(capability.managementApi.routeGroups) !==
+      JSON.stringify(capabilitySource.managementApi.routeGroups) ||
+    JSON.stringify(capability.managementApi.routes) !==
+      JSON.stringify(annotatedRoutes)
+  )
+    throw new Error("management route annotation projection drift");
   const expectedExtension = prettierJson(
     `${JSON.stringify(buildExtension(capabilitySource), null, 2)}\n`,
   );
@@ -1602,44 +1321,6 @@ export function validateCommitted({ openapiPath, cfRoot, sdkRoot } = {}) {
     throw new Error(
       "vendor extension operation IDs are incomplete or duplicated",
     );
-  }
-  for (const { key, operation } of extensionOperations) {
-    const requestSchema = REQUEST_SCHEMAS.get(key);
-    const mediaType = vendorRequestMediaType(key);
-    const requestContent = operation.requestBody?.content;
-    if (
-      operation["x-open-compute-capability-status"] !== "supported" ||
-      operation["x-open-compute-request-body"] !== mediaType ||
-      (mediaType === "json"
-        ? requestContent?.["application/json"]?.schema?.$ref !==
-          `#/components/schemas/${requestSchema}`
-        : mediaType === "binary"
-          ? requestContent?.["application/octet-stream"]?.schema?.format !==
-            "binary"
-          : operation.requestBody !== undefined)
-    ) {
-      throw new Error(
-        `vendor extension operation contract drift: ${operation.operationId}`,
-      );
-    }
-    for (const [status, response] of Object.entries(operation.responses)) {
-      const reference = response.content?.["application/json"]?.schema?.$ref;
-      if (status === "4XX" || status === "5XX") {
-        if (reference !== "#/components/schemas/ErrorEnvelope") {
-          throw new Error(
-            `vendor extension error envelope drift: ${operation.operationId}`,
-          );
-        }
-      } else if (
-        !status.startsWith("2") ||
-        reference === undefined ||
-        reference.endsWith("/ErrorEnvelope")
-      ) {
-        throw new Error(
-          `vendor extension success envelope drift: ${operation.operationId}`,
-        );
-      }
-    }
   }
   const routeIds = capability.managementApi.routes.map((item) => item.id);
   for (const id of [

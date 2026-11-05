@@ -23,7 +23,6 @@ class BuildImages(unittest.TestCase):
         self.socket_path = self.root / 'engine.sock'
         self.channel.bind(str(self.socket_path))
         self.host = 'unix://' + str(self.socket_path)
-        self.mbx = self.binary('mbx')
         self.sidecar = self.binary('sidecar')
         self.commands = []
         self.fail_revision = False
@@ -47,14 +46,12 @@ class BuildImages(unittest.TestCase):
         self.assertEqual(set(env), {'PATH', 'HOME', 'DOCKER_HOST', 'DOCKER_CONFIG'})
         self.assertEqual(env['DOCKER_HOST'], self.host)
         self.commands.append(args)
-        if args[-1] == '--version':
-            return subprocess.CompletedProcess(args, 0, 'mbx 1.22.0\n')
         if args[1] == 'info':
             return subprocess.CompletedProcess(args, 0, json.dumps({
                 'OSType': 'linux', 'Architecture': 'aarch64'}))
         if args[1:3] == ['image', 'inspect']:
             return subprocess.CompletedProcess(args, 0,
-                'sha256:' + hashlib.sha256(args[-1].rsplit(':', 1)[1].encode()).hexdigest() + '\n')
+                'sha256:' + hashlib.sha256(('engine-' + args[-1].rsplit(':', 1)[1]).encode()).hexdigest() + '\n')
         if self.fail_revision and 'REVISION=two' in args:
             raise subprocess.CalledProcessError(1, args)
         if args[1:3] == ['image', 'save']:
@@ -63,9 +60,12 @@ class BuildImages(unittest.TestCase):
             raise subprocess.CalledProcessError(1, args)
         return subprocess.CompletedProcess(args, 0, '')
 
-    def export(self, source, destination, architecture):
+    def export(self, source, destination, architecture, engine_image_id=None):
         self.assertEqual(source.read_bytes(), b'controlled save')
         self.assertEqual(architecture, 'arm64')
+        if destination.name != 'qualification':
+            self.assertEqual(engine_image_id, 'sha256:' +
+                             hashlib.sha256(('engine-' + destination.name).encode()).hexdigest())
         destination.mkdir()
         return {'manifestSha256': destination.name,
                 'configSha256': hashlib.sha256(destination.name.encode()).hexdigest(),
@@ -77,28 +77,36 @@ class BuildImages(unittest.TestCase):
                 patch.object(fixture.shutil, 'which', return_value='/controlled/docker'), \
                 patch.object(fixture.subprocess, 'run', side_effect=self.command), \
                 patch.object(fixture.exporter, 'export', side_effect=self.export):
-            return fixture.build(self.host, self.mbx, self.sidecar, self.root / 'output', selected)
+            return fixture.build(self.host, self.sidecar, self.root / 'output', selected)
 
     def test_native_binary_platform_and_identity(self):
-        before = fixture.oci.identity(self.mbx.lstat())
-        digest = fixture.copy_elf(self.mbx, self.root / 'copy', 'arm64')
+        before = fixture.oci.identity(self.sidecar.lstat())
+        digest = fixture.copy_elf(self.sidecar, self.root / 'copy', 'arm64')
         self.assertEqual(len(digest), 64)
-        self.assertEqual(before, fixture.oci.identity(self.mbx.lstat()))
+        self.assertEqual(before, fixture.oci.identity(self.sidecar.lstat()))
         with self.assertRaisesRegex(ValueError, '^BUILD_BINARY_PLATFORM$'):
-            fixture.copy_elf(self.mbx, self.root / 'wrong', 'amd64')
+            fixture.copy_elf(self.sidecar, self.root / 'wrong', 'amd64')
 
     def test_symlink_binary_is_rejected(self):
         link = self.root / 'link'
-        link.symlink_to(self.mbx)
+        link.symlink_to(self.sidecar)
         with self.assertRaisesRegex(ValueError, '^BUILD_BINARY_PATH$'):
             fixture.copy_elf(link, self.root / 'copy', 'arm64')
 
     def test_two_revisions_and_separate_helper_free_qualification_image(self):
         result = self.build()
+        self.assertEqual(result['binaryInputs'], {
+            'sidecarSha256': hashlib.sha256(self.sidecar.read_bytes()).hexdigest()})
         self.assertEqual(set(result['images']), {'one', 'two', 'sidecar', 'qualification'})
         builds = [args for args in self.commands if args[1] == 'build']
         self.assertEqual(len(builds), 4)
         self.assertTrue(all('linux/arm64' in args for args in builds))
+        for name in ('sidecar', 'one', 'two'):
+            engine_id = 'sha256:' + hashlib.sha256(('engine-' + name).encode()).hexdigest()
+            self.assertTrue(any(args[1:3] == ['image', 'save'] and args[-1] == engine_id
+                                for args in self.commands))
+            self.assertEqual(result['engineImageIds'][name],
+                             'sha256:' + result['images'][name]['configSha256'])
         self.assertEqual([args[-1].rsplit(':', 1)[1] for args in self.commands
                           if args[1:3] == ['image', 'rm']], ['two', 'one', 'sidecar', 'base'])
         qualification = [args for args in self.commands if args[1:3] == ['image', 'save']][-1]
@@ -131,7 +139,7 @@ class BuildImages(unittest.TestCase):
         with patch.object(fixture.platform, 'system', return_value='Linux'), \
                 patch.object(fixture.platform, 'machine', return_value='aarch64'):
             with self.assertRaisesRegex(ValueError, '^BUILD_EXPLICIT_DOCKER_SOCKET$'):
-                fixture.build('tcp://127.0.0.1:2375', self.mbx, self.sidecar, self.root / 'output')
+                fixture.build('tcp://127.0.0.1:2375', self.sidecar, self.root / 'output')
 
     def test_failed_second_artifact_retry_does_not_rebuild_passed_artifacts(self):
         result = self.build('two')

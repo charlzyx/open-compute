@@ -241,7 +241,7 @@ pub(super) fn inspect_scheduler(
 ) {
     match inspect {
         Some(root) if root.lock_available => {
-            let path = root.root.join("scheduler.sqlite");
+            let path = root.root.join("control.sqlite");
             match inspect_scheduler_db(
                 &path,
                 loaded.config.data.sqlite_busy_timeout_ms,
@@ -254,7 +254,7 @@ pub(super) fn inspect_scheduler(
                     checks.push(if mode_ok {
                         ok(
                             "scheduler_sqlite",
-                            "scheduler database integrity, WAL, and FULL sync passed",
+                            "scheduler tables in control.sqlite passed integrity, WAL, and FULL sync checks",
                             Some(scheduler.schema_version.to_string()),
                         )
                     } else {
@@ -284,11 +284,8 @@ pub(super) fn inspect_scheduler(
                         "scheduler_summary",
                         "scheduler bounded state summary inspected",
                         Some(format!(
-                            "scheduled={} claimed={} discarding={} expired={}",
-                            summary.scheduled,
-                            summary.claimed,
-                            summary.discarding,
-                            summary.expired_claims
+                            "scheduled={} claimed={} discarding={}",
+                            summary.scheduled, summary.claimed, summary.discarding
                         )),
                     ));
                     let consumers = scheduler.queue_consumers;

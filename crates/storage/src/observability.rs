@@ -7,7 +7,6 @@ use rusqlite::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -142,7 +141,7 @@ impl ObservabilityStore {
         max_database_bytes: u64,
     ) -> Result<Self, PlatformError> {
         let retention_ms = i64::try_from(retention_ms).map_err(|_| invalid())?;
-        let path = crate::control_db::leaf_nofollow_path(path)?;
+        let path = crate::control_db::canonical_database_path(path)?;
         let mut connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE

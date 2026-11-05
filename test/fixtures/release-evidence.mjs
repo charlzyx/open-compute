@@ -46,6 +46,7 @@ export async function createReleaseEvidence(
       log: "/private/host/path",
     });
   }
+  await mkdir(join(directory, "coverage-gate-evidence"), { recursive: true });
   await writeJson(join(directory, "coverage-gate-evidence/summary.json"), {
     data: [{ totals: { lines: { count: 100, covered: 95, percent: 95 } } }],
   });
@@ -100,7 +101,11 @@ export async function createReleaseEvidence(
     return {
       profile,
       verdict: "pass",
-      seconds: profile.endsWith("soak") ? 3601 : 60,
+      seconds: profile.endsWith("soak")
+        ? 600
+        : profile.endsWith("peak")
+          ? 720
+          : 30,
       scale: 1,
       stacks,
       global_anomalies: [],
@@ -112,7 +117,7 @@ export async function createReleaseEvidence(
                 { event: "restart_reconcile_ok" },
                 { event: "restart_reconcile_ok" },
                 { event: "restart_reconcile_ok" },
-                { event: "soak_end", elapsed_sec: 3601 },
+                { event: "soak_end", elapsed_sec: 600 },
               ],
             },
           }
@@ -129,6 +134,8 @@ export async function createReleaseEvidence(
     candidateSha256,
     cpuLimit: 2,
     memoryLimitBytes: 4 * 1024 ** 3,
+    budgetSeconds: 2400,
+    seconds: 1440,
     runs,
   });
   return directory;

@@ -15,13 +15,13 @@
 
 ## 结果
 
-| 行为 | 观察 | 判定 |
-| --- | --- | --- |
-| static native Loader | `load(code)` 返回同步 stub，fetch 成功 | 仅证明内部 primitive |
-| Loader 转移 | child env 中传递 Loader 抛 `DataCloneError` | 普通 tenant 无法获得原生 Loader |
-| code-level limit | `subRequests:1` 下完成 3 次 fetch | 接受但未执行限额 |
-| entrypoint limit | `subRequests:1` 下完成 3 次 fetch | 接受但未执行限额 |
-| named cache cleanup | 源码只有 abort erase | 无一般有界回收证据 |
+| 行为                 | 观察                                        | 判定                            |
+| -------------------- | ------------------------------------------- | ------------------------------- |
+| static native Loader | `load(code)` 返回同步 stub，fetch 成功      | 仅证明内部 primitive            |
+| Loader 转移          | child env 中传递 Loader 抛 `DataCloneError` | 普通 tenant 无法获得原生 Loader |
+| code-level limit     | `subRequests:1` 下完成 3 次 fetch           | 接受但未执行限额                |
+| entrypoint limit     | `subRequests:1` 下完成 3 次 fetch           | 接受但未执行限额                |
+| named cache cleanup  | 源码只有 abort erase                        | 无一般有界回收证据              |
 
 固定源码没有 Loader capability serialization；`WorkerStubImpl` 未传递 limits，
 standalone `LimitEnforcer::newSubrequest()` 为空实现。同步 Loader、有效 custom limits 和有界缓存生命周期

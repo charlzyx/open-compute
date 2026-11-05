@@ -26,6 +26,5 @@
 > 验证证据：`./test/test-p2-1.sh` 聚合 Gate 通过；`./test/coverage.sh` 通过，
 > workspace Rust line coverage 为 90.07%。G0 维持既有精确 `D-abort` allowlist 下的
 > Conditional Go，未扩大接受范围。
->
 
 当前测试入口与规则见[测试手册](../references/testing.md)。

@@ -2,9 +2,11 @@
 
 use hyper::StatusCode;
 use open_compute_core::{ErrorCode, PlatformError};
+#[cfg(any(test, feature = "test-support"))]
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -39,7 +41,7 @@ pub struct LiveReleaseHttp {
 }
 
 impl LiveReleaseHttp {
-    /// Build a client with webpki roots and the production timeout.
+    /// Build a client with reqwest's default platform verifier and the production timeout.
     pub fn new() -> Result<Self, PlatformError> {
         Self::with_timeout(RELEASE_HTTP_TIMEOUT)
     }
@@ -159,11 +161,13 @@ fn is_redirect(status: StatusCode) -> bool {
 }
 
 /// In-memory fixture HTTP client for unit tests (no real network).
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Debug, Default)]
 pub struct FixtureReleaseHttp {
     inner: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl FixtureReleaseHttp {
     /// Insert a successful response body for an exact URL.
     pub fn insert(&self, url: impl Into<String>, body: impl Into<Vec<u8>>) {
@@ -173,6 +177,7 @@ impl FixtureReleaseHttp {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl ReleaseHttp for FixtureReleaseHttp {
     fn get(&self, url: &str, max_bytes: usize) -> FetchFuture<'_> {
         let url = url.to_owned();

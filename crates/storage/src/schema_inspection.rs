@@ -42,8 +42,7 @@ pub fn inspect_current_schema(
 ) -> Result<SchemaInspection, PlatformError> {
     control_db.quick_check()?;
     let control = migrations::inspect_schema(control_db)?;
-    let scheduler =
-        inspect_scheduler_schema_version(&data_dir.scheduler_db_path(), busy_timeout_ms)?;
+    let scheduler = inspect_scheduler_schema_version(&data_dir.control_db_path(), busy_timeout_ms)?;
     if control != migrations::current_schema_version()
         || scheduler != current_scheduler_schema_version()
     {
@@ -69,8 +68,8 @@ pub fn inspect_current_schema(
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, InstanceId>(1)?,
+                    row.get::<_, ResourceId>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
                     row.get::<_, Option<String>>(5)?,
@@ -88,8 +87,6 @@ pub fn inspect_current_schema(
         ai_search_files: 0,
     };
     for (kind, instance, resource, lifecycle, driver_version, storage_key, version) in resources {
-        let instance: InstanceId = instance.parse().map_err(|_| schema_invalid())?;
-        let resource: ResourceId = resource.parse().map_err(|_| schema_invalid())?;
         let lifecycle: ResourceState = lifecycle.parse().map_err(|_| schema_invalid())?;
         let (product, expected_key, expected_version, database_kind, count) = match kind.as_str() {
             "kv_namespace" => (
@@ -166,8 +163,8 @@ fn sqlite_migrate_and_check(
     instance: InstanceId,
     resource: ResourceId,
 ) -> Result<(), PlatformError> {
-    crate::fs::validate_owned_file(path, true)?;
-    let open_path = crate::control_db::leaf_nofollow_path(path)?;
+    crate::fs::validate_owned_file(path)?;
+    let open_path = crate::control_db::canonical_database_path(path)?;
     let mut connection = Connection::open_with_flags(
         open_path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,

@@ -10,37 +10,49 @@ workerd archive 内嵌进自己的单二进制发行物；启动时离线校验�
 
 | 身份                       | 当前值                                                                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
-| fork release               | `v1.20260930.0-open-compute-r22.65267e100`                                                         |
-| fork revision              | `65267e100a15718300cd17f9d82c2142158ce44a`                                                         |
+| fork release               | `v1.20260930.0-open-compute-r25.2ff33d645`                                                         |
+| fork revision              | `2ff33d645813e1d6253f44ec312d75ee70153912`                                                         |
 | upstream base              | `d99bc6b777e35d72d71c2f1fe2fd1db53284528a`（正式 pin 的 upstream base）                            |
 | `--version`                | `workerd 2026-09-30`                                                                               |
 | private Container protocol | `open-compute-container-protocol-v4`                                                               |
-| build workflow             | [Open Compute binaries 39721082079](https://github.com/elliothux/workerd/actions/runs/39721082079) |
+| publish workflow           | [Open Compute binaries 41271234399](https://github.com/elliothux/workerd/actions/runs/41271234399) |
 
-2026-10-22（UTC），R22 的四个平台 build、原生 Container 资格和 publish 均成功。
-每个平台通过 7 个原生 owning target 和 11 项 Root 回归。
+2026-11-01（UTC），R25 的四个平台构建和原生资格均已通过。
+每个平台通过八个 Container／KJ HTTP owning target、52 个普通 Rust target 和十一项 Root 回归。
+八个 reactor target 和 Rust lint 也已通过。
+两个仅适用于 sanitizer 的 Rust target 保留不兼容状态，不计入通过数。
 不可变 Release 的 10 项资产已通过签名、GitHub digest 和 `SHA256SUMS` 校验。
 archive 使用 GNU `gzip -9n`，mtime 为 0 且无文件名。
 Release 包含逐目标 build-inputs、catalog 与 `SHA256SUMS`。
 下表摘要来自已验证的资产与正式 lock。
 
-R22 新增官方实验目录快照入口，并使用 private Container protocol v4。
+R25 在 R24 上只增加一个补丁：macOS 上 Unix 对端在 accept 前已关闭时，`getsockopt` 返回 ENOTCONN；
+accept 改为报告未知对端凭据，不再让 listener 失败。固定源码的 owning 回归覆盖这一情形。
+删除条件：上游 kj-rs-io 的 `peer_credentials()` 容忍已断开对端的 ENOTCONN（[cloudflare/workerd#8122](https://github.com/cloudflare/workerd/issues/8122)）。
+R24 修复 KJ 对 HTTP/1.0 响应的默认连接关闭语义。
+没有显式 `Connection: keep-alive` 时，客户端不复用该连接。
+HTTP/1.1 和显式 keep-alive 的既有路径保留。
+同一固定 KJ 源码的回归在修补前失败，修补后 140 项 HTTP 测试全部通过。
+R23 对 Tokio readiness 的修补保留。
+R25 的 binary source 与源码 checkout 均固定 `2ff33d645813e1d6253f44ec312d75ee70153912`。
+formal lock 记录同一次四平台构建和发布的输入。
+R22 新增的官方实验目录快照入口和 private Container protocol v4 均保留。
 目录参数通过既有弱引用回调传入 Broker。
 R21 在 `output()` 等待输出和退出码时持有 process handle。
 输出流排空后，该 handle 可以释放。
 R20 让 snapshot capture 在异步 lease 查询后使用既有 Root control event。
-R22 保留 weak owner、exact lease、公开 binding 回调与 Socket 所有权边界。
+R24 保留 weak owner、exact lease、公开 binding 回调与 Socket 所有权边界。
 原生资格不代表完整产品验收。
-R22 的真实产品、full65、coverage、Final 与三主机 package 验收仍待完成。
+R25 的父仓库产品、coverage、Final 和三平台 package 仍待验收。
 
 历史 R16 的两次 Darwin x64 资格均超时；具体原因仍未确认。
 R17 的 v3 协议已包含 named images、snapshot host callback、exec 子进程证明与 inactivity 修复。
 R17 将 Rosetta 跨架构 medium 测试预算从 30 秒设为 60 秒。
-R22 保留这个有界预算，未增加产品超时。
+R24 保留这个有界预算，未增加产品超时。
 R18 的 Linux ARM64 资格在一条测试的 NUL 终止符断言失败。
 R19 相对 R18 仅把该断言改为精确字节数组比较。
 历史记录见 [workerd 方案](../workerd/README.md#r19-发布与输入校验2026-10-13)。
-R9、R15、R17、R18、R19、R20、R21 与更早结果只适用于各自输入，不能替代 R22 产品验收。
+R22 与更早结果只适用于各自输入，不能替代 R25 产品验收。
 
 `workerd --version` 只显示上游日期，不能证明拿到的是本 fork。需要同时核对 revision、目标和 lock 中的 binary
 SHA-256。
@@ -77,18 +89,18 @@ SHA-256；唯一 authority 仍是 formal lock。
 
 | Target           | Archive                                                                                                                                            | Archive SHA-256                                                    | Binary SHA-256                                                     |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| macOS ARM64      | [workerd-darwin-arm64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r22.65267e100/workerd-darwin-arm64.gz) | `2e268c614818ea5b4a4365695a81e42c66941abb0a165603a39086c964c87ae2` | `bd268b75344ddb0f9537b037938193d937c30652258135a3fecbfe8a9d6bb1b6` |
-| Linux GNU ARM64  | [workerd-linux-arm64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r22.65267e100/workerd-linux-arm64.gz)   | `4453d97c8d70b0150e7633c00bda650977372c244108bfeee1c45fee3510415d` | `5955a198caca13c605519a4849289cbb8c2cdcc652379667e0c887bfd605c37f` |
-| Linux GNU x86-64 | [workerd-linux-64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r22.65267e100/workerd-linux-64.gz)         | `be26c04b02c30b104d1a07802fe43f2f79df077fe4245f6abea7eb3ef44e7d86` | `5dde6e170c595f4411892697900921a2f25901194fee4d54a67d1e8ea818cbb1` |
-| macOS x86-64     | [workerd-darwin-64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r22.65267e100/workerd-darwin-64.gz)       | `c1bf781541604b40e6c0e42191658f2c4c151e4f92dd84e2db9b05b0ce7d4532` | `1c5d46aa1aeb9dd78cf735d27a41a551e68b6293d4db70bd9c620a71bfd19d3d` |
+| macOS ARM64      | [workerd-darwin-arm64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r25.2ff33d645/workerd-darwin-arm64.gz) | `80f38e1126a379d04ddfcb04872d849543d8062933b29d87d4444e0db2004218` | `95c97b801fb857378ccc7c25deccc4eec3242b9e893b5eb0c2e52b29fc5ab491` |
+| Linux GNU ARM64  | [workerd-linux-arm64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r25.2ff33d645/workerd-linux-arm64.gz)   | `02486e790344ae382e4425f906c14893dbf99fbe6ba479dbc04e477cec66b9af` | `2a89f5ca9ca337c2f21502591b4a0e2ffab0e97f0e02ece07a1b2fa646d9a845` |
+| Linux GNU x86-64 | [workerd-linux-64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r25.2ff33d645/workerd-linux-64.gz)         | `8e11cd3b6eb77f621616c2bde1377b0da16442b4c516e6d38b3e7ced0f1ec235` | `ca8a0d51cfe16d97cc49ed3bc7b584e7f22593652e4218e99a060db7ffa18754` |
+| macOS x86-64     | [workerd-darwin-64.gz](https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r25.2ff33d645/workerd-darwin-64.gz)       | `d5fd79a0fd471cbac34a312bd5a570957d5b7f6d8cb6ba9912e714cc82fc2f22` | `13af37cdb048c53929425260b107658305fd8af07bfdb27ab30ec7be1a4bbb80` |
 
 例如下载 Linux x86-64 版本：
 
 ```sh
-curl -fL https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r22.65267e100/workerd-linux-64.gz -o workerd.gz
-echo 'be26c04b02c30b104d1a07802fe43f2f79df077fe4245f6abea7eb3ef44e7d86  workerd.gz' | sha256sum -c -
+curl -fL https://github.com/elliothux/workerd/releases/download/v1.20260930.0-open-compute-r25.2ff33d645/workerd-linux-64.gz -o workerd.gz
+echo '8e11cd3b6eb77f621616c2bde1377b0da16442b4c516e6d38b3e7ced0f1ec235  workerd.gz' | sha256sum -c -
 gzip -dc workerd.gz > workerd
-echo '5dde6e170c595f4411892697900921a2f25901194fee4d54a67d1e8ea818cbb1  workerd' | sha256sum -c -
+echo 'ca8a0d51cfe16d97cc49ed3bc7b584e7f22593652e4218e99a060db7ffa18754  workerd' | sha256sum -c -
 chmod +x workerd
 ./workerd --version
 ```

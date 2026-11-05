@@ -37,11 +37,9 @@ struct Round {
     config: PathBuf,
     key: PathBuf,
     stderr: PathBuf,
-    runtime_digest: String,
     child: Option<Child>,
     tracked_pids: Vec<i32>,
     tracked_ports: Vec<u16>,
-    known_tokens: Vec<String>,
     ok: bool,
 }
 
@@ -56,7 +54,7 @@ impl Drop for Round {
             let _ = child.wait();
         }
         let lease = self.data.join("runtime/child.lease");
-        if let Err(error) = recover_orphan_for_test(&lease, &self.runtime_digest) {
+        if let Err(error) = recover_orphan_for_test(&lease) {
             eprintln!(
                 "P0.1 Gate orphan cleanup failed with {error:?} for {}",
                 lease.display()

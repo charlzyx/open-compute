@@ -15,14 +15,25 @@ pub(in crate::workers_http::v4) struct UploadInput {
 }
 
 impl UploadInput {
-    pub(in crate::workers_http::v4) fn new(metadata: WorkerUploadMetadata) -> Self {
+    pub(in crate::workers_http::v4) fn new(
+        metadata: WorkerUploadMetadata,
+    ) -> Result<Self, PlatformError> {
+        let limits = metadata.limits;
+        let limits = EffectiveResourceLimits::materialize(
+            limits.and_then(|value| value.cpu_ms),
+            limits.and_then(|value| value.sub_requests),
+        )?;
+        Ok(Self::with_limits(metadata, limits))
+    }
+
+    pub(in crate::workers_http::v4) fn with_limits(
+        metadata: WorkerUploadMetadata,
+        limits: EffectiveResourceLimits,
+    ) -> Self {
         let mut runtime_features = VersionRuntimeFeatures {
             compatibility_date: metadata.compatibility_date.clone(),
             compatibility_flags: metadata.compatibility_flags.clone(),
-            limits: metadata.limits.map(|limits| VersionResourceLimitsInput {
-                cpu_ms: limits.cpu_ms,
-                sub_requests: limits.sub_requests,
-            }),
+            limits,
             annotations: metadata.annotations.clone(),
             ..VersionRuntimeFeatures::default()
         };
@@ -322,10 +333,6 @@ impl UploadInput {
         Ok(())
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "binding validation keeps each authority and reservation control explicit"
-    )]
     pub(in crate::workers_http::v4) fn apply_explicit_bindings(
         &mut self,
         api: &WorkerApiState,

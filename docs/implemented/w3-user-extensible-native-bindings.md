@@ -104,21 +104,10 @@ Provider reference fixture 现由 open-compute 的 test-support Cargo 二进制
 `crates/service/src/bin/host_extension_test_provider/`（Rust，schema 拷贝随仓库提交）承担，product Gate 通过 `CARGO_BIN_EXE`
 直接定位；fork test target 保留 fork 自己的 C++ fixture。二者都不进入 release artifact。
 
-FD passing 正式使用 `--//:io_backend=cxx`。macOS release build同时保留
+FD passing 正式使用 Rust/Tokio I/O backend 的 SCM_RIGHTS 接收路径。macOS release build同时保留
 `--@rules_rust//:extra_exec_rustc_flag=-Cstrip=none`，避免 exec-configuration proc-macro dylib 被破坏；最终 `workerd` 仍以
 `--strip=always` 构建。formal source、四平台 binary/archive digest 与 build inputs 由
 [`workerd.lock.json`](../../packages/runtime/workerd.lock.json)唯一固定。
-
-## Cloudflare 边界与非目标
-
-`services[].props` 到 `ctx.props` 与 RPC 调用继续遵守 Cloudflare
-[Context](https://developers.cloudflare.com/workers/runtime-apis/context/)和
-[Service Binding RPC](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/rpc/)语义。本机 extension
-解析、Provider lifecycle 与 Host ABI 是明确的 open-compute superset，不计入 Cloudflare stable runtime-member inventory，也不
-宣称 Cloudflare 托管环境存在相同能力。
-
-Day1 不提供 extension installer、package/version registry、历史内容存储、grant/allowlist、marketplace、远程下载、热加载、
-tenant-native sandbox、集群调度、Provider pool、HTTP fallback 或 XPC wrapper。operator 负责扩展兼容、升级、回滚与宿主权限。
 
 ## 验证
 

@@ -17,7 +17,7 @@ use open_compute_storage::data_dir::read_operation_receipt;
 use open_compute_storage::inspect::{
     inspect_control_db, inspect_master_key, inspect_operator_event_count, inspect_resources,
 };
-use open_compute_storage::scheduler::inspect_scheduler_db;
+use open_compute_storage::scheduler::inspect_scheduler_db_readonly as inspect_scheduler_db;
 use open_compute_storage::vectorize::VECTORIZE_SCHEMA_VERSION;
 use rustix::fs::{Mode, OFlags};
 use serde::Serialize;
@@ -52,7 +52,13 @@ pub async fn create_support_bundle(
 ) -> Result<SupportBundleResult, PlatformError> {
     validate_output(output)?;
     let release = platform_release_metadata(loaded)?;
-    let mut doctor = doctor_report(loaded, DoctorMode::Basic, None).await;
+    let mut doctor = doctor_report(
+        loaded,
+        DoctorMode::Basic,
+        crate::instance_registry::ServiceScope::User,
+        None,
+    )
+    .await;
     for check in &mut doctor.checks {
         if check.name == "resource_catalog"
             && let Some(value) = check.value.as_deref()
@@ -140,7 +146,7 @@ fn workerd_last_exit(loaded: &LoadedConfig) -> Result<Option<Vec<u8>>, PlatformE
     if !path.exists() {
         return Ok(None);
     }
-    open_compute_storage::fs::validate_owned_file(&path, true).map_err(|_| bundle_invalid())?;
+    open_compute_storage::fs::validate_owned_file(&path).map_err(|_| bundle_invalid())?;
     let bytes = std::fs::read(path).map_err(|_| bundle_invalid())?;
     if bytes.len() > 40 * 1024 || serde_json::from_slice::<serde_json::Value>(&bytes).is_err() {
         return Err(bundle_invalid());
@@ -259,7 +265,7 @@ fn schema_summary(loaded: &LoadedConfig) -> serde_json::Value {
         })
     });
     let scheduler = inspect_scheduler_db(
-        &loaded.config.data.path.join("scheduler.sqlite"),
+        &loaded.config.data.path.join("control.sqlite"),
         loaded.config.data.sqlite_busy_timeout_ms,
         open_compute_core::wall_time_ms(),
     )

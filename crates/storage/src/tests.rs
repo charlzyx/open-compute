@@ -14,8 +14,8 @@ use crate::queue_consumers::{
 use crate::resources::{ReserveResourceCreate, ResourceCreateReservation, ResourceRepository};
 use crate::worker_repository::EffectiveResourceLimits;
 use crate::worker_repository::{
-    IdempotencyReservation, NewVersion, SYSTEM_DASHBOARD_WORKER_NAME, StoredVersionSecret,
-    SystemOwnedVersionKind, UpdateWorkerObservabilitySettings, VersionState, WorkerRepository,
+    IdempotencyReservation, NewVersion, StoredVersionSecret, UpdateWorkerObservabilitySettings,
+    VersionState, WorkerRepository,
 };
 use open_compute_core::clock::{DeterministicClock, SystemClock};
 use open_compute_core::config::DataConfig;
@@ -81,11 +81,7 @@ mod durable_object_storage_marker_is_stable_and_inspectable;
 
 mod lock_released_after_failed_bootstrap;
 
-mod relative_and_symlink_root_rejected;
-
-mod child_symlink_and_fifo_rejected;
-
-mod world_writable_root_rejected;
+mod relative_root_rejected;
 
 mod filesystem_and_lock_helpers_reject_missing_special_and_escaping_paths;
 
@@ -133,10 +129,6 @@ mod durability_does_not_claim_safety_when_unclassified;
 
 mod partially_created_key_is_rejected;
 
-mod lock_symlink_and_loose_mode_are_rejected_without_side_effects;
-
-mod sqlite_and_key_symlinks_are_rejected;
-
 mod missing_master_key_env_fails_closed;
 
 mod key_file_rejects_trailing_bytes_and_does_not_overwrite;
@@ -147,7 +139,7 @@ mod incomplete_identity_fails_without_mutation;
 
 mod inspect_lock_holds_and_releases_flock;
 
-mod operation_receipt_reads_are_bounded_and_never_follow_symlinks;
+mod operation_receipt_reads_are_bounded;
 
 mod live_worker_by_name_reads_the_name_index;
 
@@ -299,6 +291,6 @@ mod p1_restore_cleanup_rejects_ambiguous_bounds_links_receipts_and_lock_owners;
 
 mod p1_concurrent_resource_creates_never_exceed_the_account_kind_limit;
 
-mod system_dashboard_worker_is_excluded_from_tenant_catalog_and_mutations;
-
 mod worker_observability_settings_are_day1_authority_and_invalidate_runtime_generation;
+
+mod atomic_queue_cron_promotion;

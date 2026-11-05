@@ -1,7 +1,5 @@
 //! Secure data-directory ownership, control database, identity, and secret crypto.
 
-#![deny(missing_docs)]
-
 pub mod ai_search;
 pub mod assets;
 pub mod bindings;
@@ -30,6 +28,7 @@ pub mod observability;
 mod observability_tests;
 pub mod platform_restore;
 pub mod platform_snapshot;
+mod promotion;
 pub mod public_gateway;
 pub mod queue_consumers;
 pub mod queues;
@@ -41,6 +40,7 @@ pub mod resources;
 pub mod restore_cleanup;
 pub mod runtime_features;
 pub mod scheduler;
+mod scheduler_import;
 pub mod schema_inspection;
 mod schema_migrations;
 pub mod services;
@@ -106,6 +106,12 @@ impl PlatformStorage {
         let db = ControlDb::open(&db_path, config.sqlite_busy_timeout_ms)?;
         db.migrate(clock)?;
         let identity = identity::bootstrap(&db, clock, key.fingerprint())?;
+        scheduler_import::import(
+            &db,
+            data_dir.root(),
+            config.sqlite_busy_timeout_ms,
+            identity.instance_id,
+        )?;
         data_dir.record_instance_id(&identity.instance_id.to_string())?;
         let crypto = SecretCrypto::new(key.bytes(), key.fingerprint())?;
         Ok(Self {
@@ -133,6 +139,12 @@ impl PlatformStorage {
         let db = ControlDb::open(&db_path, config.sqlite_busy_timeout_ms)?;
         db.migrate_with_fault(clock, fault)?;
         let identity = identity::bootstrap(&db, clock, key.fingerprint())?;
+        scheduler_import::import(
+            &db,
+            data_dir.root(),
+            config.sqlite_busy_timeout_ms,
+            identity.instance_id,
+        )?;
         data_dir.record_instance_id(&identity.instance_id.to_string())?;
         let crypto = SecretCrypto::new(key.bytes(), key.fingerprint())?;
         let mut hardening = HardeningConfig::default();

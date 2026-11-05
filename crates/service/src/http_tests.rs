@@ -31,7 +31,12 @@ async fn gateway_upstream_owns_only_its_private_socket() {
     assert_eq!(fs::read(&path).unwrap(), b"preserve");
     fs::remove_file(&path).unwrap();
 
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o755)).unwrap();
     let upstream = PrivateUnixListener::bind(path.clone()).unwrap();
+    assert_eq!(
+        fs::metadata(directory.path()).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
     let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     drop(upstream);
@@ -399,20 +404,25 @@ async fn dashboard_surface_is_disabled_by_default() {
         true,
         Some(SecretString::new("admin-secret")),
     );
-    let response = admin_router(state)
-        .oneshot(
-            Request::builder()
-                .uri("/operator/")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let router = admin_router(state);
+    for path in [
+        "/operator",
+        "/operator/",
+        "/operator/login",
+        "/operator/index.html",
+        "/operator/assets/index.js",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+    }
 }
 
 #[tokio::test]
-async fn dashboard_surface_returns_not_ready_when_enabled_without_bootstrap() {
+async fn dashboard_surface_serves_embedded_files_without_runtime() {
     let state = HttpState::for_test(
         HealthCoordinator::new(),
         metrics(),
@@ -420,55 +430,101 @@ async fn dashboard_surface_returns_not_ready_when_enabled_without_bootstrap() {
         Some(SecretString::new("admin-secret")),
     )
     .with_dashboard_enabled(true);
-    let response = admin_router(state)
+    let router = admin_router(state);
+    let files = embedded_dashboard_files();
+    let index = files
+        .iter()
+        .find(|(path, _)| *path == "index.html")
+        .unwrap()
+        .1;
+    for path in [
+        "/operator",
+        "/operator/",
+        "/operator/index.html",
+        "/operator/login",
+        "/operator/accounts/workers?tab=1",
+        "/operator/a.b/workers",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(response.headers()[header::X_FRAME_OPTIONS], "DENY");
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "no-referrer");
+        assert!(
+            response
+                .headers()
+                .contains_key(header::CONTENT_SECURITY_POLICY)
+        );
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .as_ref(),
+            index
+        );
+    }
+    for (path, bytes) in files {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/operator/{path}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(response.headers()[header::CONTENT_TYPE], content_type(path));
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .as_ref(),
+            *bytes
+        );
+    }
+    for path in [
+        "/operator/missing.js",
+        "/operator/assets/missing.css",
+        "/operator/missing.html",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+    }
+    let response = router
         .oneshot(
             Request::builder()
-                .uri("/operator/login")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body = to_bytes(response.into_body(), 4096).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["error"]["code"], "platform_unavailable");
-}
-
-#[tokio::test]
-async fn dashboard_surface_trailing_slash_hits_handler_when_enabled_without_bootstrap() {
-    let state = HttpState::for_test(
-        HealthCoordinator::new(),
-        metrics(),
-        true,
-        Some(SecretString::new("admin-secret")),
-    )
-    .with_dashboard_enabled(true);
-    let response = admin_router(state)
-        .oneshot(
-            Request::builder()
+                .method("HEAD")
                 .uri("/operator/")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(
-        response.status(),
-        StatusCode::SERVICE_UNAVAILABLE,
-        "/operator/ must reach operator_surface, not the 404 fallback"
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .is_empty()
     );
-}
-
-#[test]
-fn dashboard_asset_path_strips_operator_prefix() {
-    assert_eq!(dashboard_asset_path("/operator/"), "/");
-    assert_eq!(dashboard_asset_path("/operator"), "/");
-    assert_eq!(
-        dashboard_asset_path("/operator/assets/index.js"),
-        "/assets/index.js"
-    );
-    assert_eq!(dashboard_asset_path("/operator/login"), "/login");
 }
 
 #[tokio::test]
@@ -671,4 +727,13 @@ async fn operator_session_exchange_requires_same_origin_and_accepts_login_code()
     let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let token = payload["session_token"].as_str().unwrap();
     assert!(auth.session_valid(token, std::time::SystemTime::now()));
+}
+
+#[tokio::test]
+async fn private_unix_listener_rejects_long_paths_before_creating_directories() {
+    let directory = tempfile::tempdir_in("/tmp").unwrap();
+    let parent = directory.path().join("x".repeat(104));
+    assert!(PrivateUnixListener::bind(parent.join("internal.sock")).is_err());
+    assert!(!parent.exists());
+    assert!(PrivateUnixListener::bind(PathBuf::from("relative.sock")).is_err());
 }

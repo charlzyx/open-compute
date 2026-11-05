@@ -17,32 +17,12 @@ async fn cache_reuse_and_corrupt_rebuild() {
     redactor.register_secret_string(&token);
     let platform = platform_meta();
 
-    let mut same_token_request = compile_req(
-        &runtime,
-        &lock_path,
-        dir.path(),
-        &data,
-        &platform,
-        &token,
-        &redactor,
-        Duration::from_secs(5),
-    );
-    same_token_request.binding_token = &token;
-    assert_eq!(
-        compile_static_config(same_token_request)
-            .await
-            .unwrap_err()
-            .code(),
-        ErrorCode::RuntimeInvalid
-    );
-
     let first_request = compile_req(
         &runtime,
         &lock_path,
         dir.path(),
         &data,
         &platform,
-        &token,
         &redactor,
         Duration::from_secs(5),
     );
@@ -70,7 +50,6 @@ async fn cache_reuse_and_corrupt_rebuild() {
         dir.path(),
         &data,
         &platform,
-        &token,
         &redactor,
         Duration::from_secs(5),
     ))
@@ -81,13 +60,12 @@ async fn cache_reuse_and_corrupt_rebuild() {
 
     fs::write(first.path(), b"corrupt").unwrap();
     assert!(first.open().is_err());
-    let _third = compile_static_config(compile_req(
+    let rebuilt = compile_static_config(compile_req(
         &runtime,
         &lock_path,
         dir.path(),
         &data,
         &platform,
-        &token,
         &redactor,
         Duration::from_secs(5),
     ))
@@ -96,45 +74,12 @@ async fn cache_reuse_and_corrupt_rebuild() {
     let n3 = fs::read(&counter).unwrap().len();
     assert!(n3 > n2);
 
-    let mut perms = fs::metadata(first.path()).unwrap().permissions();
-    perms.set_mode(0o644);
-    fs::set_permissions(first.path(), perms).unwrap();
-    let _ = compile_static_config(compile_req(
-        &runtime,
-        &lock_path,
-        dir.path(),
-        &data,
-        &platform,
-        &token,
-        &redactor,
-        Duration::from_secs(5),
-    ))
-    .await
-    .expect("rebuild after mode");
-
-    let dest = first.path().to_path_buf();
-    fs::remove_file(&dest).ok();
-    symlink(dir.path().join("workerd"), &dest).ok();
-    let rebuilt = compile_static_config(compile_req(
-        &runtime,
-        &lock_path,
-        dir.path(),
-        &data,
-        &platform,
-        &token,
-        &redactor,
-        Duration::from_secs(5),
-    ))
-    .await
-    .expect("rebuild after symlink");
-    assert!(rebuilt.path().is_file());
     let mut request = compile_req(
         &runtime,
         &lock_path,
         dir.path(),
         &data,
         &platform,
-        &token,
         &redactor,
         Duration::from_secs(5),
     );
@@ -155,7 +100,6 @@ async fn cache_reuse_and_corrupt_rebuild() {
         dir.path(),
         &data,
         &platform,
-        &token,
         &redactor,
         Duration::from_secs(5),
     );

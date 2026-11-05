@@ -22,6 +22,7 @@ test-support = [
 ]
 
 [dependencies]
+schemars.workspace = true
 semver.workspace = true
 axum.workspace = true
 base64.workspace = true
@@ -216,6 +217,11 @@ required-features = ["test-support"]
 [[test]]
 name = "workflow_runtime_gate"
 path = "tests/workflow_runtime_gate/mod.rs"
+required-features = ["test-support"]
+
+[[test]]
+name = "recorded_contracts"
+path = "tests/recorded_contracts.rs"
 required-features = ["test-support"]
 
 [lints]

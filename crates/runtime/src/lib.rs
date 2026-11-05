@@ -2,8 +2,6 @@
 //!
 //! The executable always contains the verified runtime payload; startup never downloads.
 
-#![deny(missing_docs)]
-
 pub mod browser;
 pub mod compile;
 mod container_provider;
@@ -27,34 +25,31 @@ pub use container_provider::ContainerProviderConfig;
 pub use digest::runtime_assets_sha256;
 pub use embedded::{
     RuntimeCacheCleanReport, RuntimePackage, clean_embedded_runtime_cache, embedded_browser_view,
-    embedded_caddy_lock, embedded_caddy_sha256, embedded_payload_sha256,
-    embedded_runtime_assets_sha256, embedded_runtime_compatibility, embedded_runtime_lock,
-    inspect_embedded_runtime, materialize_embedded_runtime, open_materialized_runtime,
+    embedded_caddy_lock, embedded_payload_sha256, embedded_runtime_assets_sha256,
+    embedded_runtime_compatibility, embedded_runtime_lock, inspect_embedded_runtime,
+    materialize_embedded_runtime, open_materialized_runtime,
 };
-pub use fsutil::open_host_directory_nofollow;
+pub use fsutil::open_host_directory;
 pub use lease::assert_no_live_orphan;
 #[cfg(any(test, feature = "test-support"))]
-pub use lease::{recover_orphan_for_test, set_lease_write_fail, set_start_key_hook};
+pub use lease::{recover_orphan_for_test, set_lease_write_fail};
 pub use lock::{
     CompatibilityCatalogPin, RuntimeLock, RuntimeSourcePin, RuntimeTarget, load_runtime_lock,
 };
 pub use persistent_process::{
     PersistentHostProcess, PersistentHostProcessOutcome, PersistentHostProcessSpec,
 };
-pub use process::{
-    BoundedOutput, HostProcessLease, HostProcessSpec, VerifiedLaunchImage, run_host_process,
-};
+pub use process::{BoundedOutput, HostProcessSpec, VerifiedLaunchImage, run_host_process};
 #[cfg(any(test, feature = "test-support"))]
 pub use process::{clear_signal_log, set_reap_probe_fail, take_signal_log};
 #[cfg(any(test, feature = "test-support"))]
 pub use supervisor::FnCompiler;
 pub use supervisor::{
-    ConfigCompiler, DirectoryServicePath, ExternalServiceAddress, GenerationAuthRegistry,
-    GenerationCredential, HostExtensionBrokerRegistry, JitterRng, LIVE_PATH, OsJitter,
-    ProcessDiagnostics, PythonPreparationOptions, PythonPreparationProcess, READY_PATH,
-    RuntimeFailureEvidence, StaticConfigCompiler, SupervisorSnapshot, SupervisorState,
-    TOKEN_HEADER, WatchdogConfig, WorkerdSupervisor, WorkerdSupervisorOptions,
-    generate_internal_token, probe_ready_with_raw_token, serve_argv, token_fingerprint,
+    ConfigCompiler, DirectoryServicePath, ExternalServiceAddress, HostExtensionBrokerRegistry,
+    JitterRng, LIVE_PATH, OsJitter, ProcessDiagnostics, PythonPreparationOptions,
+    PythonPreparationProcess, READY_PATH, RuntimeFailureEvidence, StaticConfigCompiler,
+    SupervisorSnapshot, SupervisorState, WatchdogConfig, WorkerdSupervisor,
+    WorkerdSupervisorOptions, probe_ready, serve_argv,
 };
 pub use verify::VerifiedRuntime;
 #[cfg(any(test, feature = "test-support"))]
@@ -69,3 +64,5 @@ pub use supervisor::{
 
 #[cfg(test)]
 mod tests;
+
+pub use digest::validate_socket_path;
