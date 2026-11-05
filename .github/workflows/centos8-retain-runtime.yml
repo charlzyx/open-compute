@@ -1,4 +1,4 @@
-name: Retain qualified CentOS runtime
+name: Retain qualified CentOS 8 runtime
 
 on:
   push:

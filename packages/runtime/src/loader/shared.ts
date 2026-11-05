@@ -11,28 +11,6 @@ import { assertSnapshot } from "./snapshot.js";
 const SOURCE_PATH = "/internal/runtime/v1/versions/resolve";
 let startupGeneration: string | undefined;
 const assembling = new Map<string, Promise<WorkerLoaderWorkerCode>>();
-/**
- * Bound on verified runtime snapshots kept in this loader isolate.
- * A route-generation bump (deploy, rollback, observability settings) misses.
- * The byte budget is the memory cap; one live snapshot may exceed it so the
- * hottest Worker still skips the runtime-source round trip.
- */
-const WARM_RUNTIME_SNAPSHOTS = 1024;
-export const WARM_RUNTIME_SNAPSHOT_BYTES = 32 * 1024 * 1024;
-const warmRuntimeSnapshots = new Map<string, RuntimeSnapshot>();
-const warmRuntimeSnapshotSizes = new Map<string, number>();
-let warmRuntimeSnapshotTotal = 0;
-
-/** Cache key for one immutable runtime snapshot, or null when the call must not be cached. */
-function warmSnapshotKey(
-  envelope: RuntimeEnvelope,
-  scope: RuntimeSourceScope,
-): string | null {
-  if (scope !== "runtime" || envelope.routeGeneration === undefined)
-    return null;
-  return `${envelope.loaderKey}\0${envelope.expected}\0${envelope.routeGeneration}`;
-}
-
 /** Native namespaces retain at most 64 named isolates each; sharding is opt-in. */
 const MAX_TENANT_WAITERS = 256;
 const tenantAdmittedByShard = new Array<number>(32).fill(0);
@@ -323,63 +301,14 @@ export function currentStartupGeneration(): string {
   return (startupGeneration ??= crypto.randomUUID());
 }
 
-function snapshotBytes(snapshot: RuntimeSnapshot): number {
-  let bytes = 256;
-  for (const module of snapshot.modules ?? []) {
-    bytes += module.name.length + module.bytesBase64.length;
-  }
-  for (const binding of snapshot.moduleBindings ?? []) {
-    bytes += binding.name.length + binding.bytesBase64.length;
-  }
-  return bytes;
-}
-
-function dropWarmSnapshot(key: string): void {
-  const size = warmRuntimeSnapshotSizes.get(key);
-  if (size === undefined) return;
-  warmRuntimeSnapshotTotal -= size;
-  warmRuntimeSnapshots.delete(key);
-  warmRuntimeSnapshotSizes.delete(key);
-}
-
-function rememberWarmSnapshot(key: string, snapshot: RuntimeSnapshot): void {
-  dropWarmSnapshot(key);
-  const size = snapshotBytes(snapshot);
-  warmRuntimeSnapshots.set(key, snapshot);
-  warmRuntimeSnapshotSizes.set(key, size);
-  warmRuntimeSnapshotTotal += size;
-  while (
-    warmRuntimeSnapshots.size > 1 &&
-    (warmRuntimeSnapshots.size > WARM_RUNTIME_SNAPSHOTS ||
-      warmRuntimeSnapshotTotal > WARM_RUNTIME_SNAPSHOT_BYTES)
-  ) {
-    const oldest = warmRuntimeSnapshots.keys().next().value;
-    if (oldest === undefined || oldest === key) break;
-    dropWarmSnapshot(oldest);
-  }
-}
-
 /** Resolve and strictly validate an immutable version snapshot. */
 export async function resolveSnapshot(
   env: LoaderEnv,
   envelope: RuntimeEnvelope,
   scope: RuntimeSourceScope,
 ): Promise<RuntimeSnapshot> {
-  // Ingress already read route generation from SQLite. Runtime-visible
-  // mutations bump that generation, so a hit is the same bytes the source
-  // would re-hash. Validation and probe stay uncached.
-  const cacheKey = warmSnapshotKey(envelope, scope);
-  if (cacheKey) {
-    const cached = warmRuntimeSnapshots.get(cacheKey);
-    if (cached) {
-      const size = warmRuntimeSnapshotSizes.get(cacheKey) ?? 0;
-      warmRuntimeSnapshots.delete(cacheKey);
-      warmRuntimeSnapshotSizes.delete(cacheKey);
-      warmRuntimeSnapshots.set(cacheKey, cached);
-      warmRuntimeSnapshotSizes.set(cacheKey, size);
-      return cached;
-    }
-  }
+  // Revalidate even a warm WorkerLoader key: persisted descriptors can change
+  // without a generation bump, and an old generation is not current authority.
   const response = await env.RUNTIME_SOURCE.fetch(
     `http://runtime-source${SOURCE_PATH}`,
     {
@@ -410,7 +339,6 @@ export async function resolveSnapshot(
   ) {
     throw bindingError("VERSION_INVARIANT_VIOLATION");
   }
-  if (cacheKey) rememberWarmSnapshot(cacheKey, snapshot);
   return snapshot;
 }
 

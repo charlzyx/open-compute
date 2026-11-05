@@ -8,7 +8,6 @@ const {
   pythonPreparationCode,
   tenantLoader,
   loadTenantStub,
-  WARM_RUNTIME_SNAPSHOT_BYTES,
 } = await importRuntime("loader/shared.ts", {
   "./snapshot.js": moduleUrl("export function assertSnapshot() {}"),
   "./python-snapshot.js": moduleUrl(
@@ -291,40 +290,42 @@ test("namespace policy rejects invalid shards and excess per-shard admission", a
   }
 });
 
-test("runtime snapshot cache drops oldest entries past the byte budget", async () => {
-  const requests = [];
+test("warm runtime snapshots revalidate source integrity on every request", async () => {
+  let corrupted = false;
+  let reads = 0;
+  const envelope = {
+    loaderKey: "integrity-worker",
+    expected: "a".repeat(64),
+    routeGeneration: 1,
+  };
   const env = {
     RUNTIME_SOURCE: {
-      fetch: async (_url, init) => {
-        const body = JSON.parse(init.body);
-        requests.push(body.key);
-        return Response.json({
-          loaderKey: body.key,
-          workerCodeSha256: "a".repeat(64),
-          routeGeneration: 1,
-          modules: [
-            {
-              name: "w.js",
-              bytesBase64: "x".repeat(
-                Math.floor(WARM_RUNTIME_SNAPSHOT_BYTES / 2),
-              ),
+      fetch: async () => {
+        reads += 1;
+        if (corrupted) {
+          return new Response(null, {
+            status: 500,
+            headers: {
+              "x-open-compute-error-code": "VERSION_INVARIANT_VIOLATION",
             },
-          ],
-          moduleBindings: [],
+          });
+        }
+        return Response.json({
+          loaderKey: envelope.loaderKey,
+          workerCodeSha256: envelope.expected,
+          routeGeneration: 1,
         });
       },
     },
   };
-  const envelope = (key) => ({
-    loaderKey: key,
-    expected: "a".repeat(64),
-    routeGeneration: 1,
+  await resolveSnapshot(env, envelope, "runtime");
+  corrupted = true;
+  await assert.rejects(resolveSnapshot(env, envelope, "runtime"), {
+    stableCode: "VERSION_INVARIANT_VIOLATION",
   });
-  await resolveSnapshot(env, envelope("worker-a"), "runtime");
-  await resolveSnapshot(env, envelope("worker-b"), "runtime");
-  await resolveSnapshot(env, envelope("worker-c"), "runtime");
-  await resolveSnapshot(env, envelope("worker-a"), "runtime");
-  assert.deepEqual(requests, ["worker-a", "worker-b", "worker-c", "worker-a"]);
+  corrupted = false;
+  await resolveSnapshot(env, envelope, "runtime");
+  assert.equal(reads, 3);
 });
 
 test("dynamic Worker validation delegates experimental flags to workerd", async () => {

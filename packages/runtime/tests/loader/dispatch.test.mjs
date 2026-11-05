@@ -215,17 +215,26 @@ test("runtime exceptions containing bundle vocabulary stay sanitized runtime fai
   }
 });
 
-test("warm runtime snapshots are reused until the route generation changes", async () => {
+test("warm runtime dispatch revalidates integrity and rejects stale route generations", async () => {
   const key = `${instanceId}/${workerId}/${versionId}`;
   const digest = "b".repeat(64);
   let generation = 7;
   let fetches = 0;
+  let dispatches = 0;
+  let corrupted = false;
   const env = {
     TENANT_ISOLATE_ADMISSION: "48",
     TENANT_NAMESPACE_COUNT: "1",
     RUNTIME_SOURCE: {
       fetch: async () => {
         fetches += 1;
+        if (corrupted)
+          return new Response(null, {
+            status: 500,
+            headers: {
+              "x-open-compute-error-code": "VERSION_INVARIANT_VIOLATION",
+            },
+          });
         return Response.json({
           loaderKey: key,
           workerCodeSha256: digest,
@@ -238,7 +247,12 @@ test("warm runtime snapshots are reused until the route generation changes", asy
       get() {
         return {
           getEntrypoint() {
-            return { fetch: async () => new Response("ok") };
+            return {
+              fetch: async () => {
+                dispatches += 1;
+                return new Response("ok");
+              },
+            };
           },
         };
       },
@@ -260,10 +274,25 @@ test("warm runtime snapshots are reused until the route generation changes", asy
   };
   assert.equal((await call(7)).status, 200);
   assert.equal((await call(7)).status, 200);
-  assert.equal(fetches, 1);
+  assert.equal(fetches, 2);
   generation = 8;
   assert.equal((await call(8)).status, 200);
-  assert.equal(fetches, 2);
+  assert.equal(fetches, 3);
+  const stale = await call(7);
+  assert.equal(stale.status, 500);
+  assert.equal((await stale.json()).error.code, "VERSION_INVARIANT_VIOLATION");
+  assert.equal(dispatches, 3);
+  corrupted = true;
+  const tampered = await call(8);
+  assert.equal(tampered.status, 500);
+  assert.equal(
+    (await tampered.json()).error.code,
+    "VERSION_INVARIANT_VIOLATION",
+  );
+  assert.equal(dispatches, 3);
+  corrupted = false;
+  assert.equal((await call(8)).status, 200);
+  assert.equal(dispatches, 4);
   const beforeValidation = fetches;
   await call(8, true);
   await call(8, true);
