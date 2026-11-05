@@ -37,7 +37,7 @@
       "archiveName": "workerd-linux-64.gz",
       "archiveSha256": "03327dd330a50596baebf7226c8d1afdeb3be586cb92ed2172a6e9aea5acb51a",
       "binarySha256": "f87329515af62df6916ced8406d0881ddf3a421200c85b8ffdd9a6cacfe60b77",
-      "archiveUrl": "https://github.com/charlzyx/open-compute/actions/runs/41982647834/artifacts/13399486131"
+      "archiveUrl": "https://github.com/charlzyx/open-compute/actions/runs/41995289547/artifacts/13400375667"
     }
   },
   "source": {
@@ -50,9 +50,9 @@
       "strip": "always",
       "macosExecRustStrip": "none",
       "compatibilityProfile": "linux-x64-glibc228",
-      "compatibilityWorkflowRun": "https://github.com/charlzyx/open-compute/actions/runs/41982647834",
-      "compatibilityArtifactId": "13399486131",
-      "compatibilityProducerCommit": "40586879d689df3e06dbeb0cc469099195b75f18",
+      "compatibilityWorkflowRun": "https://github.com/charlzyx/open-compute/actions/runs/41995289547",
+      "compatibilityArtifactId": "13400375667",
+      "compatibilityProducerCommit": "7b21d8c7da060aed2ed0b5e37dba7d621abb7e1b",
       "compatibilityBuilderSha256": "ea17bd7a18f69cfb15bb1b169f310958b2f25f0d6efe5b233879d14438f9f21d",
       "compiler": "LLVM 22.1.8 kernel.org Debian 10 build",
       "libc": "glibc 2.28",
@@ -68,7 +68,11 @@
       "pyodideBundleArchive": "Bun 1.3.14 node:zlib gzipSync level 9; mtime 0; no filename; OS 255",
       "compatibilityBuildScriptSha256": "3fa62396ad94a8a4f4c2318fcb1b0f29324f2d93af50fb3dfa1db07549f89a96",
       "sourceTreeSha256": "0bbd31dac02b63290a0cbe43eb140158ac69dfe7983fcd062bf81ae5121e32ab",
-      "ioBackend": "rust-tokio"
+      "ioBackend": "rust-tokio",
+      "compatibilityBuildWorkflowRun": "https://github.com/charlzyx/open-compute/actions/runs/41982647834",
+      "compatibilityBuildArtifactId": "13399486131",
+      "compatibilityBuildProducerCommit": "40586879d689df3e06dbeb0cc469099195b75f18",
+      "compatibilityBuildProvenanceSha256": "21d3e0c7b821046a2c371f7823b4c80559d81a1542eda0501144cd72d98b6cea"
     }
   }
 }
