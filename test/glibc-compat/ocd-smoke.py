@@ -1,4 +1,5 @@
 """Exercise packaged Workers, static assets and persistence in CentOS 8.2."""
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -17,6 +18,22 @@ BINARY = EVIDENCE / 'ocd-linux-x64-glibc228'
 def docker(*args, check=True):
     return subprocess.run(['docker', *args], capture_output=True, text=True,
                           timeout=120, check=check)
+
+
+def upload_static_asset(request, prefix, script, boundary):
+    # Same /index.html fixture and official bulk upload as the asset API tests.
+    asset_hash = '4c73266e449fea54bba5a6dea074dbbd'
+    session = request(prefix + f'/workers/scripts/{script}/assets-upload-session',
+                      'POST', {'manifest': {'/index.html': {'hash': asset_hash, 'size': 4}}})
+    if not session['buckets']:
+        return session['jwt']
+    assert session['buckets'] == [[asset_hash]], 'Unexpected static asset upload buckets'
+    encoded = base64.b64encode(b'good').decode('ascii')
+    upload_body = (f'--{boundary}\r\nContent-Disposition: form-data; name="{asset_hash}"\r\n'
+                   f'Content-Type: text/html\r\n\r\n{encoded}\r\n--{boundary}--\r\n').encode()
+    return request(prefix + '/workers/assets/upload?base64=true', 'POST', upload_body,
+                   'multipart/form-data; boundary=' + boundary,
+                   credential=session['jwt'], status=201)['jwt']
 
 
 def exercise(image, volume):
@@ -164,15 +181,7 @@ exec /ocd --no-update-check run
         worker_host = f'centos82-worker.{account}.localhost'
         assert request('/', host=worker_host) == b'ocd-centos82-worker-ok'
         def upload_static(script):
-            # The fixed /index.html fixture uses Wrangler's BLAKE3 asset identity.
-            asset_hash = '4c73266e449fea54bba5a6dea074dbbd'
-            session = request(prefix + f'/workers/scripts/{script}/assets-upload-session',
-                              'POST', {'manifest': {'/index.html': {'hash': asset_hash, 'size': 4}}})
-            completion = session['jwt']
-            if session['buckets']:
-                completion = request(prefix + '/workers/assets/upload/' + asset_hash,
-                                     'POST', b'good', 'text/html', credential=completion,
-                                     status=201)['jwt']
+            completion = upload_static_asset(request, prefix, script, boundary)
             static_metadata = {'compatibility_date': '2026-09-08',
                                'assets': {'jwt': completion, 'config': {}}}
             static_body = (f'--{boundary}\r\nContent-Disposition: form-data; name="metadata"\r\n'

@@ -94,7 +94,7 @@ async fn assets_only_pipeline_commits_real_refs_without_fabricating_worker_code(
     assert!(cron.live_for_worker(worker.id).unwrap().is_empty());
     assert_eq!(
         cron.version_config(result.version.id).unwrap_err().code(),
-        open_compute_core::ErrorCode::CronProjectionPending
+        ErrorCode::CronProjectionPending
     );
     let stored = open_compute_storage::assets::VersionAssetsRepository::new(storage.db())
         .get(result.version.id)

@@ -11,6 +11,7 @@ on:
       - 'test/glibc-compat/verify-workerd.py'
       - 'test/glibc-compat/test_verify_workerd.py'
       - 'test/glibc-compat/ocd-smoke.py'
+      - 'test/glibc-compat/test_ocd_smoke.py'
       - '.github/workflows/centos8-ocd.yml'
   workflow_dispatch:
 permissions:
@@ -66,7 +67,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 -B -m unittest discover -s test/containers-fixture -p 'test_*.py'
-          python3 -B -m unittest discover -s test/glibc-compat -p test_verify_workerd.py
+          python3 -B -m unittest discover -s test/glibc-compat -p 'test_*.py'
           python3 -B test/glibc-compat/verify-workerd.py
       - uses: docker/setup-buildx-action@v3
       - name: Build the glibc 2.28 Rust packaging environment
