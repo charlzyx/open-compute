@@ -152,12 +152,34 @@ class DiagnosticInputsTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 os.fstat(fd)
             held = diagnostic.HeldInputs([path])
+            fd = held.entries[0][1]
             try:
+                before = path.stat()
                 path.write_bytes(b'modified')
+                # Same-size writes can share a filesystem timestamp tick. Make
+                # metadata drift explicit rather than depending on write timing.
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
                 with self.assertRaisesRegex(RuntimeError, 'IDENTITY_CHANGED'):
                     held.verify(content=True)
             finally:
                 held.close()
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+
+            held = diagnostic.HeldInputs([path])
+            fd = held.entries[0][1]
+            try:
+                expected = held.entries[0][2]
+                path.write_bytes(b'changed!')
+                # Model a same-size overwrite within one metadata timestamp tick:
+                # the content check must still reject changed bytes.
+                with mock.patch.object(diagnostic, 'identity', return_value=expected):
+                    with self.assertRaisesRegex(RuntimeError, 'BYTES_CHANGED'):
+                        held.verify(content=True)
+            finally:
+                held.close()
+            with self.assertRaises(OSError):
+                os.fstat(fd)
 
 
 if __name__ == '__main__':
